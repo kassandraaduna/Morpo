@@ -1,49 +1,56 @@
-import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, useWindowDimensions } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { View, Animated, Easing } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import styles from './src/styles/Styles';
 
-const Splash = ({ navigation }) => {
-    const { width, height } = useWindowDimensions();
-    const scale = Math.min(width, height) / 400;
+export default function Splash({ navigation }) {
+    const scaleAnim = useRef(new Animated.Value(1)).current;
 
     useEffect(() => {
-        const timer = setTimeout(() => {
-        navigation.replace('Onboarding');
-        }, 2000);
+        Animated.loop(
+        Animated.sequence([
+            Animated.timing(scaleAnim, {
+            toValue: 1.05,
+            duration: 700,
+            easing: Easing.out(Easing.ease),
+            useNativeDriver: true,
+            }),
+            Animated.timing(scaleAnim, {
+            toValue: 1,
+            duration: 700,
+            easing: Easing.in(Easing.ease),
+            useNativeDriver: true,
+            }),
+        ])
+        ).start();
 
-        return () => clearTimeout(timer);
-    }, [navigation]);
+        const init = async () => {
+            await new Promise(res => setTimeout(res, 1500));
+
+            const onboardingCompleted =
+                await AsyncStorage.getItem('onboardingCompleted');
+
+            if (onboardingCompleted === 'true') {
+                navigation.replace('Login');
+            } else {
+                navigation.replace('Onboarding');
+            }
+        };
+
+        init();
+    }, []);
 
     return (
-        <View style={styles.container}>
-        <View style={[styles.logoBox, { width: 100 * scale, height: 100 * scale }]}>
-            <Text style={[styles.logoText, { fontSize: 14 * scale }]}>LOGO</Text>
-        </View>
-        <Text style={[styles.appName, { fontSize: 24 * scale, marginTop: 20 * scale }]}>MyphoLens</Text>
+        <View style={styles.screen}>
+            <View style={styles.splashLogoContainer}>
+                <Animated.Image
+                    source={require('../assets/mypholens_logo.png')}
+                    style={[
+                        styles.splashLogo,
+                        { transform: [{ scale: scaleAnim }] },
+                    ]}
+                />
+            </View>
         </View>
     );
-};
-
-const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: '#fff',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    logoBox: {
-        borderWidth: 2,
-        borderColor: '#000',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    logoText: {
-        fontWeight: 'bold',
-        color: '#000',
-    },
-    appName: {
-        fontWeight: 'bold',
-        color: '#000',
-    },
-});
-
-export default Splash;
+}

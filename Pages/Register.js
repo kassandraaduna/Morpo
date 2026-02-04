@@ -1,445 +1,313 @@
 import React, { useState } from 'react';
-import { 
-    View, 
-    Text, 
-    TextInput, 
-    TouchableOpacity, 
-    StyleSheet, 
-    Alert, 
-    ScrollView
-} from 'react-native';
-import axios from 'axios';
+import { View, Text, TextInput, TouchableOpacity, Pressable, Image, ScrollView, Alert,} from 'react-native';
+import { requestRegisterOtp, verifyRegisterOtp } from './src/services/authService';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import Ionicons from 'react-native-vector-icons/Ionicons';
+import styles from './src/styles/Styles';
+import {toastError, toastSuccess} from './src/components/ToastMsg';
 
-const API_BASE_URL = 'http://192.168.1.18:8000';
+export default function Register({ navigation }) {
+  const [form, setForm] = useState({});
+  const [otpId, setOtpId] = useState('');
+  const [otp, setOtp] = useState(['','','','','','']);
+  const [step, setStep] = useState('form');
+  const [showPassword, setShowPassword] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
 
-function Register({ navigation }) {
-    const [step, setStep] = useState('form');
-    const [isLoading, setIsLoading] = useState(false);
-    
-    const [formData, setFormData] = useState({
-        fname: "",
-        lname: "",
-        dob: "",
-        gender: "",
-        number: "",
-        email: "",
-        username: "",
-        password: "",
-        confirmPassword: ""
-    });
+  const isOtpComplete = otp.every(d => d !== '');
 
-    const [otpData, setOtpData] = useState({
-        otp: "",
-        otpId: "",
-        maskedEmail: "",
-        expiresAt: ""
-    });
+  const validate = () => {
+    const required = [
+      'fname','lname','dob','gender',
+      'number','email','username','password'
+    ];
+    return required.every(k => form[k]);  
+  };
 
-    const handleRequestOtp = async () => {
-        console.log('Sign Up button clicked!');
-        console.log('Form Data:', formData);
-        const { fname, lname, email, username, password, confirmPassword } = formData;
+  const passwordRules = {
+    length: v => v.length >= 8,
+    uppercase: v => /[A-Z]/.test(v),
+    number: v => /\d/.test(v),
+    special: v => /[!@#$%^&*]/.test(v),
+  };    
 
-        console.log('fname:', fname, 'isEmpty:', !fname);
-        console.log('lname:', lname, 'isEmpty:', !lname);
-        console.log('email:', email, 'isEmpty:', !email);
-        console.log('username:', username, 'isEmpty:', !username);
-        console.log('password:', password, 'isEmpty:', !password);
-        console.log('confirmPassword:', confirmPassword, 'isEmpty:', !confirmPassword);
+  const passwordStatus = {
+    length: passwordRules.length(password),
+    uppercase: passwordRules.uppercase(password),
+    number: passwordRules.number(password),
+    special: passwordRules.special(password),
+  };  
 
-        if (!fname || !lname || !email || !username || !password || !confirmPassword) {
-            console.log('VALIDATION 1 FAILED - Missing fields');
-            Alert.alert('Error', 'Please fill all required fields');
-            return;
-        }
+  const passwordsMatch = confirmPassword.length > 0 && password === confirmPassword;
 
-        console.log('VALIDATION 1 PASSED - All fields filled');
+  const submitForm = async () => {
+    if (!validate()) {
+      return Alert.alert('Error', 'Please fill in all fields');
+    }
+  
+    try {
+      const res = await requestRegisterOtp(form.email);
+      setOtpId(res.data.otpId);
+      setStep('otp');
+    } catch (e) {
+      Alert.alert(
+        'Error',
+        e.response?.data?.message || 'Failed to send OTP'
+      );
+    }
+  };
 
-        if (password.length < 8) {
-            console.log('VALIDATION 2 FAILED - Password too short:', password.length);
-            Alert.alert('Error', 'Password must be at least 8 characters long');
-            return;
-        }
+  const verifyOtp = async () => {
+    try {
+      const code = otp.join('');
 
-        console.log('VALIDATION 2 PASSED - Password length OK');
+      await verifyRegisterOtp({
+        otpId,
+        code,
+        medData: form,
+      });
 
-        if (!/[!@#$%^&*]/.test(password)) {
-            console.log('VALIDATION 3 FAILED - No special character');
-            Alert.alert('Error', 'Password must contain a special character');
-            return;
-        }
+      toastSuccess('Account created successfully');
+      navigation.replace('Login');      
 
-        console.log('VALIDATION 3 PASSED - Special character found');
+    } catch (e) {
+      Alert.alert(
+        'Error',
+        e.response?.data?.message || 'OTP verification failed'
+      );
+    }
+  };
 
-        if (password !== confirmPassword) {
-            console.log('VALIDATION 4 FAILED - Passwords dont match');
-            Alert.alert('Error', 'Passwords do not match');
-            return;
-        }
+  return (
+    <View style={styles.screen}>
+      <View style={styles.shell}>
 
-        console.log('VALIDATION 4 PASSED - Passwords match');
+        {/* LOGO */}
+        <Image
+          source={require('../assets/mypholens_logo.png')}
+          style={styles.logo}
+        />
 
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(email.trim())) {
-            console.log('VALIDATION 5 FAILED - Invalid email');
-            Alert.alert('Error', 'Please enter a valid email address');
-            return;
-        }
+        {/* PINK CARD */}
+        <View style={styles.card}>
 
-        console.log('VALIDATION 5 PASSED - All validations complete');
-        console.log('All validation passed, setting loading...');
-        setIsLoading(true);
-        console.log('isLoading set to true');
+          {step === 'form' && (
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={styles.title}>SIGN UP</Text>
+              <Text style={styles.subtitle}>Create an account to get started.</Text>
 
-        try {
-            console.log('Entered try block');
-            console.log('Sending OTP request to:', `${API_BASE_URL}/api/auth/request-email-otp`);
-            console.log('Request payload:', { email: email.trim(), purpose: 'register' });
+              <Text style={styles.label}>First Name</Text>
+              <TextInput style={styles.input}
+                placeholder="Enter your first name"
+                onChangeText={v => setForm({ ...form, fname: v })}
+              />
 
-            const res = await axios.post(`${API_BASE_URL}/api/auth/request-email-otp`, {
-                email: email.trim(),
-                purpose: 'register'
-            });
+              <Text style={styles.label}>Last Name</Text>
+              <TextInput style={styles.input}
+                placeholder="Enter your last name"
+                onChangeText={v => setForm({ ...form, lname: v })}
+              />
 
-            console.log('OTP Response received:', res.data);
+              <Text style={styles.label}>Date of Birth</Text>
+              <TextInput style={styles.input}
+                placeholder="MM/DD/YYYY"
+                onChangeText={v => setForm({ ...form, dob: v })}
+              />
 
-            setOtpData({
-                otp: "",
-                otpId: res.data?.otpId || '',
-                maskedEmail: res.data?.maskedEmail || email,
-                expiresAt: res.data?.expiresAt || ''
-            });
+              <Text style={styles.label}>Gender</Text>
+              <TextInput style={styles.input}
+                placeholder="Select gender"
+                onChangeText={v => setForm({ ...form, gender: v })}
+              />
 
-            setStep('verify');
-            Alert.alert('Success', 'Verification code sent to your email');
-        } catch (error) {
-            console.log('Request OTP error:', error);
-            const errorMessage = error?.response?.data?.message || 
-                                error?.response?.data?.error ||
-                                'Failed to send verification code.';
-            Alert.alert('Error', errorMessage);
-        } finally {
-            setIsLoading(false);
-        }
-    };
+              <Text style={styles.label}>Mobile Number</Text>
+              <TextInput style={styles.input}
+                placeholder="Enter 11-digit mobile number"
+                keyboardType="phone-pad"
+                onChangeText={v => setForm({ ...form, number: v })}
+              />
 
-    const handleVerifyAndRegister = async () => {
-        console.log('OTP clicked!');
-        
-        if (!otpData.otp.trim()) {
-            Alert.alert('Error', 'Please enter the verification code');
-            return;
-        }
+              <Text style={styles.label}>Email</Text>
+              <TextInput style={styles.input}
+                placeholder="Enter your email"
+                keyboardType="email-address"
+                autoCapitalize="none"
+                onChangeText={v => setForm({ ...form, email: v })}
+              />
 
-        if (!otpData.otpId) {
-            Alert.alert('Error', 'Missing OTP session. Please resend code.');
-            return;
-        }
+              <Text style={styles.label}>Username</Text>
+              <TextInput style={styles.input}
+                placeholder="Enter a username"
+                onChangeText={v => setForm({ ...form, username: v })}
+              />
 
-        try {
-            setIsLoading(true);
-            
-            const medData = {
-                fname: formData.fname.trim(),
-                lname: formData.lname.trim(),
-                dob: formData.dob,
-                gender: formData.gender.trim(),
-                number: formData.number.trim(),
-                email: formData.email.trim(),
-                username: formData.username.trim(),
-                password: formData.password
-            };
-
-            console.log('Sending registration data:', medData);
-
-            const res = await axios.post(`${API_BASE_URL}/api/auth/verify-email-otp-and-register`, {
-                otpId: otpData.otpId,
-                code: otpData.otp.trim(),
-                medData
-            });
-
-            console.log('Registration successful:', res.data);
-
-            Alert.alert('Success', 'Account registered successfully! Please login.', [
-                { text: 'OK', onPress: () => {
-                    setFormData({
-                        fname: "",
-                        lname: "",
-                        dob: "",
-                        gender: "",
-                        number: "",
-                        email: "",
-                        username: "",
-                        password: "",
-                        confirmPassword: ""
-                    });
-                    setOtpData({
-                        otp: "",
-                        otpId: "",
-                        maskedEmail: "",
-                        expiresAt: ""
-                    });
-                    setStep('form');
-                    navigation.navigate('Login');
-                }}
-            ]);
-        } catch (error) {
-            console.log('Register error:', error);
-            const errorMessage = error?.response?.data?.message || 
-                                error?.response?.data?.error ||
-                                'Verification failed. Please try again.';
-            Alert.alert('Error', errorMessage);
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    const handleResendOtp = async () => {
-        try {
-            setIsLoading(true);
-            console.log('Resending OTP to:', formData.email);
-
-            const res = await axios.post(`${API_BASE_URL}/api/auth/resend-email-otp`, {
-                email: formData.email.trim(),
-                purpose: 'register'
-            });
-
-            setOtpData(prev => ({
-                ...prev,
-                otpId: res.data?.otpId || prev.otpId,
-                maskedEmail: res.data?.maskedEmail || prev.maskedEmail,
-                expiresAt: res.data?.expiresAt || prev.expiresAt
-            }));
-
-            Alert.alert('Success', 'Verification code resent!');
-        } catch (error) {
-            console.log('Resend OTP error:', error);
-            const errorMessage = error?.response?.data?.message || 
-                                error?.response?.data?.error ||
-                                'Failed to resend code.';
-            Alert.alert('Error', errorMessage);
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    const goBack = () => {
-        setStep('form');
-        setOtpData({
-            otp: "",
-            otpId: "",
-            maskedEmail: "",
-            expiresAt: ""
-        });
-    };
-
-    return (
-        <View style={styles.theBody}>
-            <ScrollView contentContainerStyle={styles.scrollContainer}>
-                <View style={styles.regMainCont}>
-                    <Text style={styles.logHead}>REGISTER</Text>
-
-                    {step === 'form' && (
-                        <>
-                            <View style={styles.loginInputs}>
-                                <TextInput 
-                                    style={styles.input} 
-                                    placeholder="First Name"
-                                    value={formData.fname}
-                                    onChangeText={text => setFormData({ ...formData, fname: text })}
-                                    editable={!isLoading}
-                                />
-                                <TextInput 
-                                    style={styles.input} 
-                                    placeholder="Last Name"
-                                    value={formData.lname}
-                                    onChangeText={text => setFormData({ ...formData, lname: text })}
-                                    editable={!isLoading}
-                                />
-                                <TextInput 
-                                    style={styles.input} 
-                                    placeholder="Date of Birth (YYYY-MM-DD)"
-                                    value={formData.dob}
-                                    onChangeText={text => setFormData({ ...formData, dob: text })}
-                                    editable={!isLoading}
-                                />
-                                <TextInput 
-                                    style={styles.input} 
-                                    placeholder="Gender (e.g., Male, Female, Other)"
-                                    value={formData.gender}
-                                    onChangeText={text => setFormData({ ...formData, gender: text })}
-                                    editable={!isLoading}
-                                />
-                                <TextInput 
-                                    style={styles.input} 
-                                    placeholder="Phone Number"
-                                    keyboardType="phone-pad"
-                                    value={formData.number}
-                                    onChangeText={text => setFormData({ ...formData, number: text })}
-                                    editable={!isLoading}
-                                />
-                                <TextInput 
-                                    style={styles.input} 
-                                    placeholder="Email"
-                                    autoCapitalize="none"
-                                    value={formData.email}
-                                    onChangeText={text => setFormData({ ...formData, email: text })}
-                                    editable={!isLoading}
-                                />
-                                <TextInput 
-                                    style={styles.input} 
-                                    placeholder="Username"
-                                    autoCapitalize="none"
-                                    value={formData.username}
-                                    onChangeText={text => setFormData({ ...formData, username: text })}
-                                    editable={!isLoading}
-                                />
-                                <TextInput 
-                                    style={styles.input} 
-                                    placeholder="Password"
-                                    secureTextEntry
-                                    value={formData.password}
-                                    onChangeText={text => setFormData({ ...formData, password: text })}
-                                    editable={!isLoading}
-                                />
-                                <TextInput 
-                                    style={styles.input} 
-                                    placeholder="Confirm Password"
-                                    secureTextEntry
-                                    value={formData.confirmPassword}
-                                    onChangeText={text => setFormData({ ...formData, confirmPassword: text })}
-                                    editable={!isLoading}
-                                />
-                            </View>
-
-                            <TouchableOpacity 
-                                style={styles.logBtn} 
-                                onPress={handleRequestOtp}
-                                disabled={isLoading}
-                            >
-                                <Text style={styles.logBtnText}>
-                                    {isLoading ? 'SENDING CODE...' : 'SIGN UP'}
-                                </Text>
-                            </TouchableOpacity>
-
-                            <TouchableOpacity 
-                                onPress={() => navigation.navigate('Login')}
-                                disabled={isLoading}
-                            >
-                                <Text style={styles.registerText}>Already have an account? Login</Text>
-                            </TouchableOpacity>
-                        </>
-                    )}
-
-                    {step === 'verify' && (
-                        <>
-                            <Text style={styles.subText}>
-                                A verification code has been sent to{'\n'}
-                                <Text style={{ fontWeight: 'bold' }}>{otpData.maskedEmail}</Text>
-                            </Text>
-
-                            <View style={styles.loginInputs}>
-                                <TextInput 
-                                    style={styles.input} 
-                                    placeholder="Enter verification code"
-                                    inputMode="numeric"
-                                    value={otpData.otp}
-                                    onChangeText={text => setOtpData({ ...otpData, otp: text })}
-                                    editable={!isLoading}
-                                />
-                            </View>
-
-                            <TouchableOpacity 
-                                style={styles.logBtn} 
-                                onPress={handleVerifyAndRegister}
-                                disabled={isLoading}
-                            >
-                                <Text style={styles.logBtnText}>
-                                    {isLoading ? 'VERIFYING...' : 'CONTINUE'}
-                                </Text>
-                            </TouchableOpacity>
-
-                            <TouchableOpacity 
-                                onPress={handleResendOtp}
-                                disabled={isLoading}
-                            >
-                                <Text style={styles.registerText}>Resend code</Text>
-                            </TouchableOpacity>
-
-                            <TouchableOpacity 
-                                onPress={goBack}
-                                disabled={isLoading}
-                            >
-                                <Text style={styles.registerText}>Back to sign up</Text>
-                            </TouchableOpacity>
-                        </>
-                    )}
+              <Text style={styles.label}>Password</Text>
+                <View style={styles.passwordWrapper}>
+                  <TextInput
+                    style={styles.passwordInput}
+                    placeholder="Enter your password"
+                    secureTextEntry={!showPassword}
+                    onChangeText={v =>
+                      setForm({ ...form, password: v })
+                    }
+                  />
+                  <TouchableOpacity
+                    style={styles.eyeIcon}
+                    onPress={() => setShowPassword(prev => !prev)}
+                  >
+                    <Ionicons
+                      name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                      size={20}
+                      color="#777"
+                    />
+                  </TouchableOpacity>
                 </View>
+                  {Object.entries({
+                    'At least 8 characters': passwordStatus.length,
+                    'One capital letter': passwordStatus.uppercase,
+                    'One number': passwordStatus.number,
+                    'One special character (!@#$%^&*)': passwordStatus.special,
+                  }).map(([label, ok]) => (
+                    <View key={label} style={{ flexDirection: 'row', alignItems: 'center', marginLeft: 10, marginTop: 5 }}>
+                      <Ionicons
+                        name={ok ? 'checkmark-circle' : 'close-circle'}
+                        color={ok ? '#2ecc71' : '#e74c3c'}
+                        size={16}
+                      />
+                      <Text style={{ marginLeft: 6, color: ok ? '#2ecc71' : '#e74c3c' }}>
+                        {label}
+                      </Text>
+                    </View>
+                  ))}
+
+              <Text style={styles.label}>Confirm Password</Text>
+                <View style={styles.passwordWrapper}>
+                  <TextInput
+                    style={styles.passwordInput}
+                    placeholder="Enter your password"
+                    secureTextEntry={!showPassword}
+                    onChangeText={v =>
+                      setForm({ ...form, password: v })
+                    }
+                  />
+                  <TouchableOpacity
+                    style={styles.eyeIcon}
+                    onPress={() => setShowPassword(prev => !prev)}
+                  >
+                    <Ionicons
+                      name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                      size={20}
+                      color="#777"
+                    />
+                  </TouchableOpacity>
+                </View>
+                {confirmPassword.length > 0 && (
+                  <Text style={{ color: passwordsMatch ? '#2ecc71' : '#e74c3c' }}>
+                    {passwordsMatch ? 'Passwords match' : 'Passwords do not match'}
+                  </Text>
+                )}
+
+                <Text style={styles.terms}>
+                  By signing up, you agree to our
+                  <Text
+                    style={[
+                      styles.terms,
+                      { fontWeight: '700', 
+                        opacity: pressed ? 0.5 : 1 }, 
+                        pressed && { textDecorationLine: 'underline' }
+                    ]}
+                    //onPress={() => navigation.navigate('Login')}
+                    onPressIn={() => setPressed(true)}
+                    onPressOut={() => setPressed(false)}
+                  >
+                    {' '}Terms and Conditions
+                  </Text>
+                  {' '}and
+                  <Text
+                    style={[
+                      styles.terms,
+                      { fontWeight: '700', 
+                        opacity: pressed ? 0.5 : 1 }, 
+                        pressed && { textDecorationLine: 'underline' }
+                    ]}
+                    //onPress={() => navigation.navigate('Login')}
+                    onPressIn={() => setPressed(true)}
+                    onPressOut={() => setPressed(false)}
+                  >
+                    {' '}Privacy Policy
+                  </Text>
+                </Text>
+
+              <TouchableOpacity style={styles.primaryBtn} onPress={submitForm}>
+                <Text style={styles.btnText}>Sign Up</Text>
+              </TouchableOpacity>
+
+              <View style={styles.bottomLink}>
+              <Text style={styles.link}>
+                  Already have an account?
+                  <Text
+                    style={[
+                      styles.link,
+                      { fontWeight: '700', 
+                        opacity: pressed ? 0.5 : 1 }, 
+                        pressed && { textDecorationLine: 'underline' }
+                    ]}
+                    onPress={() => navigation.navigate('Login')}
+                    onPressIn={() => setPressed(true)}
+                    onPressOut={() => setPressed(false)}
+                  >
+                    {' '}Sign in here
+                  </Text>
+                </Text>
+              </View>
+
             </ScrollView>
+          )}
+
+          {step === 'otp' && (
+            <>
+              <Text style={styles.title}>OTP</Text>
+              <Text style={styles.subtitle}>
+                Enter the 6-digit one-time pin sent to your email
+              </Text>
+
+              <View style={styles.otpRow}>
+                {otp.map((d, i) => (
+                  <TextInput
+                    key={i}
+                    style={styles.otpBox}
+                    maxLength={1}
+                    keyboardType="numeric"
+                    onChangeText={v => {
+                      const copy = [...otp];
+                      copy[i] = v;
+                      setOtp(copy);
+                    }}
+                  />
+                ))}
+              </View>
+
+              <TouchableOpacity
+                style={[
+                  styles.primaryBtn,
+                  !isOtpComplete && styles.disabled,
+                ]}
+                disabled={!isOtpComplete}
+                onPress={verifyOtp}
+              >
+                <Text style={styles.btnText}>Continue</Text>
+              </TouchableOpacity>
+
+              <Text style={styles.link}>
+                Didn’t receive OTP? Resend code.
+              </Text>
+            </>
+          )}
+
         </View>
-    );
+      </View>
+    </View>
+  );
 }
-
-const styles = StyleSheet.create({
-    theBody: {
-        flex: 1,
-        backgroundColor: '#f5f5f5',
-    },
-    scrollContainer: {
-        paddingVertical: 40,
-        paddingHorizontal: 20,
-    },
-    regMainCont: {
-        backgroundColor: '#fff',
-        padding: 25,
-        borderRadius: 15,
-        elevation: 4,
-    },
-    logHead: {
-        fontSize: 28,
-        fontWeight: 'bold',
-        textAlign: 'center',
-        marginBottom: 25,
-        color: '#333',
-    },
-    subText: {
-        fontSize: 14,
-        textAlign: 'center',
-        marginBottom: 20,
-        color: '#666',
-    },
-    loginInputs: {
-        marginBottom: 10,
-    },
-    input: {
-        height: 45,
-        borderColor: '#ddd',
-        borderWidth: 1,
-        borderRadius: 8,
-        paddingHorizontal: 12,
-        marginBottom: 12,
-        backgroundColor: '#fafafa',
-    },
-    logBtn: {
-        backgroundColor: '#28a745',
-        borderRadius: 8,
-        height: 45,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginTop: 10,
-        marginBottom: 20,
-    },
-    logBtnText: {
-        color: '#fff',
-        fontSize: 16,
-        fontWeight: 'bold',
-    },
-    registerText: {
-        color: '#007AFF',
-        textAlign: 'center',
-        fontSize: 14,
-        marginTop: 10,
-    },
-});
-
-export default Register;

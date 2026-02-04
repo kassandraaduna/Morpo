@@ -1,363 +1,267 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, useWindowDimensions, ScrollView, KeyboardAvoidingView, Modal, } from 'react-native';
-import axios from 'axios';
+import { View, Text, TextInput, TouchableOpacity, Alert, StyleSheet, Image,} from 'react-native';
+import { login, verifyLoginOtp, resendLoginOtp } from './src/services/authService';
+import { BlurView } from 'expo-blur';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import Ionicons from 'react-native-vector-icons/Ionicons';
+import styles from './src/styles/Styles';
+import {toastError, toastSuccess} from './src/components/ToastMsg';
 
-const API_BASE_URL = 'http://192.168.1.18:8000';
-
-function Login({ navigation }) {
-  const { width, height } = useWindowDimensions();
-  const scale = Math.min(width, height) / 400;
-
+export default function Login({ navigation }) {
   const [step, setStep] = useState('login');
-  const [loading, setLoading] = useState(false);
+  const [form, setForm] = useState({ usernameOrEmail: '', password: '' });
+  const [otp, setOtp] = useState(['', '', '', '', '', '']);
+  const [otpId, setOtpId] = useState('');
+  const [emailForOtp, setEmailForOtp] = useState('');
+  const [showDisclaimer, setShowDisclaimer] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [pressed, setPressed] = useState(false);
 
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const isOtpComplete = otp.every(d => d !== '');
 
-  // ===== DISCLAIMER STATE =====
-  const [showDisclaimer, setShowDisclaimer] = useState(true);
-  const [disclaimerChecked, setDisclaimerChecked] = useState(false);
+  useEffect(() => {
+    (async () => {
+      const accepted = await AsyncStorage.getItem('disclaimerAccepted');
+      if (!accepted) setShowDisclaimer(true);
+    })();
+  }, []);
 
-  // ===== OTP STATE =====
-  const [otpData, setOtpData] = useState({
-    otp: '',
-    otpId: '',
-    maskedEmail: '',
-    email: '',
-    expiresAt: ''
-  });
-
-  // ===== LOGIN HANDLER =====
   const handleLogin = async () => {
-    if (!email.trim() || !password.trim()) {
-      Alert.alert('Error', 'Please enter email and password');
+    const usernameOrEmail = String(form.usernameOrEmail || '').trim();
+    const password = String(form.password || '');
+
+    if (!usernameOrEmail || !password) {
+      toastError('Please fill in all fieds.');
       return;
     }
-
-    setLoading(true);
-
+  
     try {
-      const response = await axios.post(`${API_BASE_URL}/api/auth/login`, {
-        usernameOrEmail: email.trim(),
-        password: password.trim(),
+      console.log('LOGIN PAYLOAD', {
+        usernameOrEmail,
+        password,
       });
-
-      if (response.data?.mfaRequired) {
-        setOtpData({
-          otp: '',
-          otpId: response.data.otpId,
-          maskedEmail: response.data.maskedEmail,
-          email: response.data.email,
-          expiresAt: response.data.expiresAt
-        });
+      
+      const res = await login({ usernameOrEmail, password });
+  
+      // MFA flow
+      if (res.data?.mfaRequired) {
+        setOtpId(res.data.otpId);
+        setEmailForOtp(res.data.email);
         setStep('otp');
-      } else {
-        Alert.alert('Success', 'Login successful!');
-        navigation.replace('Homepage');
+        return;
       }
-    } catch (error) {
+  
+      const user = res.data?.data?.user;
+      if (!user) throw new Error('User missing');
+  
+      await AsyncStorage.setItem('user', JSON.stringify(user));
+      navigation.replace('MainTabs');
+  
+    } catch (err) {
+      const status = err?.response?.status;
+      const msg = err?.response?.data?.message;
+
+      if (status === 403 && msg?.toLowerCase().includes('Too many login attempts')) {
+        toastError('Account is deactivated. Please contact admin.');
+        return;
+      }
+      if (status === 401) {
+        toastError('Incorrect username or password.');
+        return;
+      }
+      if (status === 404) {
+        toastError('Account does not exist.');
+        return;
+      }
+      toastError(msg || 'Network error');
+    }
+    
+  };
+
+  const handleOtp = async () => {
+    try {
+      const code = otp.join('');
+  
+      const res = await verifyLoginOtp({
+        otpId,
+        code,
+      });
+  
+      const user = res.data?.data?.user;
+      if (!user) throw new Error('User data missing after OTP');
+  
+      await AsyncStorage.setItem('user', JSON.stringify(user));
+      routeAfterLogin(user);
+  
+    } catch (e) {
       Alert.alert(
-        'Login Error',
-        error.response?.data?.message || 'Login failed'
+        'Invalid OTP',
+        e.response?.data?.message || 'OTP verification failed'
       );
-    } finally {
-      setLoading(false);
     }
   };
 
-  // ===== OTP VERIFY =====
-  const handleVerifyOtp = async () => {
-    if (!otpData.otp.trim()) {
-      Alert.alert('Error', 'Please enter OTP');
+  const routeAfterLogin = (user) => {
+    if (user.mustChangePassword) {
+      navigation.replace('ResetPassword');
       return;
     }
-
-    setLoading(true);
-
-    try {
-      await axios.post(
-        `${API_BASE_URL}/api/auth/verify-login-otp`,
-        {
-          otpId: otpData.otpId,
-          code: otpData.otp
-        }
-      );
-
-      Alert.alert('Success', 'Login successful!');
-      navigation.replace('Homepage');
-    } catch (error) {
-      Alert.alert(
-        'Verification Error',
-        error.response?.data?.message || 'OTP verification failed'
-      );
-    } finally {
-      setLoading(false);
+  
+    if ((user.role || '').toLowerCase() === 'instructor') {
+      navigation.replace('InstructorHomepage');
+      return;
     }
-  };
-
-  const handleResendOtp = async () => {
-    setLoading(true);
-
-    try {
-      await axios.post(
-        `${API_BASE_URL}/api/auth/resend-login-otp`,
-        { otpId: otpData.otpId }
-      );
-      Alert.alert('Success', 'OTP sent to ' + otpData.maskedEmail);
-    } catch (error) {
-      Alert.alert(
-        'Error',
-        error.response?.data?.message || 'Failed to resend OTP'
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const goBackToLogin = () => {
-    setStep('login');
-    setEmail('');
-    setPassword('');
-    setOtpData({
-      otp: '',
-      otpId: '',
-      maskedEmail: '',
-      email: '',
-      expiresAt: ''
-    });
-  };
+  
+    toastSuccess('Login successful');
+    navigation.replace('MainTabs');
+  };  
 
   return (
-    <KeyboardAvoidingView style={styles.container} behavior="padding">
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
-        
-        {/* LOGO */}
-        <View style={[styles.logoBox, { width: 80 * scale, height: 80 * scale }]}>
-          <Text style={styles.logoText}>LOGO</Text>
-        </View>
+    <View style={styles.screen}>
+      <View style={styles.shell}>
 
-        {step === 'login' ? (
-          <>
-            <Text style={[styles.heading, { fontSize: 24 * scale }]}>SIGN IN</Text>
-            <Text style={styles.subheading}>
-              SIGN IN TO YOUR ACCOUNT TO GET STARTED.
-            </Text>
+        <Image source={require('../assets/mypholens_logo.png')} style={styles.logo} />
 
-            <TextInput
-              style={styles.input}
-              placeholder="Enter your email"
-              value={email}
-              onChangeText={setEmail}
-              keyboardType="email-address"
-            />
+        <View style={styles.card}>
 
-            <TextInput
-              style={styles.input}
-              placeholder="Enter your password"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-            />
-
-            <TouchableOpacity>
-              <Text style={styles.forgotPassword}>FORGOT PASSWORD?</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={handleLogin}
-              style={styles.signInButton}
-              disabled={loading}
-            >
-              <Text style={styles.signInButtonText}>
-                {loading ? 'SIGNING IN...' : 'SIGN IN'}
+          {step === 'login' && (
+            <>
+              <Text style={styles.title}>SIGN IN</Text>
+              <Text style={styles.subtitle}>
+                Sign in to your account to get started.
               </Text>
-            </TouchableOpacity>
 
-            <View style={styles.signUpContainer}>
-              <Text style={styles.signUpText}>DON'T HAVE AN ACCOUNT YET? </Text>
-              <TouchableOpacity onPress={() => navigation.navigate('Register')}>
-                <Text style={styles.signUpLink}>SIGN UP HERE.</Text>
-              </TouchableOpacity>
-            </View>
-          </>
-        ) : (
-          <>
-            <Text style={styles.heading}>VERIFY OTP</Text>
-            <Text style={styles.subheading}>
-              Enter the OTP sent to {otpData.maskedEmail}
-            </Text>
-
-            <TextInput
-              style={styles.input}
-              placeholder="Enter OTP"
-              value={otpData.otp}
-              onChangeText={(text) =>
-                setOtpData({ ...otpData, otp: text })
-              }
-              keyboardType="number-pad"
-            />
-
-            <TouchableOpacity
-              onPress={handleVerifyOtp}
-              style={styles.signInButton}
-            >
-              <Text style={styles.signInButtonText}>VERIFY OTP</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity onPress={handleResendOtp}>
-              <Text style={styles.signUpLink}>RESEND OTP</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity onPress={goBackToLogin}>
-              <Text style={styles.signUpLink}>← BACK TO LOGIN</Text>
-            </TouchableOpacity>
-          </>
-        )}
-
-        {/* ===== DISCLAIMER MODAL ===== */}
-        <Modal visible={showDisclaimer} transparent animationType="fade">
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContainer}>
-
-              <Text style={styles.modalTitle}>DISCLAIMER</Text>
-
-              <ScrollView style={{ maxHeight: 200 }}>
-                <Text style={styles.modalText}>
-                  This application is intended to be an aid for learning only and
-                  is not designed for clinical diagnosis or medical decision-making,
-                  nor intended to replace traditional classroom and laboratory
-                  learning practices.
-                </Text>
-              </ScrollView>
-
-              <TouchableOpacity
-                style={styles.checkboxRow}
-                onPress={() =>
-                  setDisclaimerChecked(!disclaimerChecked)
-                }
-              >
-                <View
-                  style={[
-                    styles.checkbox,
-                    disclaimerChecked && styles.checkboxChecked
-                  ]}
+              <Text style={styles.label}>Email</Text>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Enter your username/email"
+                  autoCapitalize="none"
+                  onChangeText={v =>
+                    setForm({ ...form, usernameOrEmail: v })
+                  }
                 />
-                <Text style={styles.checkboxText}>
-                  I understand and agree
-                </Text>
-              </TouchableOpacity>
+
+              <Text style={styles.label}>Password</Text>
+                <View style={styles.passwordWrapper}>
+                  <TextInput
+                    style={styles.passwordInput}
+                    placeholder="Enter your password"
+                    secureTextEntry={!showPassword}
+                    onChangeText={v =>
+                      setForm({ ...form, password: v })
+                    }
+                  />
+
+                  <TouchableOpacity
+                    style={styles.eyeIcon}
+                    onPress={() => setShowPassword(prev => !prev)}
+                  >
+                    <Ionicons
+                      name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                      size={20}
+                      color="#777"
+                    />
+                  </TouchableOpacity>
+                </View>
 
               <TouchableOpacity
-                disabled={!disclaimerChecked}
-                onPress={() => {
-                  setShowDisclaimer(false);
-                  setDisclaimerChecked(false);
-                }}
-                style={[
-                  styles.continueButton,
-                  { opacity: disclaimerChecked ? 1 : 0.5 }
-                ]}
+                style={styles.forgotWrapper}
+                onPress={() => navigation.navigate('ResetPassword')}
               >
-                <Text style={styles.continueText}>CONTINUE</Text>
+                <Text style={styles.forgotText}>Forgot password?</Text>
               </TouchableOpacity>
 
-            </View>
-          </View>
-        </Modal>
+              <TouchableOpacity style={styles.primaryBtn} onPress={handleLogin}>
+                <Text style={styles.btnText}>Sign in</Text>
+              </TouchableOpacity>
 
-      </ScrollView>
-    </KeyboardAvoidingView>
+            <View style={styles.bottomLink}>
+              <Text style={styles.link}>
+                  Don't have an account yet?
+                  <Text
+                    style={[
+                      styles.link,
+                      { fontWeight: '700', 
+                        opacity: pressed ? 0.5 : 1 }, 
+                        pressed && { textDecorationLine: 'underline' }
+                    ]}
+                    onPress={() => navigation.navigate('Register')}
+                    onPressIn={() => setPressed(true)}
+                    onPressOut={() => setPressed(false)}
+                  >
+                    {' '}Sign up here
+                  </Text>
+                </Text>
+              </View>
+            </>
+          )}
+
+          {step === 'otp' && (
+            <>
+              <Text style={styles.title}>OTP</Text>
+              <Text style={styles.subtitle}>
+                Enter the 6-digit one-time pin sent to your email
+              </Text>
+
+              <View style={styles.otpRow}>
+                {otp.map((_, i) => (
+                  <TextInput
+                    key={i}
+                    style={styles.otpBox}
+                    maxLength={1}
+                    keyboardType="numeric"
+                    onChangeText={v => {
+                      const copy = [...otp];
+                      copy[i] = v;
+                      setOtp(copy);
+                    }}
+                  />
+                ))}
+              </View>
+
+              <TouchableOpacity
+                style={[styles.primaryBtn, !isOtpComplete && styles.disabled]}
+                disabled={!isOtpComplete}
+                onPress={handleOtp}
+              >
+                <Text style={styles.btnText}>Continue</Text>
+              </TouchableOpacity>
+
+              <Text
+                style={styles.link}
+                onPress={() => resendLoginOtp(emailForOtp)}
+              >
+                Didn’t receive OTP? Resend code.
+              </Text>
+            </>
+          )}
+
+          {showDisclaimer && (
+            <View style={styles.overlay}>
+              <BlurView intensity={70} tint="light" style={StyleSheet.absoluteFill} />
+
+              <View style={styles.disclaimerCard}>
+                <Text style={styles.disclaimerTitle}>DISCLAIMER</Text>
+                <Text style={styles.disclaimerText}>
+                  THIS APPLICATION IS INTENDED FOR EDUCATIONAL PURPOSES ONLY AND IS
+                  NOT DESIGNED FOR CLINICAL DIAGNOSIS OR MEDICAL DECISION-MAKING.
+                </Text>
+
+                <TouchableOpacity
+                  style={styles.primaryBtn}
+                  onPress={async () => {
+                    await AsyncStorage.setItem('disclaimerAccepted', 'true');
+                    setShowDisclaimer(false);
+                  }}
+                >
+                  <Text style={styles.btnText}>CONTINUE</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+        </View>
+      </View>
+    </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
-  scrollContainer: { alignItems: 'center', padding: 20 },
-  logoBox: {
-    borderWidth: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  logoText: { fontWeight: 'bold' },
-  heading: { fontWeight: 'bold', fontSize: 22, marginTop: 10 },
-  subheading: { color: '#666', marginBottom: 20, textAlign: 'center' },
-  input: {
-    width: '100%',
-    borderWidth: 1,
-    borderRadius: 6,
-    padding: 10,
-    marginBottom: 15,
-  },
-  forgotPassword: {
-    color: '#007AFF',
-    alignSelf: 'flex-end',
-    marginBottom: 20,
-  },
-  signInButton: {
-    width: '100%',
-    borderWidth: 1,
-    padding: 12,
-    borderRadius: 6,
-    alignItems: 'center',
-  },
-  signInButtonText: { fontWeight: '600' },
-  signUpContainer: {
-    flexDirection: 'row',
-    marginTop: 30,
-  },
-  signUpText: { color: '#666' },
-  signUpLink: { color: '#007AFF', fontWeight: '600' },
-
-  // ===== MODAL STYLES =====
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalContainer: {
-    width: '85%',
-    backgroundColor: '#fff',
-    padding: 20,
-    borderRadius: 8,
-  },
-  modalTitle: {
-    fontWeight: 'bold',
-    textAlign: 'center',
-    marginBottom: 10,
-  },
-  modalText: {
-    fontSize: 12,
-    lineHeight: 18,
-  },
-  checkboxRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 15,
-  },
-  checkbox: {
-    width: 18,
-    height: 18,
-    borderWidth: 1,
-    marginRight: 10,
-  },
-  checkboxChecked: {
-    backgroundColor: '#000',
-  },
-  checkboxText: {
-    fontSize: 12,
-  },
-  continueButton: {
-    marginTop: 20,
-    borderWidth: 1,
-    padding: 10,
-    borderRadius: 6,
-  },
-  continueText: {
-    textAlign: 'center',
-    fontWeight: '600',
-  },
-});
-
-export default Login;

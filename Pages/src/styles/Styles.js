@@ -1,0 +1,235 @@
+import { StyleSheet } from 'react-native';
+
+const styles = StyleSheet.create({
+    screen: {
+        flex: 1,
+        backgroundColor: '#FFF',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    splashLogoContainer: {
+        flex: 1,
+        backgroundColor: '#FFF',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    splashLogo: {
+        width: 350,
+        height: 300,
+        resizeMode: 'contain',
+    },  
+    shell: {
+        width: '100%',
+        height: '100%',
+        backgroundColor: '#FFF',
+        alignItems: 'center',
+        paddingTop: 10,
+    },
+    card: {
+        width: '100%',
+        flex: 1,
+        backgroundColor: '#FFE6EB',
+        borderRadius: 28,
+        padding: 25,
+    },
+    bottomLink: {
+        marginTop: 'auto',
+        paddingBottom: 20,
+        alignItems: 'center',
+    },      
+    logo: {
+        width: 350,
+        height: 300,
+        resizeMode: 'contain',
+    },  
+    title: {
+        fontSize: 32,
+        fontWeight: '700',
+        textAlign: 'center',
+        marginBottom: 6,
+    },
+    subtitle: {
+        fontSize: 16,
+        textAlign: 'center',
+        color: '#555',
+        marginBottom: 18,
+    },  
+    input: {
+        height: 45,
+        backgroundColor: '#FFF',
+        borderRadius: 50,
+        paddingHorizontal: 14,
+        marginBottom: 12,
+    },
+    primaryBtn: {
+        backgroundColor: '#BEEA4B',
+        borderRadius: 28,
+        paddingVertical: 14,
+        alignItems: 'center',
+        marginTop: 12,
+    },
+    disabled: {
+        opacity: 0.5,
+    },
+    btnText: {
+        fontWeight: '700',
+        color: '#000',
+        fontSize: 20,
+    },
+    label: {
+        fontSize: 14,
+        fontWeight: '600',
+        marginTop: 10,
+        marginBottom: 5,
+        color: '#000',
+    },
+    passwordWrapper: {
+        position: 'relative',
+        marginBottom: 5,
+    },
+    passwordInput: {
+        height: 46,
+        backgroundColor: '#FFF',
+        borderRadius: 30,
+        paddingHorizontal: 16,
+        paddingRight: 50,
+    },
+    eyeIcon: {
+        position: 'absolute',
+        right: 14,
+        top: 13,
+    },
+    forgotWrapper: {
+        alignSelf: 'flex-end',
+        marginTop: 6,
+        marginBottom: 14,
+    },
+    forgotText: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#000',
+    },
+    link: {
+        textAlign: 'center',
+        fontSize: 14,
+        margin: 25,
+        color: '#444',
+    },
+    terms: {
+        textAlign: 'center',
+        fontSize: 13,
+        marginTop: 25,
+        paddingBottom: 20,
+        color: '#444',
+    },
+    otpRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        marginBottom: 18,
+    },
+    otpBox: {
+        width: 42,
+        height: 48,
+        backgroundColor: '#FFF',
+        borderRadius: 10,
+        textAlign: 'center',
+        fontSize: 18,
+    },  
+    overlay: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 100,
+    },
+    disclaimerCard: {
+        width: '85%',
+        backgroundColor: '#FFE6EB',
+        borderRadius: 26,
+        padding: 22,
+    },
+    disclaimerTitle: {
+        fontWeight: '700',
+        textAlign: 'center',
+        marginBottom: 10,
+    },
+    disclaimerText: {
+        fontSize: 13,
+        textAlign: 'center',
+        lineHeight: 16,
+        marginBottom: 18,
+    },
+    checkboxRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 18,
+    },
+    checkbox: {
+        width: 16,
+        height: 16,
+        borderWidth: 1,
+        borderRadius: 3,
+        marginRight: 8,
+    },  
+    checkboxText: {
+        fontSize: 13,
+    },
+    slide: {
+        alignItems: 'center',
+        paddingTop: 40,
+    },
+    image: {
+        width: 260,
+        height: 200,
+        resizeMode: 'contain',
+        marginBottom: 20,
+    },
+    onboardingCard: {
+        backgroundColor: '#F8BBD0',
+        borderRadius: 26,
+        padding: 20,
+        width: '85%',
+    },
+    onboardingTitle: {
+        fontWeight: '700',
+        textAlign: 'center',
+        marginBottom: 8,
+    },
+    text: {
+        fontSize: 13,
+        textAlign: 'center',
+    },
+    skip: {
+        fontSize: 13,
+        alignSelf: 'flex-end',
+        marginRight: 30,
+        marginTop: 8,
+    },
+    btn: {
+        marginTop: 30,
+        backgroundColor: '#BEEA4B',
+        paddingHorizontal: 60,
+        paddingVertical: 14,
+        borderRadius: 30,
+    },
+    btnText: {
+        fontWeight: '700',
+    },
+    dot: {
+        backgroundColor: '#DDD',
+        width: 6,
+        height: 6,
+        borderRadius: 3,
+    },
+    activeDot: {
+        backgroundColor: '#000',
+        width: 6,
+        height: 6,
+        borderRadius: 3,
+    },
+});
+
+export default styles;
