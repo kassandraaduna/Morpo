@@ -1,10 +1,12 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useContext } from 'react';
 import { View, Animated, Easing } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import styles from './src/styles/Styles';
+import { ThemeContext } from './src/context/ThemeContext';
 
 export default function Splash({ navigation }) {
     const scaleAnim = useRef(new Animated.Value(1)).current;
+    const { theme, darkMode, toggleTheme } = useContext(ThemeContext);
 
     useEffect(() => {
         Animated.loop(
@@ -41,7 +43,7 @@ export default function Splash({ navigation }) {
     }, []);
 
     return (
-        <View style={styles.screen}>
+        <View style={[styles.screen, {backgroundColor: theme.bg}]}>
             <View style={styles.splashLogoContainer}>
                 <Animated.Image
                     source={require('../assets/mypholens_logo.png')}
