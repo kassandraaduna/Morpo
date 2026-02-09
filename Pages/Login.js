@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useRef } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { BlurView } from 'expo-blur';
@@ -18,8 +18,15 @@ export default function Login({ navigation }) {
   const [showDisclaimer, setShowDisclaimer] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [pressed, setPressed] = useState(false);
-
   const { theme, darkMode } = useContext(ThemeContext);
+
+  const RESEND_SECONDS = 60;
+  const [resendTimer, setResendTimer] = useState(0);
+  const [canResend, setCanResend] = useState(true);
+
+  const [loginValid, setLoginValid] = useState(false);
+
+  const otpRefs = useRef([]);
 
   const isOtpComplete = otp.every(d => d !== '');
 
@@ -31,23 +38,38 @@ export default function Login({ navigation }) {
     })();
   }, []);
 
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  const validators = {
+    usernameOrEmail: v => {
+      const value = v.trim();
+
+      if (!value) return false;
+      if (emailRegex.test(value)) return true;
+      return value.length >= 4;
+    },
+    password: v => v.length > 0,
+  };
+
   /* ============ LOGIN ============ */
   const handleLogin = async () => {
-    const usernameOrEmail = String(form.usernameOrEmail || '').trim();
-    const password = String(form.password || '');
-
-    if (!usernameOrEmail || !password) {
-      toastError('Please fill in all fields.');
-      return;
+    if (!loginValid) {
+      return toastError('Please enter valid credentials.');
     }
 
     try {
-      const res = await login({ usernameOrEmail, password });
+      const res = await login({
+        usernameOrEmail: form.usernameOrEmail.trim(),
+        password: form.password,
+      });
 
       if (res.data?.mfaRequired) {
         setOtpId(res.data.otpId);
         setEmailForOtp(res.data.email);
         setStep('otp');
+
+        setResendTimer(RESEND_SECONDS);
+        setCanResend(false);
         return;
       }
 
@@ -64,13 +86,18 @@ export default function Login({ navigation }) {
       }
     } catch (err) {
       const status = err?.response?.status;
-      const msg = err?.response?.data?.message;
+      const msg = err?.response?.data?.message?.toLowerCase?.() || '';
 
-      if (status === 403) return toastError('Account is deactivated.');
-      if (status === 401) return toastError('Incorrect credentials.');
-      if (status === 404) return toastError('Account not found.');
-
-      toastError(msg || 'Network error');
+      if (msg.includes('not found')) {
+        return toastError('Account not found.');
+      }
+      if (status === 403) {
+        return toastError('Account is deactivated.');
+      }
+      if (status === 401) {
+        return toastError('Incorrect credentials.');
+      }
+      toastError(err?.response?.data?.message || 'Network error');
     }
   };
 
@@ -95,6 +122,36 @@ export default function Login({ navigation }) {
     }
   };
 
+  useEffect(() => {
+    const ok =
+      validators.usernameOrEmail(form.usernameOrEmail || '') &&
+      validators.password(form.password || '');
+
+    setLoginValid(ok);
+  }, [form]);
+
+  useEffect(() => {
+    if (!canResend && resendTimer > 0) {
+      const t = setTimeout(() => {
+        setResendTimer(s => s - 1);
+      }, 1000);
+
+      return () => clearTimeout(t);
+    }
+
+    if (resendTimer === 0) {
+      setCanResend(true);
+    }
+  }, [resendTimer, canResend]);
+
+  useEffect(() => {
+    if (step === 'otp') {
+      setTimeout(() => {
+        otpRefs.current[0]?.focus();
+      }, 300);
+    }
+  }, [step]);
+
   return (
     <View style={[styles.screen, { backgroundColor: theme.bg }]}>
       <View style={styles.shell}>
@@ -109,7 +166,7 @@ export default function Login({ navigation }) {
             { backgroundColor: theme.card },
           ]}
         >
-          {/* LOGIN */}
+
           {step === 'login' && (
             <>
               <Text style={[styles.title, { color: theme.text }]}>
@@ -208,11 +265,10 @@ export default function Login({ navigation }) {
             </>
           )}
 
-          {/* OTP */}
           {step === 'otp' && (
             <>
               <Text style={[styles.title, { color: theme.text }]}>
-                OTP
+                VERIFY IT'S YOU
               </Text>
 
               <Text style={[styles.subtitle, { color: theme.subText }]}>
@@ -220,19 +276,41 @@ export default function Login({ navigation }) {
               </Text>
 
               <View style={styles.otpRow}>
-                {otp.map((_, i) => (
+                {otp.map((digit, i) => (
                   <TextInput
                     key={i}
+                    ref={ref => (otpRefs.current[i] = ref)}
                     style={[
                       styles.otpBox,
                       { color: theme.text, borderColor: theme.subText },
                     ]}
+                    value={digit}
                     maxLength={1}
                     keyboardType="numeric"
+                    textAlign="center"
                     onChangeText={v => {
                       const copy = [...otp];
                       copy[i] = v;
                       setOtp(copy);
+                      if (v && i < otp.length - 1) {
+                        otpRefs.current[i + 1]?.focus();
+                      }
+                      if (v && i === otp.length - 1) {
+                        setTimeout(() => {
+                          if (copy.every(d => d !== '')) {
+                            handleOtp();
+                          }
+                        }, 150);
+                      }
+                    }}
+                    onKeyPress={({ nativeEvent }) => {
+                      if (
+                        nativeEvent.key === 'Backspace' &&
+                        otp[i] === '' &&
+                        i > 0
+                      ) {
+                        otpRefs.current[i - 1]?.focus();
+                      }
                     }}
                   />
                 ))}
@@ -249,16 +327,39 @@ export default function Login({ navigation }) {
                 <Text style={styles.btnText}>Continue</Text>
               </TouchableOpacity>
 
-              <Text
-                style={[styles.link, { color: theme.subText }]}
-                onPress={() => resendLoginOtp(emailForOtp)}
+              <TouchableOpacity
+                disabled={!canResend}
+                onPress={async () => {
+                  try {
+                    await resendLoginOtp(emailForOtp);
+                    toastSuccess('OTP resent');
+
+                    setOtp(['', '', '', '', '', '']);
+                    setTimeout(() => {
+                      otpRefs.current[0]?.focus();
+                    }, 200);
+
+                    setResendTimer(RESEND_SECONDS);
+                    setCanResend(false);
+                  } catch (e) {
+                    toastError(e.response?.data?.message || 'Failed to resend OTP');
+                  }
+                }}
               >
-                Didn’t receive OTP? Resend code.
-              </Text>
+                <Text
+                  style={[
+                    styles.link,
+                    { color: canResend ? theme.subText : '#999' },
+                  ]}
+                >
+                  {canResend
+                    ? 'Didn’t receive OTP? Resend code'
+                    : `Resend available in ${resendTimer}s`}
+                </Text>
+              </TouchableOpacity>
             </>
           )}
 
-          {/* DISCLAIMER */}
           {showDisclaimer && (
             <View style={styles.overlay}>
               <BlurView

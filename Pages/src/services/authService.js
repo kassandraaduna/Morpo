@@ -20,7 +20,6 @@ export const requestRegisterOtp = email =>
 export const verifyRegisterOtp = data =>
     api.post('/auth/verify-email-otp-and-register', data);
 
-
 export const saveUser = async (user) => {
     await AsyncStorage.setItem('user', JSON.stringify(user));
 };
@@ -33,3 +32,12 @@ export const getUser = async () => {
 export const logout = async () => {
     await AsyncStorage.removeItem('user');
 };
+
+export const checkUsername = username =>
+    api.post('/auth/check-username', { username });
+
+export const checkEmail = email =>
+    api.post('/auth/check-email', { email });
+
+export const checkNumber = number =>
+    api.post('/auth/check-number', { number });

@@ -10,6 +10,11 @@ import ResetPasswordScreen from './Pages/ResetPasswordScreen';
 import StudentBottomTab from './Pages/navigation/StudentBottomTab';
 import InstructorBottomTab from './Pages/navigation/InstructorBottomTab';
 import EditProfile from './Pages/EditProfile';
+import Terms from './Pages/Terms';
+import Privacy from './Pages/Privacy';
+import ChangePassword from './Pages/ChangePassword';
+import FAQs from './Pages/FAQs';
+import About from './Pages/About';
 
 const Stack = createStackNavigator();
 
@@ -61,6 +66,11 @@ export default function AppController() {
         <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
         <Stack.Screen name="StudentBottomTab" component={StudentBottomTab} />
         <Stack.Screen name="EditProfile" component={EditProfile} />
+        <Stack.Screen name="Termms" component={Terms} />
+        <Stack.Screen name="Privacy" component={Privacy} />
+        <Stack.Screen name="ChangePassword" component={ChangePassword} />
+        <Stack.Screen name="FAQs" component={FAQs} />
+        <Stack.Screen name="About" component={About} />
         <Stack.Screen name="InstructorBottomTab" component={InstructorBottomTab} />
       </Stack.Navigator>
     </NavigationContainer>
