@@ -10,6 +10,11 @@ import { ThemeContext } from './src/context/ThemeContext';
 const API_URL = 'http://192.168.1.24:8000/api/auth';
 
 export default function ResetPasswordScreen({ navigation }) {
+  const RESEND_SECONDS = 60;
+
+  const [resendTimer, setResendTimer] = useState(0);
+  const [canResend, setCanResend] = useState(true);
+
   const { theme } = useContext(ThemeContext);
   const [step, setStep] = useState('email');
   const [loading, setLoading] = useState(false);
@@ -17,8 +22,11 @@ export default function ResetPasswordScreen({ navigation }) {
   const [email, setEmail] = useState('');
   const [otpId, setOtpId] = useState('');
   const [otp, setOtp] = useState(['','','','','','']);
+  const [otpVerified, setOtpVerified] = useState(false);
+
   const [newPassword, setNewPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [confirmPassword, setConfirmPassword] = useState('');
 
   const isOtpComplete = otp.every(d => d !== '');
 
@@ -31,8 +39,13 @@ export default function ResetPasswordScreen({ navigation }) {
         `${API_URL}/request-password-reset-otp`,
         { email }
       );
+
       setOtpId(res.data.otpId);
       setStep('otp');
+
+      setResendTimer(RESEND_SECONDS);
+      setCanResend(false);
+
     } catch (err) {
       toastError(err.response?.data?.message || 'Failed to send OTP');
     } finally {
@@ -41,13 +54,23 @@ export default function ResetPasswordScreen({ navigation }) {
   };
 
   const verifyOtp = async () => {
+    if (!isOtpComplete) return;
+
     try {
       setLoading(true);
-      await axios.post(`${API_URL}/verify-password-reset-otp`, {
-        otpId,
-        code: otp.join(''),
-      });
-      setStep('reset');
+
+      const res = await axios.post(
+        `${API_URL}/verify-password-reset-otp`,
+        {
+          otpId,
+          code: otp.join(''),
+        }
+      );
+
+      if (res.data?.message === 'OTP verified') {
+        setOtpVerified(true);
+        setStep('reset');
+      }
     } catch (err) {
       toastError(err.response?.data?.message || 'Invalid OTP');
     } finally {
@@ -56,23 +79,83 @@ export default function ResetPasswordScreen({ navigation }) {
   };
 
   const resetPassword = async () => {
-    if (!newPassword) return toastError('New password is required');
+    if (!otpVerified) {
+      return toastError('OTP not verified');
+    }
+
+    if (!isPasswordValid) {
+      return toastError('Password does not meet requirements');
+    }
+
+    if (!passwordsMatch) {
+      return toastError('Passwords do not match');
+    }
 
     try {
       setLoading(true);
-      await axios.post(`${API_URL}/verify-password-reset-otp`, {
-        otpId,
-        code: otp.join(''),
-        newPassword,
-      });
+
+      await axios.post(
+        `${API_URL}/verify-password-reset-otp`,
+        {
+          otpId,
+          code: otp.join(''),
+          newPassword,
+        }
+      );
+
       toastSuccess('Password updated successfully');
       navigation.replace('Login');
+
     } catch (err) {
       toastError(err.response?.data?.message || 'Password reset failed');
     } finally {
       setLoading(false);
     }
   };
+
+  const passwordRules = {
+    length: pass => pass.length >= 8,
+    upper: pass => /[A-Z]/.test(pass),
+    number: pass => /\d/.test(pass),
+    special: pass => /[!@#$%^&*]/.test(pass),
+  };
+
+  const passwordChecks = {
+    length: passwordRules.length(newPassword),
+    upper: passwordRules.upper(newPassword),
+    number: passwordRules.number(newPassword),
+    special: passwordRules.special(newPassword),
+  };
+
+  const passwordsMatch = newPassword.length > 0 && confirmPassword.length > 0 && newPassword === confirmPassword;
+
+  const isPasswordValid = Object.values(passwordChecks).every(Boolean);
+
+  const canSubmitPassword = isPasswordValid && passwordsMatch;
+
+  useEffect(() => {
+    return () => {
+      setOtp(['','','','','','']);
+      setOtpId('');
+      setOtpVerified(false);
+      setNewPassword('');
+      setStep('email');
+    };
+  }, []);
+
+  useEffect(() => {
+  if (!canResend && resendTimer > 0) {
+    const timer = setTimeout(() => {
+      setResendTimer(t => t - 1);
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }
+
+  if (resendTimer === 0) {
+    setCanResend(true);
+  }
+}, [resendTimer, canResend]);
 
   useEffect(() => {
     if (step === 'otp') {
@@ -163,7 +246,6 @@ export default function ResetPasswordScreen({ navigation }) {
                       copy[i] = v;
                       setOtp(copy);
 
-                      // Move to next input automatically
                       if (v && i < otp.length - 1) {
                         otpRefs.current[i + 1]?.focus();
                       }
@@ -182,6 +264,36 @@ export default function ResetPasswordScreen({ navigation }) {
               </View>
 
               <TouchableOpacity
+                disabled={!canResend}
+                onPress={async () => {
+                  try {
+                    await axios.post(
+                      `${API_URL}/resend-password-reset-otp`,
+                      { email }
+                    );
+
+                    toastSuccess('OTP resent');
+                    setResendTimer(RESEND_SECONDS);
+                    setCanResend(false);
+
+                  } catch (err) {
+                    toastError(err.response?.data?.message || 'Failed to resend OTP');
+                  }
+                }}
+              >
+                <Text
+                  style={[
+                    styles.link,
+                    { color: canResend ? theme.primary : theme.subText }
+                  ]}
+                >
+                  {canResend
+                    ? 'Didn’t receive OTP? Resend code'
+                    : `Resend available in ${resendTimer}s`}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
                 style={[
                   styles.primaryBtn,
                   !isOtpComplete && styles.disabled,
@@ -195,9 +307,6 @@ export default function ResetPasswordScreen({ navigation }) {
                 }
               </TouchableOpacity>
 
-              <Text style={[styles.link, { color: theme.subText }]}>
-                Didn’t receive OTP? Resend code.
-              </Text>
             </>
           )}
 
@@ -240,8 +349,93 @@ export default function ResetPasswordScreen({ navigation }) {
                 </TouchableOpacity>
               </View>
 
+              <View style={{ marginTop: 12 }}>
+                {[
+                  ['At least 8 characters', passwordChecks.length],
+                  ['One uppercase letter', passwordChecks.upper],
+                  ['One number', passwordChecks.number],
+                  ['One special character (!@#$%^&*)', passwordChecks.special],
+                ].map(([label, ok], i) => (
+                  <View
+                    key={i}
+                    style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}
+                  >
+                    <Ionicons
+                      name={ok ? 'checkmark-circle' : 'close-circle'}
+                      size={16}
+                      color={ok ? '#22c55e' : '#ef4444'}
+                      style={{ marginRight: 6 }}
+                    />
+                    <Text style={{ color: theme.subText, fontSize: 13 }}>
+                      {label}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+
+              <Text style={[styles.label, { color: theme.text, marginTop: 16 }]}>
+                Confirm Password
+              </Text>
+
+              <View style={styles.passwordWrapper}>
+                <TextInput
+                  style={[
+                    styles.passwordInput,
+                    { backgroundColor: theme.search, color: theme.text },
+                  ]}
+                  placeholder="Confirm new password"
+                  placeholderTextColor={theme.subText}
+                  secureTextEntry={!showPassword}
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                />
+
+                <TouchableOpacity
+                  style={styles.eyeIcon}
+                  onPress={() => setShowPassword(p => !p)}
+                >
+                  <Ionicons
+                    name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                    size={20}
+                    color={theme.subText}
+                  />
+                </TouchableOpacity>
+              </View>
+
+              {confirmPassword.length > 0 && !passwordsMatch && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
+                  <Ionicons
+                    name="close-circle"
+                    size={16}
+                    color="#ef4444"
+                    style={{ marginRight: 6 }}
+                  />
+                  <Text style={{ color: '#ef4444', fontSize: 13 }}>
+                    Passwords do not match
+                  </Text>
+                </View>
+              )}
+
+              {passwordsMatch && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
+                  <Ionicons
+                    name="checkmark-circle"
+                    size={16}
+                    color="#22c55e"
+                    style={{ marginRight: 6 }}
+                  />
+                  <Text style={{ color: '#22c55e', fontSize: 13 }}>
+                    Passwords match
+                  </Text>
+                </View>
+              )}
+
               <TouchableOpacity
-                style={styles.primaryBtn}
+                style={[
+                  styles.primaryBtn,
+                  !canSubmitPassword && styles.disabled,
+                ]}
+                disabled={!canSubmitPassword}
                 onPress={resetPassword}
               >
                 {loading
