@@ -15,6 +15,7 @@ import Privacy from './Pages/Privacy';
 import ChangePassword from './Pages/ChangePassword';
 import FAQs from './Pages/FAQs';
 import About from './Pages/About';
+import LessonStudent from './Pages/LessonStudent';
 
 const Stack = createStackNavigator();
 
@@ -72,6 +73,7 @@ export default function AppController() {
         <Stack.Screen name="FAQs" component={FAQs} />
         <Stack.Screen name="About" component={About} />
         <Stack.Screen name="InstructorBottomTab" component={InstructorBottomTab} />
+        <Stack.Screen name="LessonStudent" component={LessonStudent} />
       </Stack.Navigator>
     </NavigationContainer>
   );
