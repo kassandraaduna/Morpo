@@ -7,11 +7,11 @@ const COLORS = {
     light: {
         bg: '#FFFFFF',
         text: '#000000',
-        subText: '#777777',
-        card: '#FADADD',
+        subText: '#000000',
+        card: '#D6EEAA',
         search: '#FFFFFF',
         edit: '#E14B4B',
-        editCard:'#FADADD'
+        editCard:'#D6EEAA'
     },
     dark: {
         bg: '#121212',

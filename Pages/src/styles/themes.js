@@ -1,8 +1,8 @@
 export const COLORS = {
-    background: '#FFECEF',
+    background: '#e7f8f2',
     card: '#FFFFFF',
-    primary: '#C6EA4E',
-    text: '#333333',
+    primary: '#153c2a',
+    text: '#000000',
     muted: '#888888',
     border: '#E5E5E5',
 };  

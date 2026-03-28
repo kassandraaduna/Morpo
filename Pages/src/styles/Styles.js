@@ -3,7 +3,7 @@ import { StyleSheet } from 'react-native';
 const styles = StyleSheet.create({
     screen: {
         flex: 1,
-        backgroundColor: '#FFF',
+        backgroundColor: '#f4f7f5',
         alignItems: 'center',
         justifyContent: 'center',
     },
@@ -24,14 +24,14 @@ const styles = StyleSheet.create({
     shell: {
         width: '100%',
         height: '100%',
-        backgroundColor: '#FFF',
+        backgroundColor: '#f4f7f5',
         alignItems: 'center',
         paddingTop: 10,
     },
     card: {
         width: '100%',
         flex: 1,
-        backgroundColor: '#FFE6EB',
+        backgroundColor: '#e7f8f2',
         borderRadius: 28,
         padding: 25,
     },
@@ -65,7 +65,7 @@ const styles = StyleSheet.create({
         marginBottom: 12,
     },
     primaryBtn: {
-        backgroundColor: '#BEEA4B',
+        backgroundColor: '#153c2a',
         borderRadius: 28,
         paddingVertical: 14,
         alignItems: 'center',
@@ -76,7 +76,7 @@ const styles = StyleSheet.create({
     },
     btnText: {
         fontWeight: '700',
-        color: '#000',
+        color: '#fff',
         fontSize: 20,
     },
     label: {
@@ -153,7 +153,7 @@ const styles = StyleSheet.create({
     },
     disclaimerCard: {
         width: '85%',
-        backgroundColor: '#FFE6EB',
+        backgroundColor: '#e7f8f2',
         borderRadius: 26,
         padding: 22,
     },
@@ -182,7 +182,7 @@ const styles = StyleSheet.create({
         marginBottom: 20,
     },
     onboardingCard: {
-        backgroundColor: '#F8BBD0',
+        backgroundColor: '#e7f8f2',
         borderRadius: 26,
         padding: 20,
         width: '85%',
@@ -233,14 +233,14 @@ const styles = StyleSheet.create({
     },
     scanCard: {
         width: 260,
-        backgroundColor: '#FADADD',
+        backgroundColor: '#e7f8f2',
         borderRadius: 15,
         marginRight: 12,
         marginBottom: 25,
         padding: 10,
     },
     assessmentHighlight: {
-        backgroundColor: '#CDEB9B',
+        backgroundColor: '#e7f8f2',
         borderRadius: 12,
         padding: 14,
         flexDirection: 'row',
@@ -268,7 +268,7 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         gap: 10,
-        backgroundColor: '#F5F5F5',
+        backgroundColor: '#e6eae8',
         borderRadius: 25,
         paddingHorizontal: 15,
         paddingVertical: 10,
@@ -314,7 +314,7 @@ const styles = StyleSheet.create({
     gridIcon: {
         width: 64,
         height: 64,
-        backgroundColor: '#F8E7EB',
+        backgroundColor: '#e7f8f2',
         borderRadius: 12,
         marginBottom: 6,
     },
@@ -389,7 +389,7 @@ const styles = StyleSheet.create({
     },
     topicImage: { 
         height: 90, 
-        backgroundColor: '#FCE9ED' 
+        backgroundColor: '#e7f8f2' 
     },
     topicText: {
         padding: 8,
@@ -402,7 +402,7 @@ const styles = StyleSheet.create({
         marginBottom: 12,
     },
     alertDanger: {
-        backgroundColor: '#F8C9D1',
+        backgroundColor: '#e7f8f2',
     },
     alertWarning: {
         backgroundColor: '#F6E1BE',
@@ -497,7 +497,7 @@ const styles = StyleSheet.create({
         width: 100,
         height: 100,
         borderRadius: 100,
-        backgroundColor: '#FADADD',
+        backgroundColor: '#e7f8f2',
         justifyContent: 'center',
         alignItems: 'center',
     },
@@ -510,7 +510,7 @@ const styles = StyleSheet.create({
         color: '#777',
     },
     accountRow: {
-        backgroundColor: '#FADADD',
+        backgroundColor: '#e7f8f2',
         borderRadius: 10,
         height: 50,
         paddingVertical: 14,
@@ -581,7 +581,7 @@ const styles = StyleSheet.create({
         marginLeft: 6,
     },
     saveBtn: {
-        backgroundColor: '#BEEA4B',
+        backgroundColor: '#153c2a',
         borderRadius: 28,
         paddingVertical: 14,
         alignItems: 'center',

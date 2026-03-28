@@ -11,7 +11,6 @@ export default function Profile({ navigation }) {
   const [confirmLogout, setConfirmLogout] = useState(false);
   const { theme, darkMode, toggleTheme } = useContext(ThemeContext);
 
-  /* ============ LOAD USER ============ */
   useEffect(() => {
     const loadUser = async () => {
       const rawUser = await AsyncStorage.getItem('user');
@@ -27,7 +26,6 @@ export default function Profile({ navigation }) {
 
   if (!user) return null;
 
-  /* ============ REUSABLE ROW ============ */
   const Row = ({ label, onPress, right, chevron = true }) => (
     <TouchableOpacity
       style={[
@@ -63,7 +61,6 @@ export default function Profile({ navigation }) {
         ]}
         contentContainerStyle={{ paddingBottom: 50 }}
       >
-        {/* HEADER */}
         <View style={styles.accountHeader}>
           <View style={styles.headerSide} />
           <Text style={[styles.accountTitle, { color: theme.text }]}>
@@ -72,7 +69,6 @@ export default function Profile({ navigation }) {
           <View style={styles.headerSide} />
         </View>
 
-        {/* PROFILE */}
         <View style={styles.accountProfileRow}>
         <View
           style={[
@@ -117,7 +113,6 @@ export default function Profile({ navigation }) {
           </View>
         </View>
 
-        {/* ACCOUNT */}
         <Row
           label="ACCOUNT INFORMATION"
           onPress={() => navigation.navigate('EditProfile')}
@@ -131,7 +126,6 @@ export default function Profile({ navigation }) {
           onPress={() => navigation.navigate('ScanHistory')}
         />
 
-        {/* GENERAL */}
         <Text
           style={[
             styles.accountSection,
@@ -141,7 +135,6 @@ export default function Profile({ navigation }) {
           GENERAL
         </Text>
 
-        {/* DARK MODE */}
         <Row
           label="DARK MODE"
           chevron={false}
@@ -160,7 +153,6 @@ export default function Profile({ navigation }) {
           onPress={() => navigation.navigate('ChangePassword')}
         />
 
-        {/* SUPPORT */}
         <Text
           style={[
             styles.accountSection,
@@ -184,7 +176,6 @@ export default function Profile({ navigation }) {
           onPress={() => navigation.navigate('About')}
         />
 
-        {/* LOGOUT */}
         <TouchableOpacity
           style={[
             styles.accountLogoutRow,
@@ -203,7 +194,6 @@ export default function Profile({ navigation }) {
         </TouchableOpacity>
       </ScrollView>
 
-      {/* LOGOUT CONFIRMATION */}
       <ConfirmSheet
         visible={confirmLogout}
         title="Log out?"

@@ -4,7 +4,7 @@ import Ionicons from 'react-native-vector-icons/Ionicons';
 import StudentHomepage from '../StudentHomepage';
 import Learn from '../Learn';
 import Scan from '../Scan';
-import Models from '../Models';
+import AssessmentStudent from '../AssessmentStudent';
 import Profile from '../Profile';
 import { ThemeContext } from '../src/context/ThemeContext';
 
@@ -37,8 +37,8 @@ export default function StudentBottomTab() {
             icon = focused ? 'book' : 'book-outline';
           if (route.name === 'Scan')
             icon = focused ? 'camera' : 'camera-outline';
-          if (route.name === 'Models')
-            icon = focused ? 'cube' : 'cube-outline';
+          if (route.name === 'Assessments')
+            icon = focused ? 'clipboard' : 'clipboard-outline';
           if (route.name === 'Profile')
             icon = focused ? 'person' : 'person-outline';
 
@@ -49,7 +49,7 @@ export default function StudentBottomTab() {
       <Tab.Screen name="Home" component={StudentHomepage} />
       <Tab.Screen name="Learn" component={Learn} />
       <Tab.Screen name="Scan" component={Scan} />
-      <Tab.Screen name="Models" component={Models} />
+      <Tab.Screen name="Assessments" component={AssessmentStudent} />
       <Tab.Screen name="Profile" component={Profile} />
     </Tab.Navigator>
   );

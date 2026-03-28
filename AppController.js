@@ -16,6 +16,12 @@ import ChangePassword from './Pages/ChangePassword';
 import FAQs from './Pages/FAQs';
 import About from './Pages/About';
 import LessonStudent from './Pages/LessonStudent';
+import TakeAssessment from './Pages/TakeAssessment';
+import ModelViewerMobile from './Pages/ModelViewerMobile';
+import CreatePractice from './Pages/CreatePractice';
+import StudentMonitoring from './Pages/StudentMonitoring';
+import StudentProgressDetail from './Pages/StudentProgressDetail';
+import UploadLesson from './Pages/UploadLesson';
 
 const Stack = createStackNavigator();
 
@@ -74,6 +80,12 @@ export default function AppController() {
         <Stack.Screen name="About" component={About} />
         <Stack.Screen name="InstructorBottomTab" component={InstructorBottomTab} />
         <Stack.Screen name="LessonStudent" component={LessonStudent} />
+        <Stack.Screen name="TakeAssessment" component={TakeAssessment} />
+        <Stack.Screen name="ModelViewerMobile" component={ModelViewerMobile} />
+        <Stack.Screen name="CreatePractice" component={CreatePractice} />
+        <Stack.Screen name="StudentMonitoring" component={StudentMonitoring} options={{ headerShown: false }} />
+        <Stack.Screen name="StudentProgressDetail" component={StudentProgressDetail} options={{ headerShown: false }} />
+        <Stack.Screen name="UploadLesson" component={UploadLesson} options={{ headerShown: false }} />
       </Stack.Navigator>
     </NavigationContainer>
   );
