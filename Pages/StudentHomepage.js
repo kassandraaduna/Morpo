@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, TextInput, Image, ActivityIndicator, RefreshControl, StyleSheet, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Ionicons from 'react-native-vector-icons/Ionicons';
+import { Ionicons } from '@expo/vector-icons';
 import api, { FILE_BASE } from './src/services/api';
 import { ThemeContext } from './src/context/ThemeContext';
 
@@ -101,8 +101,8 @@ export default function StudentHomepage({ navigation }) {
             { label: '3D MODELS', icon: 'cube-outline', screen: 'Learn' },
             { label: 'LEARN MYCOLOGY', icon: 'book-outline', screen: 'Learn' },
             { label: 'ASSESSMENTS', icon: 'clipboard-outline', screen: 'Assessments' },
-            { label: 'BOOKMARKS', icon: 'bookmark-outline', screen: 'Profile' },
-            { label: 'SCAN HISTORY', icon: 'time-outline', screen: 'Scan' },
+            { label: 'BOOKMARKS', icon: 'bookmark-outline', screen: 'Bookmarks' },
+            { label: 'SCAN HISTORY', icon: 'time-outline', screen: 'ScanHistory' },
           ].map((item, i) => (
             <TouchableOpacity 
                 key={i} 

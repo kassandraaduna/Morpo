@@ -1,26 +1,49 @@
-import React, { useContext, useEffect } from 'react';
-import { 
-    View, 
-    TouchableOpacity, 
-    StyleSheet, 
-    ActivityIndicator, 
-    StatusBar, 
-    Platform 
-} from 'react-native';
+import React, { useContext, useEffect, useState } from 'react';
+import { View, TouchableOpacity, StyleSheet, ActivityIndicator, StatusBar, Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { WebView } from 'react-native-webview';
-import Ionicons from 'react-native-vector-icons/Ionicons';
+import { Ionicons } from '@expo/vector-icons';
 import { ThemeContext } from './src/context/ThemeContext';
 
 const SERVER_URL = 'http://192.168.1.24:8000';
 
 export default function ModelViewerMobile({ route, navigation }) {
-    const { modelTitle, modelUrl, labels } = route.params;
+    const { modelId, modelTitle, modelUrl, labels } = route.params;
     const { theme } = useContext(ThemeContext);
+    const [isBookmarked, setIsBookmarked] = useState(false);
 
     useEffect(() => {
         StatusBar.setHidden(true, 'fade');
         return () => StatusBar.setHidden(false, 'fade');
     }, []);
+
+    useEffect(() => {
+        const checkBookmark = async () => {
+          if (!modelId) return;
+          const stored = await AsyncStorage.getItem('studentBookmarks_v1');
+          if (stored) {
+             const parsed = JSON.parse(stored);
+             if (parsed.models?.includes(modelId)) setIsBookmarked(true);
+          }
+        };
+        checkBookmark();
+    }, [modelId]);
+
+    const toggleBookmark = async () => {
+        if (!modelId) return;
+        const stored = await AsyncStorage.getItem('studentBookmarks_v1');
+        let parsed = stored ? JSON.parse(stored) : { lessons: [], models: [] };
+        if (!parsed.models) parsed.models = [];
+        
+        if (parsed.models.includes(modelId)) {
+            parsed.models = parsed.models.filter(id => id !== modelId);
+            setIsBookmarked(false);
+        } else {
+            parsed.models.push(modelId);
+            setIsBookmarked(true);
+        }
+        await AsyncStorage.setItem('studentBookmarks_v1', JSON.stringify(parsed));
+    };
 
     const getCleanUrl = (path) => {
         if (!path) return '';
@@ -113,6 +136,15 @@ export default function ModelViewerMobile({ route, navigation }) {
         >
             <Ionicons name="close" size={30} color="#fff" />
         </TouchableOpacity>
+
+        {modelId && (
+            <TouchableOpacity 
+                style={localStyles.bookmarkButton} 
+                onPress={toggleBookmark}
+            >
+                <Ionicons name={isBookmarked ? "bookmark" : "bookmark-outline"} size={26} color="#fff" />
+            </TouchableOpacity>
+        )}
         </View>
     );
     }
@@ -136,6 +168,20 @@ export default function ModelViewerMobile({ route, navigation }) {
         position: 'absolute',
         top: Platform.OS === 'ios' ? 50 : 30,
         right: 20,
+        width: 50,
+        height: 50,
+        borderRadius: 25,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.3)',
+        zIndex: 100,
+    },
+    bookmarkButton: {
+        position: 'absolute',
+        top: Platform.OS === 'ios' ? 50 : 30,
+        right: 85,
         width: 50,
         height: 50,
         borderRadius: 25,

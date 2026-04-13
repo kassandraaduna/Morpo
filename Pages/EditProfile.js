@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useContext } from 'react';
 import { View, Text, TextInput, ScrollView, TouchableOpacity, ActivityIndicator, Image, } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Ionicons from 'react-native-vector-icons/Ionicons';
+import { Ionicons } from '@expo/vector-icons';
 import axios from 'axios';
 import * as ImagePicker from 'expo-image-picker';
 import styles from './src/styles/Styles';

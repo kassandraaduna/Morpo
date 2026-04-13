@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useContext } from 'react';
 import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, StyleSheet, TextInput, RefreshControl } from 'react-native';
-import Ionicons from 'react-native-vector-icons/Ionicons';
+import { Ionicons } from '@expo/vector-icons';
 import api from './src/services/api';
 import { ThemeContext } from './src/context/ThemeContext';
 

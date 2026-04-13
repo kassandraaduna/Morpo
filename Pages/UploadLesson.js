@@ -4,7 +4,7 @@ import {
   ActivityIndicator, StyleSheet, Platform, Alert 
 } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
-import Ionicons from 'react-native-vector-icons/Ionicons';
+import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import api from './src/services/api'; 
 import { ThemeContext } from './src/context/ThemeContext';

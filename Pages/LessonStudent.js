@@ -1,13 +1,14 @@
 import React, { useEffect, useState, useContext } from 'react';
 import { View, Text, ActivityIndicator, TouchableOpacity, StyleSheet, Dimensions } from 'react-native';
-import Ionicons from 'react-native-vector-icons/Ionicons';
+import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import Pdf from 'react-native-pdf';
 import api from './src/services/api';
 import { ThemeContext } from './src/context/ThemeContext';
 import styles from './src/styles/Styles';
-import { toastError, toastSuccess } from './src/components/ToastMsg';
+import { toastError } from './src/components/ToastMsg';
 
 const SERVER_URL = 'http://192.168.1.24:8000';
 
@@ -18,11 +19,22 @@ export default function LessonStudent({ route, navigation }) {
   const [lesson, setLesson] = useState(null);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
+  const [isBookmarked, setIsBookmarked] = useState(false);
   
   const [localPdfPath, setLocalPdfPath] = useState(null);
   const [pdfError, setPdfError] = useState('');
 
   useEffect(() => {
+    const checkBookmark = async () => {
+      if (!lessonId) return;
+      const stored = await AsyncStorage.getItem('studentBookmarks_v1');
+      if (stored) {
+         const parsed = JSON.parse(stored);
+         if (parsed.lessons?.includes(lessonId)) setIsBookmarked(true);
+      }
+    };
+    checkBookmark();
+
     if (personalizedLesson) {
       const parts = String(personalizedLesson.content || '').split('|||PDF_URL|||');
       const data = {
@@ -59,6 +71,22 @@ export default function LessonStudent({ route, navigation }) {
     fetchLesson();
   }, [lessonId, personalizedLesson]);
 
+  const toggleBookmark = async () => {
+    if (!lessonId) return;
+    const stored = await AsyncStorage.getItem('studentBookmarks_v1');
+    let parsed = stored ? JSON.parse(stored) : { lessons: [], models: [] };
+    if (!parsed.lessons) parsed.lessons = [];
+    
+    if (parsed.lessons.includes(lessonId)) {
+        parsed.lessons = parsed.lessons.filter(id => id !== lessonId);
+        setIsBookmarked(false);
+    } else {
+        parsed.lessons.push(lessonId);
+        setIsBookmarked(true);
+    }
+    await AsyncStorage.setItem('studentBookmarks_v1', JSON.stringify(parsed));
+  };
+
   const getCleanUrl = (partialPath) => {
     if (!partialPath) return '';
     let cleanPath = partialPath.trim(); 
@@ -74,19 +102,28 @@ export default function LessonStudent({ route, navigation }) {
       const finalUrl = getCleanUrl(partialUrl);
       const safeUrl = encodeURI(finalUrl);
       
+      console.log("Fetching PDF from:", safeUrl); // Debug log
+
       const fileName = `safe_view_${Date.now()}.pdf`;
       const fileUri = `${FileSystem.cacheDirectory}${fileName}`;
       
       const downloadRes = await FileSystem.downloadAsync(safeUrl, fileUri);
       
       if (downloadRes.status === 200) {
-        setLocalPdfPath(downloadRes.uri);
+        // FIX 2: Check if the server actually sent us a PDF or just an HTML error page
+        const contentType = downloadRes.headers['Content-Type'] || downloadRes.headers['content-type'] || '';
+        
+        if (contentType.includes('text/html')) {
+          setPdfError('The server returned a web page instead of a PDF document.');
+        } else {
+          setLocalPdfPath(downloadRes.uri);
+        }
       } else {
-        setPdfError(`File missing from server (Error ${downloadRes.status})`);
+        setPdfError(`File missing from server (HTTP ${downloadRes.status})`);
       }
     } catch (error) {
       console.log('Network error:', error);
-      setPdfError('Network connection failed.');
+      setPdfError('Network connection failed while downloading document.');
     } finally {
       setLoading(false);
     }
@@ -137,6 +174,12 @@ export default function LessonStudent({ route, navigation }) {
           {lesson?.title || 'Lesson Details'}
         </Text>
         
+        {!personalizedLesson && (
+          <TouchableOpacity onPress={toggleBookmark} style={{ paddingHorizontal: 10 }}>
+            <Ionicons name={isBookmarked ? "bookmark" : "bookmark-outline"} size={24} color={theme.primary} />
+          </TouchableOpacity>
+        )}
+
         {lesson?.pdfUrl && !pdfError && (
           <TouchableOpacity onPress={downloadPdfOffline} disabled={downloading} style={{ paddingLeft: 10 }}>
             {downloading ? (
@@ -166,13 +209,14 @@ export default function LessonStudent({ route, navigation }) {
             {pdfError}
           </Text>
           <Text style={{ color: theme.subText, textAlign: 'center', marginTop: 10, fontSize: 12 }}>
-            Please upload this lesson again to restore the file to the server's uploads folder.
+            Please verify that this lesson has a valid PDF file assigned to it on the server.
           </Text>
         </View>
       ) : localPdfPath ? (
         <View style={localStyles.pdfContainer}>
           <Pdf
-            source={{ uri: localPdfPath, cache: false }}
+            /* FIX 1: Removed toAbsUrl(). Using the raw local file:// path */
+            source={{ uri: localPdfPath, cache: true }}
             trustAllCerts={false} 
             onLoadComplete={(numberOfPages) => {
               console.log(`Successfully loaded PDF with ${numberOfPages} pages`);

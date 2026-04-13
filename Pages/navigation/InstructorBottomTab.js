@@ -1,6 +1,6 @@
 import React, { useContext } from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import Ionicons from 'react-native-vector-icons/Ionicons';
+import { Ionicons } from '@expo/vector-icons';
 import { ThemeContext } from '../src/context/ThemeContext';
 import InstructorHomepage from '../InstructorHomepage';
 import Learn from '../Learn';

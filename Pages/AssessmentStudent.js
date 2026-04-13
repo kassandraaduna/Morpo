@@ -3,7 +3,7 @@ import {
   View, Text, FlatList, TouchableOpacity, ActivityIndicator, 
   RefreshControl, StyleSheet, Platform, StatusBar, Modal, Dimensions 
 } from 'react-native';
-import Ionicons from 'react-native-vector-icons/Ionicons';
+import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import api from './src/services/api'; 
 import { ThemeContext } from './src/context/ThemeContext';

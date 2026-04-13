@@ -1,6 +1,6 @@
 import React, { useContext } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, FlatList } from 'react-native';
-import Ionicons from 'react-native-vector-icons/Ionicons';
+import { Ionicons } from '@expo/vector-icons';
 import { ThemeContext } from './src/context/ThemeContext';
 
 export default function StudentProgressDetail({ route, navigation }) {

@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useContext } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, Switch, Image } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Ionicons from 'react-native-vector-icons/Ionicons';
+import { Ionicons } from '@expo/vector-icons';
 import styles from './src/styles/Styles';
 import ConfirmSheet from './src/components/ConfirmSheet';
 import { ThemeContext } from './src/context/ThemeContext';
@@ -118,7 +118,7 @@ export default function Profile({ navigation }) {
           onPress={() => navigation.navigate('EditProfile')}
         />
         <Row
-          label="BOOKMARKED SCANS"
+          label="BOOKMARKS"
           onPress={() => navigation.navigate('Bookmarks')}
         />
         <Row

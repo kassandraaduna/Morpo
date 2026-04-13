@@ -1,646 +1,492 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Pressable, Image, ScrollView, Alert, Platform } from 'react-native';
+import React, { useState, useEffect, useRef, useContext } from 'react';
+import { 
+  View, Text, TextInput, TouchableOpacity, Image, ScrollView, 
+  Alert, Platform, KeyboardAvoidingView, ActivityIndicator, StyleSheet 
+} from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Ionicons from 'react-native-vector-icons/Ionicons';
-import styles from './src/styles/Styles';
-import {toastError, toastSuccess} from './src/components/ToastMsg';
+import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Picker } from '@react-native-picker/picker';
+
+import styles from './src/styles/Styles';
+import { toastError, toastSuccess } from './src/components/ToastMsg';
+import { ThemeContext } from './src/context/ThemeContext';
 import { requestRegisterOtp, verifyRegisterOtp, checkUsername, checkEmail, checkNumber } from './src/services/authService';
 
 export default function Register({ navigation }) {
-  const [form, setForm] = useState({});
+  const { theme } = useContext(ThemeContext);
+  
+  // Data States (ADDED yearLevel and section)
+  const [newMed, setNewMed] = useState({ fname: '', lname: '', dob: '', gender: '', yearLevel: '', section: '', number: '', email: '', username: '', password: '' });
+  const [confirmPassword, setConfirmPassword] = useState('');
+  
+  // OTP States
   const [otpId, setOtpId] = useState('');
   const [otp, setOtp] = useState(['','','','','','']);
   const [step, setStep] = useState('form');
-  const [showPassword, setShowPassword] = useState(false);
-  const [pressed, setPressed] = useState(false);
-
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [showDobPicker, setShowDobPicker] = useState(false);
-  const [dobDate, setDobDate] = useState(null);
-  const [available, setAvailable] = useState({
-    username: null,
-    email: null,
-    number: null,
-  });
-
-  const RESEND_SECONDS = 60;
   const [resendTimer, setResendTimer] = useState(0);
   const [canResend, setCanResend] = useState(true);
-
-  const isOtpComplete = otp.every(d => d !== '');
-
+  const [maskedEmail, setMaskedEmail] = useState('');
   const otpRefs = useRef([]);
 
-  const validate = () => {
-    const required = [
-      'fname','lname','dob','gender',
-      'number','email','username','password'
-    ];
-    return required.every(k => form[k]);  
+  // UI & Loading States
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showDobPicker, setShowDobPicker] = useState(false);
+  const [dobDate, setDobDate] = useState(null);
+  
+  // Validation States
+  const [touched, setTouched] = useState({});
+  const [errors, setErrors] = useState({});
+  const [available, setAvailable] = useState({ username: null, email: null, number: null });
+  const [checking, setChecking] = useState({ username: false, email: false, number: false });
+  const typingTimeout = useRef({});
+
+  /* ================= REAL-TIME VALIDATORS ================= */
+  const validateSync = (field, value) => {
+    if (!value) return "This field is required.";
+    switch (field) {
+      case 'fname':
+      case 'lname':
+        return /^[A-Za-z\s\-']+$/.test(value) ? null : "Letters, spaces, hyphens, or apostrophes only.";
+      case 'email':
+        return /^[a-zA-Z0-9._%+-]+@students\.nu-moa\.edu\.ph$/.test(value) ? null : "Must use @students.nu-moa.edu.ph domain.";
+      case 'number':
+        return /^\d{11}$/.test(value) ? null : "Mobile number must be exactly 11 digits.";
+      case 'username':
+        return value.length < 4 ? "Username must be at least 4 characters long." : null;
+      case 'section':
+        return value.trim().length === 0 ? "Section is required." : null;
+      case 'password':
+        if (value.length < 8) return "Password must be at least 8 characters.";
+        if (!/[A-Z]/.test(value)) return "Needs at least one uppercase letter.";
+        if (!/\d/.test(value)) return "Needs at least one number.";
+        if (!/[!@#$%^&*]/.test(value)) return "Needs at least one special character.";
+        return null;
+      case 'confirmPassword':
+        return value !== newMed.password ? "Passwords do not match." : null;
+      default:
+        return null;
+    }
   };
 
-  const validators = {
-    fname: v => v?.trim().length > 0,
-    lname: v => v?.trim().length > 0,
-    dob: v => /^\d{2}\/\d{2}\/\d{4}$/.test(v || ''),
-    gender: v => v?.trim().length > 0,
-    number: v => /^\d{11}$/.test(v || ''),
-    email: v => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v || ''),
-    username: v => v?.trim().length >= 4,
+  /* ================= HANDLE INPUT CHANGES & DEBOUNCED API ================= */
+  const handleTextChange = (field, val) => {
+    const value = val.trim();
+    if (field === 'confirmPassword') {
+      setConfirmPassword(value);
+    } else {
+      setNewMed(prev => ({ ...prev, [field]: value }));
+    }
+    
+    setTouched(prev => ({ ...prev, [field]: true }));
+    
+    // 1. Instant Synchronous Validation
+    const error = validateSync(field, value);
+    setErrors(prev => ({ ...prev, [field]: error }));
+
+    // 2. Debounced Asynchronous Validation (Availability Check)
+    if (['username', 'email', 'number'].includes(field)) {
+      setAvailable(prev => ({ ...prev, [field]: null }));
+      
+      if (typingTimeout.current[field]) clearTimeout(typingTimeout.current[field]);
+
+      if (!error) {
+        setChecking(prev => ({ ...prev, [field]: true }));
+        typingTimeout.current[field] = setTimeout(async () => {
+          try {
+            let res;
+            if (field === 'username') res = await checkUsername(value);
+            if (field === 'email') res = await checkEmail(value);
+            if (field === 'number') res = await checkNumber(value);
+            
+            setAvailable(prev => ({ ...prev, [field]: res.data?.available }));
+          } catch (err) {
+            setAvailable(prev => ({ ...prev, [field]: null }));
+          } finally {
+            setChecking(prev => ({ ...prev, [field]: false }));
+          }
+        }, 600); 
+      } else {
+        setChecking(prev => ({ ...prev, [field]: false }));
+      }
+    }
   };
 
-  const checkAvailability = async (type, value) => {
-    setAvailable(prev => ({ ...prev, [type]: null })); // checking
-    try {
-      let res;
-
-      if (type === 'username') res = await checkUsername(value);
-      if (type === 'email') res = await checkEmail(value);
-      if (type === 'number') res = await checkNumber(value);
-
-      const isAvailable =
-        res?.data?.available ??
-        res?.data?.isAvailable ??
-        res?.data?.exists === false;
-
-      setAvailable(prev => ({
-        ...prev,
-        [type]: Boolean(isAvailable),
-      }));
-    } catch (err) {
-    console.log('[number availability error]', err?.response?.data);
-
-    setAvailable(prev => ({
-      ...prev,
-      [type]: null,
-    }));
-  }
+  const handleBlur = (field) => {
+    setTouched(prev => ({ ...prev, [field]: true }));
+    const val = field === 'confirmPassword' ? confirmPassword : newMed[field];
+    setErrors(prev => ({ ...prev, [field]: validateSync(field, val) }));
   };
 
-  const fieldStatus = {
-    fname: validators.fname(form.fname),
-    lname: validators.lname(form.lname),
-    dob: validators.dob(form.dob),
-    gender: validators.gender(form.gender),
-    number: validators.number(form.number),
-    email: validators.email(form.email),
-    username: validators.username(form.username),
+  /* ================= DYNAMIC UI STYLERS ================= */
+  const getBorderStyle = (field) => {
+    if (!touched[field]) return { borderColor: '#E0E0E0' };
+    
+    const isAsync = ['username', 'email', 'number'].includes(field);
+    const hasSyncError = !!errors[field];
+
+    if (hasSyncError) return { borderColor: '#e74c3c', backgroundColor: '#fff5f5', borderWidth: 1.5 };
+    if (isAsync && available[field] === false) return { borderColor: '#e74c3c', backgroundColor: '#fff5f5', borderWidth: 1.5 };
+    if (isAsync && available[field] === true) return { borderColor: '#2ecc71', borderWidth: 1.2 };
+    if (!isAsync && !hasSyncError && (field === 'confirmPassword' ? confirmPassword : newMed[field])) return { borderColor: '#2ecc71', borderWidth: 1.2 };
+    
+    return { borderColor: '#E0E0E0' };
   };
 
-  const FieldFeedback = ({ ok, errorLabel, successLabel }) => {
-    if (ok === undefined) return null;
-
-    return (
-      <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
-        <Ionicons
-          name={ok ? 'checkmark-circle' : 'close-circle'}
-          size={14}
-          color={ok ? '#2ecc71' : '#e74c3c'}
-          style={{ marginRight: 6 }}
-        />
-        <Text
-          style={{
-            color: ok ? '#2ecc71' : '#e74c3c',
-            fontSize: 12,
-          }}
-        >
-          {ok ? successLabel : errorLabel}
-        </Text>
-      </View>
-    );
-  };
-
-  const passwordRules = {
-    length: v => v.length >= 8,
-    uppercase: v => /[A-Z]/.test(v),
-    number: v => /\d/.test(v),
-    special: v => /[!@#$%^&*]/.test(v),
-  };    
-
-  const passwordStatus = {
-    length: passwordRules.length(password),
-    uppercase: passwordRules.uppercase(password),
-    number: passwordRules.number(password),
-    special: passwordRules.special(password),
-  };  
-
-  const passwordsMatch = password.length > 0 && confirmPassword.length > 0 && password === confirmPassword;
-
-  const isPasswordValid = Object.values(passwordStatus).every(Boolean);
-
-  const canSubmit = validate() && isPasswordValid && passwordsMatch && available.username === true &&available.email === true && available.number === true;
+  /* ================= SUBMIT ================= */
+  const canSubmit = Object.values(newMed).every(v => v !== '') && confirmPassword !== '' &&
+                    Object.values(errors).every(e => e === null) &&
+                    available.username && available.email && available.number;
 
   const submitForm = async () => {
-    if (!validate()) return toastError('Please fill in all fields');
-    if (!isPasswordValid) return toastError('Password does not meet requirements');
-    if (!passwordsMatch) return toastError('Passwords do not match');
+    // Touch all fields to show any hidden errors
+    const allTouched = Object.keys(newMed).reduce((acc, k) => ({ ...acc, [k]: true }), { confirmPassword: true });
+    setTouched(allTouched);
 
+    if (!canSubmit) return toastError('Please resolve all field errors first.');
+
+    setIsSubmitting(true);
     try {
-      const res = await requestRegisterOtp(form.email);
+      const res = await requestRegisterOtp(newMed.email);
       setOtpId(res.data.otpId);
+      // Use masked email from backend if provided, else generate a generic one
+      setMaskedEmail(res.data.maskedEmail || newMed.email.replace(/(.{2})(.*)(?=@)/, '$1***'));
       setStep('otp');
-
       setResendTimer(RESEND_SECONDS);
       setCanResend(false);
     } catch (e) {
       toastError(e.response?.data?.message || 'Failed to send OTP');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleResend = async () => {
+    setIsSubmitting(true);
+    try {
+      const res = await requestRegisterOtp(newMed.email); 
+      setOtpId(res.data.otpId);
+      toastSuccess('Verification code resent!');
+      setResendTimer(RESEND_SECONDS);
+      setCanResend(false);
+      setOtp(['','','','','','']);
+      setTimeout(() => otpRefs.current[0]?.focus(), 200);
+    } catch (error) {
+      toastError(error?.response?.data?.message || 'Failed to resend code.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const verifyOtp = async () => {
+    setIsSubmitting(true);
     try {
-      const code = otp.join('');
-
-      await verifyRegisterOtp({
-        otpId,
-        code,
-        medData: form,
-      });
-
+      await verifyRegisterOtp({ otpId, code: otp.join(''), medData: newMed });
       toastSuccess('Account created successfully');
-      navigation.replace('Login');      
-
+      navigation.replace('Login');
     } catch (e) {
-      Alert.alert(
-        'Error',
-        e.response?.data?.message || 'OTP verification failed'
-      );
+      Alert.alert('Error', e.response?.data?.message || 'OTP verification failed');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   useEffect(() => {
     if (!canResend && resendTimer > 0) {
-      const timer = setTimeout(() => {
-        setResendTimer(t => t - 1);
-      }, 1000);
-
+      const timer = setTimeout(() => setResendTimer(t => t - 1), 1000);
       return () => clearTimeout(timer);
     }
-
-    if (resendTimer === 0) {
-      setCanResend(true);
-    }
+    if (resendTimer === 0) setCanResend(true);
   }, [resendTimer, canResend]);
 
   useEffect(() => {
-    if (step === 'otp') {
-      setTimeout(() => {
-        otpRefs.current[0]?.focus();
-      }, 300);
-    }
+    if (step === 'otp') setTimeout(() => otpRefs.current[0]?.focus(), 300);
   }, [step]);
 
+  /* ================= CUSTOM COMPONENTS ================= */
+  const FieldFeedback = ({ field, successLabel }) => {
+    if (!touched[field]) return null;
+
+    const syncError = errors[field];
+    const isAsync = ['username', 'email', 'number'].includes(field);
+    const isAvail = available[field];
+    const isCheck = checking[field];
+
+    if (syncError) {
+      return (
+        <View style={localStyles.feedbackRow}>
+          <Ionicons name="close-circle" size={14} color="#e74c3c" style={{ marginTop: 2 }} />
+          <Text style={[localStyles.feedbackText, { color: '#e74c3c' }]}>{syncError}</Text>
+        </View>
+      );
+    }
+
+    if (isAsync) {
+      if (isCheck) {
+        return (
+          <View style={localStyles.feedbackRow}>
+            <ActivityIndicator size="small" color={theme.primary} style={{ transform: [{ scale: 0.7 }] }} />
+            <Text style={[localStyles.feedbackText, { color: theme.subText }]}>Checking availability...</Text>
+          </View>
+        );
+      }
+      if (isAvail === false) {
+        return (
+          <View style={localStyles.feedbackRow}>
+            <Ionicons name="close-circle" size={14} color="#e74c3c" style={{ marginTop: 2 }} />
+            <Text style={[localStyles.feedbackText, { color: '#e74c3c' }]}>{`${field.charAt(0).toUpperCase() + field.slice(1)} already taken.`}</Text>
+          </View>
+        );
+      }
+      if (isAvail === true) {
+        return (
+          <View style={localStyles.feedbackRow}>
+            <Ionicons name="checkmark-circle" size={14} color="#2ecc71" style={{ marginTop: 2 }} />
+            <Text style={[localStyles.feedbackText, { color: '#2ecc71' }]}>{successLabel}</Text>
+          </View>
+        );
+      }
+    }
+    return null;
+  };
+
+  const passwordRulesData = [
+    { label: '8+ characters', ok: newMed.password.length >= 8 },
+    { label: 'Uppercase letter', ok: /[A-Z]/.test(newMed.password) },
+    { label: 'One number', ok: /\d/.test(newMed.password) },
+    { label: 'Special character (!@#$%^&*)', ok: /[!@#$%^&*]/.test(newMed.password) },
+  ];
+
   return (
-    <View style={styles.screen}>
-      <View style={styles.shell}>
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1, backgroundColor: theme.bg }}>
+      <ScrollView contentContainerStyle={localStyles.scrollContainer} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+        <View style={localStyles.wrapper}>
+          <Image
+            source={require('../assets/mypholens_logo.png')}
+            style={styles.logo}
+          />
 
-        <Image
-          source={require('../assets/mypholens_logo.png')}
-          style={styles.logo}
-        />
+          <View style={[styles.card, { width: '100%', backgroundColor: theme.card, borderRadius: 25, paddingBottom: 40 }]}>
+            {step === 'form' ? (
+              <View>
+                <Text style={[styles.title, { color: theme.text }]}>SIGN UP</Text>
+                <Text style={[styles.subtitle, { color: theme.subText, marginBottom: 20 }]}>Create an account to explore MyphoLens.</Text>
 
-        <View style={styles.card}>
-
-          {step === 'form' && (
-            <ScrollView showsVerticalScrollIndicator={false}>
-              <Text style={styles.title}>SIGN UP</Text>
-              <Text style={styles.subtitle}>Create an account to get started.</Text>
-
-              <Text style={styles.label}>First Name</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Enter your first name"
-                value={form.fname || ''}
-                onChangeText={v => setForm({ ...form, fname: v })}
-              />
-              {form.fname !== undefined && (
-                <FieldFeedback
-                  ok={fieldStatus.fname}
-                  label="First name cannot be empty"
-                  successLabel="First name looks good"
-                />
-              )}
-
-              <Text style={styles.label}>Last Name</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Enter your last name"
-                value={form.lname || ''}
-                onChangeText={v => setForm({ ...form, lname: v })}
-              />
-              {form.lname !== undefined && (
-                <FieldFeedback
-                  ok={fieldStatus.lname}
-                  errorLabel="Last name cannot be empty"
-                  successLabel="Last name looks good"
-                />
-              )}
-
-              <Text style={styles.label}>Date of Birth</Text>
-                <View
-                  style={[
-                    styles.input,
-                    {
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                    },
-                  ]}
-                >
-                  <Text style={{ color: form.dob ? '#000' : '#999', }}>
-                    {form.dob || 'MM/DD/YYYY'}
-                  </Text>
-                  <TouchableOpacity
-                    onPress={() => setShowDobPicker(true)}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                  >
-                    <Ionicons
-                      name="calendar-outline"
-                      size={20}
-                      color="#777"
+                    <Text style={[styles.label, { color: theme.text }]}>First Name</Text>
+                    <TextInput 
+                      style={[styles.input, { color: '#000' }, getBorderStyle('fname')]} 
+                      placeholder="First Name" placeholderTextColor="#999" 
+                      value={newMed.fname} onBlur={() => handleBlur('fname')} onChangeText={v => handleTextChange('fname', v)} 
                     />
-                  </TouchableOpacity>
+                    <FieldFeedback field="fname" />
+
+                    <Text style={[styles.label, { color: theme.text }]}>Last Name</Text>
+                    <TextInput 
+                      style={[styles.input, { color: '#000' }, getBorderStyle('lname')]} 
+                      placeholder="Last Name" placeholderTextColor="#999" 
+                      value={newMed.lname} onBlur={() => handleBlur('lname')} onChangeText={v => handleTextChange('lname', v)} 
+                    />
+                    <FieldFeedback field="lname" />
+
+                <View style={localStyles.row}>
+                  <View style={{ flex: 1, marginRight: 10 }}>
+                    <Text style={[styles.label, { color: theme.text }]}>Date of Birth</Text>
+                    <TouchableOpacity style={[styles.input, { justifyContent: 'center' }, getBorderStyle('dob')]} onPress={() => {setShowDobPicker(true); handleBlur('dob');}}>
+                      <Text style={{ color: newMed.dob ? '#000' : '#999' }}>{newMed.dob || 'MM/DD/YYYY'}</Text>
+                    </TouchableOpacity>
+                    <FieldFeedback field="dob" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.label, { color: theme.text }]}>Gender</Text>
+                    <View style={[styles.input, { paddingHorizontal: 0, justifyContent: 'center' }, getBorderStyle('gender')]}>
+                      <Picker 
+                        selectedValue={newMed.gender} 
+                        onValueChange={v => { handleTextChange('gender', v); }}
+                        style={{ color: newMed.gender ? '#000' : '#999', width: '100%', height: '100%' }}
+                        itemStyle={{ color: '#000' }} 
+                      >
+                        <Picker.Item label="Select" value="" color="#999" />
+                        <Picker.Item label="Male" value="Male" color="#000" />
+                        <Picker.Item label="Female" value="Female" color="#000" />
+                        <Picker.Item label="Prefer not to say" value="Prefer not to say" color="#000" />
+                      </Picker>
+                    </View>
+                    <FieldFeedback field="gender" />
+                  </View>
                 </View>
-                {showDobPicker && (
-                  <DateTimePicker
-                    value={dobDate || new Date(2005, 0, 1)}
-                    mode="date"
-                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                    maximumDate={new Date()}
-                    onChange={(event, selectedDate) => {
-                      setShowDobPicker(false);
 
-                      if (selectedDate) {
-                        setDobDate(selectedDate);
+                <View style={localStyles.row}>
+                  <View style={{ flex: 1, marginRight: 10 }}>
+                    <Text style={[styles.label, { color: theme.text }]}>Year Level</Text>
+                    <View style={[styles.input, { paddingHorizontal: 0, justifyContent: 'center' }, getBorderStyle('yearLevel')]}>
+                      <Picker 
+                        selectedValue={newMed.yearLevel} 
+                        onValueChange={v => { handleTextChange('yearLevel', v); }}
+                        style={{ color: newMed.yearLevel ? '#000' : '#999', width: '100%', height: '100%' }}
+                        itemStyle={{ color: '#000' }} 
+                      >
+                        <Picker.Item label="Select" value="" color="#999" />
+                        <Picker.Item label="1st Year" value="1st Year" color="#000" />
+                        <Picker.Item label="2nd Year" value="2nd Year" color="#000" />
+                        <Picker.Item label="3rd Year" value="3rd Year" color="#000" />
+                        <Picker.Item label="4th Year" value="4th Year" color="#000" />
+                      </Picker>
+                    </View>
+                    <FieldFeedback field="yearLevel" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.label, { color: theme.text }]}>Section</Text>
+                    <TextInput 
+                      style={[styles.input, { color: '#000' }, getBorderStyle('section')]} 
+                      placeholder="e.g. MED222" placeholderTextColor="#999" 
+                      value={newMed.section} onBlur={() => handleBlur('section')} onChangeText={v => handleTextChange('section', v)} 
+                    />
+                    <FieldFeedback field="section" />
+                  </View>
+                </View>
 
-                        const formatted = selectedDate.toLocaleDateString('en-US', {
-                          month: '2-digit',
-                          day: '2-digit',
-                          year: 'numeric',
-                        });
-
-                        setForm({ ...form, dob: formatted });
-                      }
-                    }}
-                  />
-                )}
-                {form.dob !== undefined && (
-                  <FieldFeedback
-                    ok={fieldStatus.dob}
-                    errorLabel="Date of birth is required"
-                    successLabel="Date selected"
-                  />
-                )}
-
-              <Text style={styles.label}>Gender</Text>
-              <View
-                style={[
-                  styles.input,
-                  { paddingHorizontal: 0, justifyContent: 'center' },
-                ]}
-              >
-                <Picker
-                  selectedValue={form.gender ?? ''}
-                  onValueChange={v => setForm({ ...form, gender: v })}
-                >
-                  <Picker.Item
-                    label="Select gender"
-                    value=""
-                    enabled={false}
-                    color="#999"
-                  />
-                  <Picker.Item label="Male" value="Male" />
-                  <Picker.Item label="Female" value="Female" />
-                  <Picker.Item label="Prefer not to say" value="Prefer not to say" />
-                </Picker>
-              </View>
-              {form.gender !== undefined && (
-                <FieldFeedback
-                  ok={fieldStatus.gender}
-                  errorLabel="Please select a gender"
-                  successLabel="Gender selected"
+                <Text style={[styles.label, { color: theme.text }]}>Student Email</Text>
+                <TextInput 
+                  style={[styles.input, { color: '#000' }, getBorderStyle('email')]} 
+                  placeholder="name@students.nu-moa.edu.ph" placeholderTextColor="#999" autoCapitalize="none" keyboardType="email-address"
+                  value={newMed.email} onBlur={() => handleBlur('email')} onChangeText={v => handleTextChange('email', v.toLowerCase())} 
                 />
-              )}
+                <FieldFeedback field="email" successLabel="Email is available." />
 
-              <Text style={styles.label}>Mobile Number</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Enter 11-digit mobile number (e.g. 09171234567)"
-                keyboardType="phone-pad"
-                value={form.number || ''}
-                onChangeText={v => {
-                  setForm({ ...form, number: v });
-                  if (validators.number(v)) {
-                    checkAvailability('number', v);
-                  } else {
-                    setAvailable(prev => ({ ...prev, number: null }));
-                  }
-                }}
-              />
-              {form.number !== undefined && (
-                <FieldFeedback
-                  ok={fieldStatus.number && available.number === true}
-                  errorLabel={
-                    !fieldStatus.number
-                      ? 'Mobile number must be exactly 11 digits'
-                      : available.number === false
-                      ? 'Mobile number already registered'
-                      : 'Checking mobile number...'
-                  }
-                  successLabel="Mobile number is available"
+                <Text style={[styles.label, { color: theme.text }]}>Mobile Number</Text>
+                <TextInput 
+                  style={[styles.input, { color: '#000' }, getBorderStyle('number')]} 
+                  placeholder="0917XXXXXXX" placeholderTextColor="#999" keyboardType="numeric" maxLength={11}
+                  value={newMed.number} onBlur={() => handleBlur('number')} onChangeText={v => handleTextChange('number', v)} 
                 />
-              )}
+                <FieldFeedback field="number" successLabel="Mobile number is available." />
 
-              <Text style={styles.label}>Email</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Enter your email"
-                keyboardType="email-address"
-                autoCapitalize="none"
-                value={form.email || ''}
-                onChangeText={v => {
-                  setForm({ ...form, email: v });
-                  if (validators.email(v)) {
-                    checkAvailability('email', v);
-                  } else {
-                    setAvailable(prev => ({ ...prev, email: null }));
-                  }
-                }}
-              />
-              {form.email !== undefined && (
-                <FieldFeedback
-                  ok={fieldStatus.email && available.email === true}
-                  errorLabel={
-                    !fieldStatus.email
-                      ? 'Invalid email format'
-                      : available.email === false
-                      ? 'Email already registered'
-                      : 'Checking email...'
-                  }
-                  successLabel="Email is available"
+                <Text style={[styles.label, { color: theme.text }]}>Username</Text>
+                <TextInput 
+                  style={[styles.input, { color: '#000' }, getBorderStyle('username')]} 
+                  placeholder="Create Username" placeholderTextColor="#999" autoCapitalize="none"
+                  value={newMed.username} onBlur={() => handleBlur('username')} onChangeText={v => handleTextChange('username', v)} 
                 />
-              )}
+                <FieldFeedback field="username" successLabel="Username is available." />
 
-              <Text style={styles.label}>Username</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Enter a username"
-                value={form.username || ''}
-                onChangeText={v => {
-                  setForm({ ...form, username: v });
-                  if (validators.username(v)) {
-                    checkAvailability('username', v);
-                  } else {
-                    setAvailable(prev => ({ ...prev, username: null }));
-                  }
-                }}
-              />
-              {form.username !== undefined && (
-                <FieldFeedback
-                  ok={fieldStatus.username && available.username === true}
-                  errorLabel={
-                    !fieldStatus.username
-                      ? 'Username must be at least 4 characters'
-                      : available.username === false
-                      ? 'Username already taken'
-                      : 'Checking username...'
-                  }
-                  successLabel="Username is available"
-                />
-              )}
-
-              <Text style={styles.label}>Password</Text>
-                <View style={styles.passwordWrapper}>
+                <Text style={[styles.label, { color: theme.text }]}>Password</Text>
+                <View style={[styles.passwordWrapper, getBorderStyle('password')]}>
                   <TextInput
-                    style={styles.passwordInput}
-                    placeholder="Enter your password"
-                    secureTextEntry={!showPassword}
-                    value={password}
-                    onChangeText={v => {
-                      setPassword(v);
-                      setForm({ ...form, password: v });
-                    }}
+                    style={[styles.passwordInput, { color: '#000', flex: 1, paddingLeft: 15 }]}
+                    placeholder="Create Password" placeholderTextColor="#999" secureTextEntry={!showPassword}
+                    value={newMed.password} onBlur={() => handleBlur('password')} onChangeText={v => handleTextChange('password', v)}
                   />
-                  <TouchableOpacity
-                    style={styles.eyeIcon}
-                    onPress={() => setShowPassword(prev => !prev)}
-                  >
-                    <Ionicons
-                      name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                      size={20}
-                      color="#777"
-                    />
+                  <TouchableOpacity style={styles.eyeIcon} onPress={() => setShowPassword(!showPassword)}>
+                    <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color="#777" />
                   </TouchableOpacity>
                 </View>
-                  {Object.entries({
-                    'At least 8 characters': passwordStatus.length,
-                    'One capital letter': passwordStatus.uppercase,
-                    'One number': passwordStatus.number,
-                    'One special character (!@#$%^&*)': passwordStatus.special,
-                  }).map(([label, ok]) => (
-                    <View key={label} style={{ flexDirection: 'row', alignItems: 'center', marginLeft: 10, marginTop: 5 }}>
-                      <Ionicons
-                        name={ok ? 'checkmark-circle' : 'close-circle'}
-                        color={ok ? '#2ecc71' : '#e74c3c'}
-                        size={16}
-                      />
-                      <Text style={{ marginLeft: 6, color: ok ? '#2ecc71' : '#e74c3c' }}>
-                        {label}
-                      </Text>
+                
+                <View style={localStyles.checklistContainer}>
+                  {passwordRulesData.map((rule, idx) => (
+                    <View key={idx} style={localStyles.checklistRow}>
+                      <Ionicons name={rule.ok ? "checkmark-circle" : "close-circle"} size={14} color={rule.ok ? "#2ecc71" : (touched.password ? "#e74c3c" : "#999")} style={{ marginTop: 1 }} />
+                      <Text style={[localStyles.checklistText, { color: rule.ok ? "#2ecc71" : (touched.password ? "#e74c3c" : "#999") }]}>{rule.label}</Text>
                     </View>
                   ))}
+                </View>
 
-              <Text style={styles.label}>Confirm Password</Text>
-                <View style={styles.passwordWrapper}>
+                <Text style={[styles.label, { color: theme.text }]}>Confirm Password</Text>
+                <View style={[styles.passwordWrapper, getBorderStyle('confirmPassword')]}>
                   <TextInput
-                    style={styles.passwordInput}
-                    placeholder="Confirm your password"
-                    secureTextEntry={!showPassword}
-                    value={confirmPassword}
-                    onChangeText={setConfirmPassword}
+                    style={[styles.passwordInput, { color: '#000', flex: 1, paddingLeft: 15 }]}
+                    placeholder="Repeat Password" placeholderTextColor="#999" secureTextEntry={!showConfirmPassword}
+                    value={confirmPassword} onBlur={() => handleBlur('confirmPassword')} onChangeText={v => handleTextChange('confirmPassword', v)}
                   />
-                  <TouchableOpacity
-                    style={styles.eyeIcon}
-                    onPress={() => setShowPassword(prev => !prev)}
-                  >
-                    <Ionicons
-                      name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                      size={20}
-                      color="#777"
-                    />
+                  <TouchableOpacity style={styles.eyeIcon} onPress={() => setShowConfirmPassword(!showConfirmPassword)}>
+                    <Ionicons name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color="#777" />
                   </TouchableOpacity>
                 </View>
-                {confirmPassword.length > 0 && (
-                  <View style={{ flexDirection: 'row', alignItems: 'center', marginLeft: 10, marginTop: 6 }}>
-                    <Ionicons
-                      name={passwordsMatch ? 'checkmark-circle' : 'close-circle'}
-                      color={passwordsMatch ? '#2ecc71' : '#e74c3c'}
-                      size={16}
+                <FieldFeedback field="confirmPassword" />
+
+                <TouchableOpacity style={[styles.primaryBtn, { marginTop: 30 }, (!canSubmit || isSubmitting) && styles.disabled]} onPress={submitForm} disabled={!canSubmit || isSubmitting}>
+                  {isSubmitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Sign Up</Text>}
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View>
+                <Text style={[styles.title, { textAlign: 'center', color: theme.text }]}>Verify Your Email</Text>
+                <Text style={[styles.subtitle, { textAlign: 'center', marginBottom: 20, color: theme.subText }]}>A 6-digit OTP is sent to {maskedEmail}</Text>
+                <View style={localStyles.otpContainer}>
+                  {otp.map((digit, i) => (
+                    <TextInput 
+                      key={i} 
+                      ref={ref => (otpRefs.current[i] = ref)} 
+                      style={[localStyles.otpBox, { backgroundColor: theme.bg, color: theme.text }]} 
+                      keyboardType="numeric" maxLength={1} value={digit}
+                      onKeyPress={({ nativeEvent }) => {
+                        if (nativeEvent.key === 'Backspace' && digit === '' && i > 0) {
+                          otpRefs.current[i - 1]?.focus();
+                        }
+                      }}
+                      onChangeText={v => {
+                        const copy = [...otp]; copy[i] = v; setOtp(copy);
+                        if (v && i < 5) otpRefs.current[i + 1]?.focus();
+                      }}
                     />
-                    <Text style={{ marginLeft: 6, color: passwordsMatch ? '#2ecc71' : '#e74c3c' }}>
-                      {passwordsMatch ? 'Passwords match' : 'Passwords do not match'}
-                    </Text>
-                  </View>
-                )}
+                  ))}
+                </View>
+                <TouchableOpacity style={[styles.primaryBtn, { marginTop: 25 }, (!otp.every(d => d !== '') || isSubmitting) && styles.disabled]} onPress={verifyOtp} disabled={!otp.every(d => d !== '') || isSubmitting}>
+                   {isSubmitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Verify Account</Text>}
+                </TouchableOpacity>
 
-                <Text style={styles.terms}>
-                  By signing up, you agree to our
-                  <Text
-                    style={[
-                      styles.terms,
-                      { fontWeight: '700', 
-                        opacity: pressed ? 0.5 : 1 }, 
-                        pressed && { textDecorationLine: 'underline' }
-                    ]}
-                    //onPress={() => navigation.navigate('Login')}
-                    onPressIn={() => setPressed(true)}
-                    onPressOut={() => setPressed(false)}
-                  >
-                    {' '}Terms and Conditions
+                <TouchableOpacity onPress={handleResend} disabled={isSubmitting || !canResend} style={{ marginTop: 20 }}>
+                  <Text style={{ textAlign: 'center', color: canResend ? theme.primary : '#999', fontWeight: 'bold' }}>
+                    {canResend ? 'Resend Code' : `Resend code in ${resendTimer}s`}
                   </Text>
-                  {' '}and
-                  <Text
-                    style={[
-                      styles.terms,
-                      { fontWeight: '700', 
-                        opacity: pressed ? 0.5 : 1 }, 
-                        pressed && { textDecorationLine: 'underline' }
-                    ]}
-                    //onPress={() => navigation.navigate('Login')}
-                    onPressIn={() => setPressed(true)}
-                    onPressOut={() => setPressed(false)}
-                  >
-                    {' '}Privacy Policy
-                  </Text>
-                </Text>
+                </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[
-                  styles.primaryBtn,
-                  !canSubmit && styles.disabled,
-                ]}
-                disabled={!canSubmit}
-                onPress={submitForm}
-              >
-                <Text style={styles.btnText}>Sign Up</Text>
-              </TouchableOpacity>
-
-              <View style={styles.bottomLink}>
-              <Text style={styles.link}>
-                  Already have an account?
-                  <Text
-                    style={[
-                      styles.link,
-                      { fontWeight: '700', 
-                        opacity: pressed ? 0.5 : 1 }, 
-                        pressed && { textDecorationLine: 'underline' }
-                    ]}
-                    onPress={() => navigation.navigate('Login')}
-                    onPressIn={() => setPressed(true)}
-                    onPressOut={() => setPressed(false)}
-                  >
-                    {' '}Sign in here
-                  </Text>
-                </Text>
               </View>
+            )}
 
-            </ScrollView>
-          )}
-
-          {step === 'otp' && (
-            <>
-              <Text style={styles.title}>OTP</Text>
-              <Text style={styles.subtitle}>
-                Enter the 6-digit one-time pin sent to your email
+            <TouchableOpacity onPress={() => navigation.navigate('Login')} style={{ marginTop: 25 }}>
+              <Text style={[styles.link, { textAlign: 'center', color: theme.subText }]}>
+                Already have an account? <Text style={{ fontWeight: 'bold', color: theme.primary }}>Login here</Text>
               </Text>
-
-              <View style={styles.otpRow}>
-                {otp.map((digit, i) => (
-                  <TextInput
-                    key={i}
-                    ref={ref => (otpRefs.current[i] = ref)}
-                    style={styles.otpBox}
-                    value={digit}
-                    maxLength={1}
-                    keyboardType="numeric"
-                    textAlign="center"
-                    onChangeText={v => {
-                      const copy = [...otp];
-                      copy[i] = v;
-                      setOtp(copy);
-                      if (v && i < otp.length - 1) {
-                        otpRefs.current[i + 1]?.focus();
-                      }
-                      if (v && i === otp.length - 1) {
-                        setTimeout(() => {
-                          if (copy.every(d => d !== '')) {
-                            verifyOtp();
-                          }
-                        }, 150);
-                      }
-                    }}
-                    onKeyPress={({ nativeEvent }) => {
-                      if (
-                        nativeEvent.key === 'Backspace' &&
-                        otp[i] === '' &&
-                        i > 0
-                      ) {
-                        otpRefs.current[i - 1]?.focus();
-                      }
-                    }}
-                  />
-                ))}
-              </View>
-
-              <TouchableOpacity
-                style={[
-                  styles.primaryBtn,
-                  !isOtpComplete && styles.disabled,
-                ]}
-                disabled={!isOtpComplete}
-                onPress={verifyOtp}
-              >
-                <Text style={styles.btnText}>Continue</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                disabled={!canResend}
-                onPress={async () => {
-                  try {
-                    await requestRegisterOtp(form.email);
-                    toastSuccess('OTP resent');
-
-                    setOtp(['', '', '', '', '', '']);
-                    setTimeout(() => {
-                      otpRefs.current[0]?.focus();
-                    }, 200);
-
-                    setResendTimer(RESEND_SECONDS);
-                    setCanResend(false);
-                  } catch (e) {
-                    toastError(e.response?.data?.message || 'Failed to resend OTP');
-                  }
-                }}
-              >
-                <Text
-                  style={[
-                    styles.link,
-                    { color: canResend ? '#000' : '#999' },
-                  ]}
-                >
-                  {canResend
-                    ? 'Didn’t receive OTP? Resend code'
-                    : `Resend available in ${resendTimer}s`}
-                </Text>
-              </TouchableOpacity>
-            </>
-          )}
-
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
-    </View>
+      </ScrollView>
+
+      {showDobPicker && (
+        <DateTimePicker
+          value={dobDate || new Date(2005, 0, 1)}
+          mode="date" display="default"
+          onChange={(event, selectedDate) => {
+            setShowDobPicker(false);
+            if (selectedDate) {
+              setDobDate(selectedDate);
+              const formatted = selectedDate.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
+              handleTextChange('dob', formatted);
+            }
+          }}
+        />
+      )}
+    </KeyboardAvoidingView>
   );
 }
+
+const localStyles = StyleSheet.create({
+  scrollContainer: { flexGrow: 1, backgroundColor: 'transparent' },
+  wrapper: { paddingHorizontal: 20, alignItems: 'center', width: '100%', paddingBottom: 40 },
+  row: { flexDirection: 'row', width: '100%' },
+  
+  // Feedback layout fixes
+  feedbackRow: { flexDirection: 'row', alignItems: 'flex-start', marginTop: -6, marginBottom: 12, paddingHorizontal: 8 },
+  feedbackText: { fontSize: 11, marginLeft: 6, flex: 1, fontWeight: '600', marginTop: 1 },
+  
+  // Checklist layout
+  checklistContainer: { marginLeft: 10, marginBottom: 15, marginTop: -4 },
+  checklistRow: { flexDirection: 'row', alignItems: 'flex-start', marginTop: 4 },
+  checklistText: { fontSize: 11, marginLeft: 6, fontWeight: '600', flex: 1, marginTop: 1 },
+
+  // OTP Layout Fix
+  otpContainer: { flexDirection: 'row', justifyContent: 'space-between', width: '100%' },
+  otpBox: { width: 45, height: 50, borderWidth: 1, borderColor: '#E0E0E0', borderRadius: 10, textAlign: 'center', fontSize: 20, fontWeight: 'bold' }
+});

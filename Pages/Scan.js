@@ -4,7 +4,7 @@ import {
   ScrollView, StyleSheet, Platform, StatusBar 
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import Ionicons from 'react-native-vector-icons/Ionicons';
+import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import api from './src/services/api'; 
 import { ThemeContext } from './src/context/ThemeContext';
@@ -60,33 +60,30 @@ export default function Scan() {
     if (!res.canceled) setImage(res.assets[0]);
   };
 
-  const handleScan = async () => {
-    if (!image) return toastError('Please select or take an image first');
-    setLoading(true);
+const handleScan = async () => {
+  if (!image) return toastError('Please select an image');
+  setLoading(true);
 
-    const formData = new FormData();
-    formData.append('studentId', studentId);
-    
-    const uri = Platform.OS === 'android' ? image.uri : image.uri.replace('file://', '');
-    formData.append('image', {
-      uri: uri,
-      name: `scan_${Date.now()}.jpg`,
-      type: 'image/jpeg',
+  const formData = new FormData();
+  formData.append('studentId', studentId);
+  formData.append('file', {
+    uri: Platform.OS === 'android' ? image.uri : image.uri.replace('file://', ''),
+    name: 'photo.jpg',
+    type: 'image/jpeg',
+  });
+
+  try {
+    const res = await api.post('/scan', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
     });
-
-    try {
-      const res = await api.post('/scan', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-      setResult(res.data.data);
-      toastSuccess('Scan Complete!');
-      fetchHistory(studentId); 
-    } catch (err) {
-      toastError(err.response?.data?.message || 'AI Scan failed. Check if Flask is running.');
-    } finally {
-      setLoading(false);
-    }
-  };
+    setResult(res.data.data);
+    fetchHistory(studentId);
+  } catch (err) {
+    toastError("AI Service unavailable. Please try again.");
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: theme.bg }} contentContainerStyle={{ paddingBottom: 50 }}>

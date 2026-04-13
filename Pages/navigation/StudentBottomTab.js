@@ -1,6 +1,6 @@
 import React, { useContext } from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import Ionicons from 'react-native-vector-icons/Ionicons';
+import { Ionicons } from '@expo/vector-icons';
 import StudentHomepage from '../StudentHomepage';
 import Learn from '../Learn';
 import Scan from '../Scan';
@@ -17,16 +17,17 @@ export default function StudentBottomTab() {
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
-        tabBarShowLabel: false,
-
+        tabBarShowLabel: true,
+        tabBarLabelStyle: { fontSize: 10, fontWeight: '700' },
         tabBarStyle: {
-          height: 70,
+          height: 65,
           backgroundColor: theme.bg,
-          borderTopColor: theme.subText,
+          borderTopWidth: 1,
+          borderTopColor: theme.border,
+          paddingBottom: 10,
         },
-
-        tabBarActiveTintColor: theme.text,
-        tabBarInactiveTintColor: theme.subText,
+        tabBarActiveTintColor: '#153c2a',
+        tabBarInactiveTintColor: '#999999',
 
         tabBarIcon: ({ focused, color }) => {
           let icon;

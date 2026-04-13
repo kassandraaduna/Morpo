@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useContext } from 'react';
+import React, { useState, useContext, useCallback } from 'react';
 import { 
   View, Text, FlatList, TouchableOpacity, ActivityIndicator, 
   RefreshControl, StyleSheet, StatusBar, Dimensions, Platform 
@@ -9,72 +9,76 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import api from './src/services/api'; 
 import { ThemeContext } from './src/context/ThemeContext';
-import styles from './src/styles/Styles'; 
 import { toastError } from './src/components/ToastMsg';
 
 const { width } = Dimensions.get('window');
 const SERVER_URL = 'http://192.168.1.24:8000';
 
-export default function Learn({ navigation }) {
+export default function Bookmarks({ navigation }) {
   const { theme } = useContext(ThemeContext);
   const [activeTab, setActiveTab] = useState('lessons'); 
-  const [lessons, setLessons] = useState([]);
-  const [models, setModels] = useState([]);
+  const [bookmarkedLessons, setBookmarkedLessons] = useState([]);
+  const [bookmarkedModels, setBookmarkedModels] = useState([]);
+  const [bookmarksData, setBookmarksData] = useState({ lessons: [], models: [] });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [bookmarks, setBookmarks] = useState({ lessons: [], models: [] });
 
-  const fetchData = async () => {
+  const fetchBookmarks = async () => {
     try {
+      // 1. Get IDs from local storage
+      const stored = await AsyncStorage.getItem('studentBookmarks_v1');
+      const parsedBookmarks = stored ? JSON.parse(stored) : { lessons: [], models: [] };
+      setBookmarksData(parsedBookmarks);
+
+      // 2. Fetch all content from backend
       const [lessonRes, modelRes] = await Promise.all([
         api.get('/lessons'),
         api.get('/models3d')
       ]);
-      setLessons(lessonRes.data?.data || []);
-      setModels(modelRes.data?.data || []);
+
+      const allLessons = lessonRes.data?.data || [];
+      const allModels = modelRes.data?.data || [];
+
+      // 3. Filter only bookmarked items
+      const filteredLessons = allLessons.filter(l => parsedBookmarks.lessons?.includes(l._id));
+      const filteredModels = allModels.filter(m => parsedBookmarks.models?.includes(m._id));
+
+      setBookmarkedLessons(filteredLessons);
+      setBookmarkedModels(filteredModels);
     } catch (err) {
-      toastError('Failed to load educational content');
+      toastError('Failed to load bookmarks');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   };
 
-  const loadBookmarks = async () => {
-    try {
-      const stored = await AsyncStorage.getItem('studentBookmarks_v1');
-      if (stored) setBookmarks(JSON.parse(stored));
-    } catch(e){}
-  };
-
-  useEffect(() => {
-    fetchData();
-  }, []);
-
   useFocusEffect(
-    React.useCallback(() => {
-      loadBookmarks();
+    useCallback(() => {
+      fetchBookmarks();
     }, [])
   );
 
-  const toggleBookmark = async (type, id) => {
-    let newBookmarks = { ...bookmarks };
-    if (!newBookmarks[type]) newBookmarks[type] = [];
-    
-    if (newBookmarks[type].includes(id)) {
-      newBookmarks[type] = newBookmarks[type].filter(item => item !== id);
-    } else {
-      newBookmarks[type].push(id);
-    }
-    
-    setBookmarks(newBookmarks);
-    await AsyncStorage.setItem('studentBookmarks_v1', JSON.stringify(newBookmarks));
-  };
-
   const onRefresh = () => {
     setRefreshing(true);
-    fetchData();
-    loadBookmarks();
+    fetchBookmarks();
+  };
+
+  const removeBookmark = async (type, id) => {
+    let newBookmarks = { ...bookmarksData };
+    if (newBookmarks[type]) {
+      newBookmarks[type] = newBookmarks[type].filter(item => item !== id);
+    }
+    
+    setBookmarksData(newBookmarks);
+    await AsyncStorage.setItem('studentBookmarks_v1', JSON.stringify(newBookmarks));
+
+    // Update UI instantly
+    if (type === 'lessons') {
+      setBookmarkedLessons(prev => prev.filter(l => l._id !== id));
+    } else {
+      setBookmarkedModels(prev => prev.filter(m => m._id !== id));
+    }
   };
 
   const getCleanUrl = (path) => {
@@ -85,38 +89,34 @@ export default function Learn({ navigation }) {
     return `${base}${clean.startsWith('/') ? clean : '/' + clean}`;
   };
 
-  // --- RENDER LESSONS (Row Style) ---
-  const renderLessonItem = ({ item }) => {
-    const isBookmarked = bookmarks.lessons?.includes(item._id);
-    return (
+  // --- RENDER LESSONS ---
+  const renderLessonItem = ({ item }) => (
+    <TouchableOpacity 
+      style={[localStyles.lessonCard, { backgroundColor: theme.card }]}
+      onPress={() => navigation.navigate('LessonStudent', { lessonId: item._id })}
+    >
+      <View style={[localStyles.iconBox, { backgroundColor: theme.primary + '15' }]}>
+        <Ionicons name="document-text" size={24} color={theme.primary} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={[localStyles.cardTitle, { color: theme.text }]} numberOfLines={1}>{item.title}</Text>
+        <Text style={{ color: theme.subText, fontSize: 12 }}>{item.pdfName || "PDF Document"}</Text>
+      </View>
+      
       <TouchableOpacity 
-        style={[localStyles.lessonCard, { backgroundColor: theme.card }]}
-        onPress={() => navigation.navigate('LessonStudent', { lessonId: item._id })}
+        style={{ padding: 8, marginRight: 5 }} 
+        onPress={(e) => { e.stopPropagation(); removeBookmark('lessons', item._id); }}
       >
-        <View style={[localStyles.iconBox, { backgroundColor: theme.primary + '15' }]}>
-          <Ionicons name="document-text" size={24} color={theme.primary} />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={[localStyles.cardTitle, { color: theme.text }]} numberOfLines={1}>{item.title}</Text>
-          <Text style={{ color: theme.subText, fontSize: 12 }}>{item.pdfName || "PDF Document"}</Text>
-        </View>
-        
-        <TouchableOpacity 
-          style={{ padding: 8, marginRight: 5 }} 
-          onPress={(e) => { e.stopPropagation(); toggleBookmark('lessons', item._id); }}
-        >
-          <Ionicons name={isBookmarked ? "bookmark" : "bookmark-outline"} size={22} color={theme.primary} />
-        </TouchableOpacity>
-
-        <Ionicons name="chevron-forward" size={18} color={theme.subText} />
+        <Ionicons name="bookmark" size={22} color={theme.primary} />
       </TouchableOpacity>
-    );
-  };
 
-  // --- RENDER 3D MODELS (Web-Style Thumbnail Card) ---
+      <Ionicons name="chevron-forward" size={18} color={theme.subText} />
+    </TouchableOpacity>
+  );
+
+  // --- RENDER 3D MODELS ---
   const renderModelItem = ({ item }) => {
     const finalUrl = getCleanUrl(item.fileUrl);
-    const isBookmarked = bookmarks.models?.includes(item._id);
     
     const thumbHtml = `
       <html>
@@ -136,7 +136,6 @@ export default function Learn({ navigation }) {
 
     return (
       <View style={[localStyles.modelCard, { backgroundColor: theme.card }]}>
-        {/* Interactive Thumbnail Area */}
         <View style={localStyles.modelThumbContainer}>
           <WebView
             scrollEnabled={false}
@@ -145,13 +144,12 @@ export default function Learn({ navigation }) {
           />
           <TouchableOpacity 
             style={localStyles.bookmarkFloat}
-            onPress={() => toggleBookmark('models', item._id)}
+            onPress={() => removeBookmark('models', item._id)}
           >
-            <Ionicons name={isBookmarked ? "bookmark" : "bookmark-outline"} size={20} color={theme.primary} />
+            <Ionicons name="bookmark" size={20} color={theme.primary} />
           </TouchableOpacity>
         </View>
 
-        {/* Info Area */}
         <View style={localStyles.modelInfo}>
           <Text style={[localStyles.cardTitle, { color: theme.text }]} numberOfLines={1}>{item.title}</Text>
           <Text style={[localStyles.modelDesc, { color: theme.subText }]} numberOfLines={2}>
@@ -175,7 +173,13 @@ export default function Learn({ navigation }) {
       <StatusBar barStyle={theme.mode === 'dark' ? 'light-content' : 'dark-content'} />
       
       <View style={localStyles.header}>
-        <Text style={[localStyles.headerTitle, { color: theme.text }]}>Educational</Text>
+        <View style={localStyles.headerTop}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={{ marginRight: 15 }}>
+            <Ionicons name="arrow-back" size={28} color={theme.text} />
+          </TouchableOpacity>
+          <Text style={[localStyles.headerTitle, { color: theme.text }]}>Bookmarks</Text>
+        </View>
+
         <View style={[localStyles.tabBar, { backgroundColor: theme.mode === 'dark' ? '#1a1a1a' : '#f0f0f0' }]}>
           <TouchableOpacity 
             style={[localStyles.tab, activeTab === 'lessons' && { backgroundColor: theme.card, elevation: 3 }]}
@@ -196,15 +200,18 @@ export default function Learn({ navigation }) {
         <View style={{ flex: 1, justifyContent: 'center' }}><ActivityIndicator size="large" color={theme.primary} /></View>
       ) : (
         <FlatList
-          data={activeTab === 'lessons' ? lessons : models}
+          data={activeTab === 'lessons' ? bookmarkedLessons : bookmarkedModels}
           keyExtractor={(item) => item._id}
           renderItem={activeTab === 'lessons' ? renderLessonItem : renderModelItem}
           contentContainerStyle={localStyles.listPadding}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />}
           ListEmptyComponent={
             <View style={localStyles.emptyState}>
-              <Ionicons name="search-outline" size={50} color={theme.subText + '44'} />
-              <Text style={{ color: theme.subText }}>Nothing found here yet.</Text>
+              <Ionicons name="bookmark-outline" size={60} color={theme.subText + '44'} style={{ marginBottom: 10 }} />
+              <Text style={{ color: theme.text, fontSize: 18, fontWeight: 'bold' }}>No Bookmarks Yet</Text>
+              <Text style={{ color: theme.subText, textAlign: 'center', marginTop: 5, paddingHorizontal: 40 }}>
+                Items you bookmark in the Educational tab will appear here.
+              </Text>
             </View>
           }
         />
@@ -214,8 +221,9 @@ export default function Learn({ navigation }) {
 }
 
 const localStyles = StyleSheet.create({
-  header: { paddingHorizontal: 20, paddingTop: Platform.OS === 'ios' ? 60 : 40, paddingBottom: 15 },
-  headerTitle: { fontSize: 28, fontWeight: '900', marginBottom: 15 },
+  header: { paddingHorizontal: 20, paddingTop: Platform.OS === 'ios' ? 50 : 30, paddingBottom: 15 },
+  headerTop: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
+  headerTitle: { fontSize: 26, fontWeight: '900' },
   tabBar: { flexDirection: 'row', borderRadius: 12, padding: 4 },
   tab: { flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center' },
   tabText: { fontSize: 14, fontWeight: 'bold' },
@@ -230,8 +238,8 @@ const localStyles = StyleSheet.create({
   modelInfo: { padding: 16 },
   modelDesc: { fontSize: 13, marginTop: 5, lineHeight: 18 },
   viewBtn: { marginTop: 15, paddingVertical: 10, borderRadius: 10, alignItems: 'center' },
-  viewBtnText: { color: '#153c2a', fontWeight: 'bold', fontSize: 14 },
+  viewBtnText: { color: '#fff', fontWeight: 'bold', fontSize: 14 },
   bookmarkFloat: { position: 'absolute', top: 12, right: 12, backgroundColor: 'rgba(255,255,255,0.85)', padding: 8, borderRadius: 20, zIndex: 10 },
   
-  emptyState: { alignItems: 'center', marginTop: 100 }
+  emptyState: { alignItems: 'center', marginTop: 80 }
 });

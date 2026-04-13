@@ -5,22 +5,25 @@ export const ThemeContext = createContext();
 
 const COLORS = {
     light: {
-        bg: '#FFFFFF',
-        text: '#000000',
-        subText: '#000000',
-        card: '#D6EEAA',
+        bg: '#ffffff',     
+        text: '#1a1a1a',
+        subText: '#555555',
+        card: '#FFFFFF',
+        primary: '#2d6a4f',
+        border: '#253a30',
         search: '#FFFFFF',
-        edit: '#E14B4B',
-        editCard:'#D6EEAA'
+        accent: '#2d6a4f'
+
     },
     dark: {
-        bg: '#121212',
-        text: '#FFFFFF',
-        subText: '#AAAAAA',
-        card: '#2A2A2A',
-        search: '#2A2A2A',
-        edit: '#E14B4B',
-        editCard:'#4A4A4A'
+        bg: '#0f1a14',
+        text: '#f1f1f1',
+        subText: '#aaaaaa',
+        card: '#FFFFFF',
+        primary: '#153c2a',
+        border: '#253a30',
+        search: '#FFFFFF',
+        accent: '#40916c'
     },
 };
 
