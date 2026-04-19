@@ -1,212 +1,218 @@
-import React, { useEffect, useState, useContext } from 'react';
+import React, { useEffect, useState, useContext, useCallback } from 'react';
 import { 
   View, Text, FlatList, TouchableOpacity, ActivityIndicator, 
-  RefreshControl, StyleSheet, StatusBar, Dimensions, Platform 
+  RefreshControl, StyleSheet, StatusBar, TextInput, Platform, Alert 
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
-import api from './src/services/api'; 
+import api, { toAbsUrl } from './src/services/api'; 
 import { ThemeContext } from './src/context/ThemeContext';
-import styles from './src/styles/Styles'; 
-import { toastError } from './src/components/ToastMsg';
+import { toastError, toastSuccess } from './src/components/ToastMsg';
+import moment from 'moment';
 
-const { width } = Dimensions.get('window');
-const SERVER_URL = 'http://192.168.1.24:8000';
-
-export default function Learn({ navigation }) {
+export default function Learn({ navigation, route }) {
   const { theme } = useContext(ThemeContext);
-  const [activeTab, setActiveTab] = useState('lessons'); 
-  const [lessons, setLessons] = useState([]);
-  const [models, setModels] = useState([]);
+  const [activeTab, setActiveTab] = useState(route.params?.initialTab?.toLowerCase() || 'lessons'); 
+  const [data, setData] = useState({ lessons: [], models: [], assessments: [] });
+  const [filteredData, setFilteredData] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [bookmarks, setBookmarks] = useState({ lessons: [], models: [] });
+  const [user, setUser] = useState(null);
 
   const fetchData = async () => {
     try {
-      const [lessonRes, modelRes] = await Promise.all([
+      const [lessonRes, modelRes, assessRes] = await Promise.all([
         api.get('/lessons'),
-        api.get('/models3d')
+        api.get('/models3d'),
+        api.get('/assessments')
       ]);
-      setLessons(lessonRes.data?.data || []);
-      setModels(modelRes.data?.data || []);
+      const fetched = {
+        lessons: (lessonRes.data?.data || []).filter(l => !l.is_archived),
+        models: modelRes.data?.data || [],
+        assessments: assessRes.data?.data || []
+      };
+      setData(fetched);
     } catch (err) {
-      toastError('Failed to load educational content');
+      toastError('Failed to load content');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   };
 
-  const loadBookmarks = async () => {
-    try {
-      const stored = await AsyncStorage.getItem('studentBookmarks_v1');
-      if (stored) setBookmarks(JSON.parse(stored));
-    } catch(e){}
-  };
-
   useEffect(() => {
+    AsyncStorage.getItem('user').then(u => setUser(JSON.parse(u)));
     fetchData();
   }, []);
 
-  useFocusEffect(
-    React.useCallback(() => {
-      loadBookmarks();
-    }, [])
-  );
+  useFocusEffect(useCallback(() => { fetchData(); }, []));
 
-  const toggleBookmark = async (type, id) => {
-    let newBookmarks = { ...bookmarks };
-    if (!newBookmarks[type]) newBookmarks[type] = [];
-    
-    if (newBookmarks[type].includes(id)) {
-      newBookmarks[type] = newBookmarks[type].filter(item => item !== id);
-    } else {
-      newBookmarks[type].push(id);
+  useEffect(() => {
+    const list = data[activeTab] || [];
+    setFilteredData(
+      searchQuery 
+        ? list.filter(item => item.title?.toLowerCase().includes(searchQuery.toLowerCase())) 
+        : list
+    );
+  }, [searchQuery, activeTab, data]);
+
+  const handleArchive = async (id) => {
+    Alert.alert("Archive Lesson", "Move this to your archive list?", [
+      { text: "Cancel" },
+      { text: "Archive", onPress: async () => {
+          try {
+            await api.put(`/lessons/${id}`, { 
+              isArchived: true, 
+              modifiedBy: user?._id 
+            });
+            toastSuccess("Archived successfully");
+            fetchData();
+          } catch (e) { 
+            console.error(e);
+            toastError("Archive failed"); 
+          }
+      }}
+    ]);
+  };
+
+  const onLessonPress = async (lessonId) => {
+    try {
+      // FIX 3: Trigger the access endpoint to update "Last Modified" metadata
+      await api.post(`/lessons/${lessonId}/access`, { userId: user?._id });
+      navigation.navigate('LessonStudent', { lessonId });
+    } catch (e) {
+      navigation.navigate('LessonStudent', { lessonId });
     }
-    
-    setBookmarks(newBookmarks);
-    await AsyncStorage.setItem('studentBookmarks_v1', JSON.stringify(newBookmarks));
   };
 
-  const onRefresh = () => {
-    setRefreshing(true);
-    fetchData();
-    loadBookmarks();
-  };
-
-  const getCleanUrl = (path) => {
-    if (!path) return '';
-    let clean = path.trim();
-    if (clean.startsWith('http')) return clean;
-    const base = SERVER_URL.endsWith('/') ? SERVER_URL.slice(0, -1) : SERVER_URL;
-    return `${base}${clean.startsWith('/') ? clean : '/' + clean}`;
-  };
-
-  // --- RENDER LESSONS (Row Style) ---
   const renderLessonItem = ({ item }) => {
-    const isBookmarked = bookmarks.lessons?.includes(item._id);
-    return (
-      <TouchableOpacity 
-        style={[localStyles.lessonCard, { backgroundColor: theme.card }]}
-        onPress={() => navigation.navigate('LessonStudent', { lessonId: item._id })}
-      >
-        <View style={[localStyles.iconBox, { backgroundColor: theme.primary + '15' }]}>
-          <Ionicons name="document-text" size={24} color={theme.primary} />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={[localStyles.cardTitle, { color: theme.text }]} numberOfLines={1}>{item.title}</Text>
-          <Text style={{ color: theme.subText, fontSize: 12 }}>{item.pdfName || "PDF Document"}</Text>
-        </View>
-        
-        <TouchableOpacity 
-          style={{ padding: 8, marginRight: 5 }} 
-          onPress={(e) => { e.stopPropagation(); toggleBookmark('lessons', item._id); }}
-        >
-          <Ionicons name={isBookmarked ? "bookmark" : "bookmark-outline"} size={22} color={theme.primary} />
-        </TouchableOpacity>
+    const isInstructor = user?.role?.toLowerCase() === 'instructor';
 
-        <Ionicons name="chevron-forward" size={18} color={theme.subText} />
-      </TouchableOpacity>
+    const actor = item.modifiedBy ? `${item.modifiedBy.fname} ${item.modifiedBy.lname}` : 'System';
+    const time = moment(item.lastAccessedAt || item.updatedAt).format('MMM DD, YYYY | hh:mm A');
+
+    return (
+      <View style={[localStyles.card, { backgroundColor: theme.card }]}>
+        <TouchableOpacity style={{ flex: 1 }} onPress={() => onLessonPress(item._id)}>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <View style={[localStyles.iconBox, { backgroundColor: '#E7F5EE' }]}>
+              <Ionicons name="document-text" size={22} color="#153c2a" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[localStyles.cardTitle, { color: theme.text }]}>{item.title}</Text>
+              <Text style={localStyles.metadataText}>Last modified by: {actor}</Text>
+              <Text style={localStyles.metadataText}>on: {time}</Text>
+            </View>
+          </View>
+        </TouchableOpacity>
+        {isInstructor && (
+          <View style={localStyles.actionGroup}>
+            <TouchableOpacity onPress={() => navigation.navigate('UploadLesson', { lesson: item })}>
+              <Ionicons name="create" size={20} color="#153c2a" />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => handleArchive(item._id)}>
+              <Ionicons name="archive" size={20} color="#d97706" />
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
     );
   };
 
-  // --- RENDER 3D MODELS (Web-Style Thumbnail Card) ---
-  const renderModelItem = ({ item }) => {
-    const finalUrl = getCleanUrl(item.fileUrl);
-    const isBookmarked = bookmarks.models?.includes(item._id);
-    
-    const thumbHtml = `
-      <html>
-        <head>
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.3.0/model-viewer.min.js"></script>
-          <style>
-            body { margin: 0; background-color: #f0f4f2; display: flex; justify-content: center; }
-            model-viewer { width: 100vw; height: 100vh; --poster-color: transparent; }
-          </style>
-        </head>
-        <body>
-          <model-viewer src="${finalUrl}" auto-rotate rotation-per-second="30deg" interaction-prompt="none" shadow-intensity="1"></model-viewer>
-        </body>
-      </html>
-    `;
+  const renderModelItem = ({ item }) => (
+    <View style={[localStyles.modelCard, { backgroundColor: theme.card }]}>
+      <View style={localStyles.modelThumbContainer}>
+        <WebView scrollEnabled={false} source={{ html: `<html><body style="margin:0; background:#f0f4f2;"><script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.3.0/model-viewer.min.js"></script><model-viewer src="${toAbsUrl(item.fileUrl)}" auto-rotate interaction-prompt="none" style="width:100%; height:100%;"></model-viewer></body></html>` }} />
+      </View>
+      <View style={localStyles.modelInfo}>
+        <Text style={[localStyles.cardTitle, { color: theme.text }]}>{item.title}</Text>
+        <Text style={localStyles.metadataText} numberOfLines={2}>{item.description || "No description provided."}</Text>
+        <TouchableOpacity style={localStyles.viewBtn} onPress={() => navigation.navigate('ModelViewerMobile', { modelId: item._id, modelTitle: item.title, modelUrl: item.fileUrl, labels: item.labels })}>
+          <Text style={localStyles.viewBtnText}>VIEW 3D MODEL</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+
+  const renderAssessmentItem = ({ item }) => {
+    const isInstructor = user?.role?.toLowerCase() === 'instructor';
+
+    const qCount = item.questions?.length || 0;
+    const timerText = item.timer?.enabled ? `${item.timer.minutes}m Timer` : 'No Timer';
+    const deadline = item.deadlineAt ? moment(item.deadlineAt).format('MMM DD, hh:mm A') : 'No Deadline';
 
     return (
-      <View style={[localStyles.modelCard, { backgroundColor: theme.card }]}>
-        {/* Interactive Thumbnail Area */}
-        <View style={localStyles.modelThumbContainer}>
-          <WebView
-            scrollEnabled={false}
-            source={{ html: thumbHtml }}
-            style={{ backgroundColor: '#f0f4f2' }}
-          />
-          <TouchableOpacity 
-            style={localStyles.bookmarkFloat}
-            onPress={() => toggleBookmark('models', item._id)}
-          >
-            <Ionicons name={isBookmarked ? "bookmark" : "bookmark-outline"} size={20} color={theme.primary} />
-          </TouchableOpacity>
+      <TouchableOpacity 
+        style={[localStyles.card, { backgroundColor: theme.card }]}
+        onPress={() => isInstructor 
+          ? navigation.navigate('AssessmentQuestionsView', { assessment: item }) 
+          : navigation.navigate('TakeAssessment', { assessmentId: item._id })}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+          <View style={[localStyles.iconBox, { backgroundColor: '#EEF2FF' }]}>
+            <Ionicons name="clipboard" size={22} color="#4338ca" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[localStyles.cardTitle, { color: theme.text }]}>{item.title}</Text>
+            <Text style={localStyles.metadataText}>
+              {qCount} Questions • {timerText}
+            </Text>
+            <Text style={localStyles.metadataText}>
+              Deadline: {deadline}
+            </Text>
+          </View>
         </View>
-
-        {/* Info Area */}
-        <View style={localStyles.modelInfo}>
-          <Text style={[localStyles.cardTitle, { color: theme.text }]} numberOfLines={1}>{item.title}</Text>
-          <Text style={[localStyles.modelDesc, { color: theme.subText }]} numberOfLines={2}>
-            {item.description || "Explore this 3D structure by clicking and dragging."}
-          </Text>
-          <Text style={{ color: theme.primary, fontSize: 10, fontWeight: '800', marginTop: 5 }}>{item.fileName}</Text>
-          
-          <TouchableOpacity 
-            style={[localStyles.viewBtn, { backgroundColor: theme.primary }]}
-            onPress={() => navigation.navigate('ModelViewerMobile', { modelId: item._id, modelTitle: item.title, modelUrl: item.fileUrl, labels: item.labels })}
-          >
-            <Text style={localStyles.viewBtnText}>View Full Screen</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
+        <Ionicons name="chevron-forward" size={18} color="#ccc" />
+      </TouchableOpacity>
     );
   };
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.bg }}>
-      <StatusBar barStyle={theme.mode === 'dark' ? 'light-content' : 'dark-content'} />
-      
-      <View style={localStyles.header}>
-        <Text style={[localStyles.headerTitle, { color: theme.text }]}>Educational</Text>
-        <View style={[localStyles.tabBar, { backgroundColor: theme.mode === 'dark' ? '#1a1a1a' : '#f0f0f0' }]}>
-          <TouchableOpacity 
-            style={[localStyles.tab, activeTab === 'lessons' && { backgroundColor: theme.card, elevation: 3 }]}
-            onPress={() => setActiveTab('lessons')}
-          >
-            <Text style={[localStyles.tabText, { color: activeTab === 'lessons' ? theme.primary : theme.subText }]}>Lessons</Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={[localStyles.tab, activeTab === 'models' && { backgroundColor: theme.card, elevation: 3 }]}
-            onPress={() => setActiveTab('models')}
-          >
-            <Text style={[localStyles.tabText, { color: activeTab === 'models' ? theme.primary : theme.subText }]}>3D Models</Text>
-          </TouchableOpacity>
+      <StatusBar barStyle="light-content" />
+      <View style={localStyles.headerColored}>
+        <View style={localStyles.headerRow}>
+          <Text style={localStyles.headerTitle}>Learning Materials</Text>
+          {user?.role?.toLowerCase() === 'instructor' && (
+            <TouchableOpacity style={localStyles.archiveHeaderBtn} onPress={() => navigation.navigate('ArchiveLessons')}>
+              <Ionicons name="archive" size={20} color="#fff" />
+            </TouchableOpacity>
+          )}
+        </View>
+        <View style={localStyles.searchContainer}>
+          <Ionicons name="search" size={18} color="#94A3B8" />
+          <TextInput 
+            placeholder={`Search ${activeTab}...`}
+            style={localStyles.searchInput}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholderTextColor="#94A3B8"
+          />
         </View>
       </View>
 
+      <View style={localStyles.tabWrapper}>
+        {['lessons', 'models', 'assessments'].map((tab) => (
+          <TouchableOpacity key={tab} style={[localStyles.tabItem, activeTab === tab && localStyles.activeTab]} onPress={() => setActiveTab(tab)}>
+            <Text style={[localStyles.tabLabel, { color: activeTab === tab ? '#153c2a' : '#64748B' }]}>
+              {tab === 'models' ? '3D MODELS' : tab.toUpperCase()}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
       {loading ? (
-        <View style={{ flex: 1, justifyContent: 'center' }}><ActivityIndicator size="large" color={theme.primary} /></View>
+        <ActivityIndicator size="large" color="#153c2a" style={{ marginTop: 40 }} />
       ) : (
         <FlatList
-          data={activeTab === 'lessons' ? lessons : models}
+          data={filteredData}
           keyExtractor={(item) => item._id}
-          renderItem={activeTab === 'lessons' ? renderLessonItem : renderModelItem}
-          contentContainerStyle={localStyles.listPadding}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.primary} />}
-          ListEmptyComponent={
-            <View style={localStyles.emptyState}>
-              <Ionicons name="search-outline" size={50} color={theme.subText + '44'} />
-              <Text style={{ color: theme.subText }}>Nothing found here yet.</Text>
-            </View>
-          }
+          renderItem={activeTab === 'lessons' ? renderLessonItem : (activeTab === 'models' ? renderModelItem : renderAssessmentItem)}
+          contentContainerStyle={{ padding: 20, paddingBottom: 100 }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={fetchData} tintColor="#153c2a" />}
         />
       )}
     </View>
@@ -214,24 +220,24 @@ export default function Learn({ navigation }) {
 }
 
 const localStyles = StyleSheet.create({
-  header: { paddingHorizontal: 20, paddingTop: Platform.OS === 'ios' ? 60 : 40, paddingBottom: 15 },
-  headerTitle: { fontSize: 28, fontWeight: '900', marginBottom: 15 },
-  tabBar: { flexDirection: 'row', borderRadius: 12, padding: 4 },
-  tab: { flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center' },
-  tabText: { fontSize: 14, fontWeight: 'bold' },
-  listPadding: { padding: 20, paddingBottom: 100 },
-  
-  lessonCard: { flexDirection: 'row', alignItems: 'center', padding: 15, borderRadius: 15, marginBottom: 12, elevation: 2 },
+  headerColored: { backgroundColor: '#153c2a', paddingTop: 60, paddingBottom: 25, paddingHorizontal: 22, borderBottomLeftRadius: 25, borderBottomRightRadius: 25 },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  headerTitle: { fontSize: 24, fontWeight: '900', color: '#fff' },
+  archiveHeaderBtn: { backgroundColor: 'rgba(255,255,255,0.2)', padding: 10, borderRadius: 12 },
+  searchContainer: { flexDirection: 'row', backgroundColor: '#fff', borderRadius: 15, paddingHorizontal: 15, height: 45, alignItems: 'center' },
+  searchInput: { flex: 1, marginLeft: 10, fontSize: 14, fontWeight: '600' },
+  tabWrapper: { flexDirection: 'row', marginHorizontal: 22, marginTop: 20, marginBottom: 20, backgroundColor: '#F1F5F9', borderRadius: 12, padding: 4 },
+  tabItem: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 10 },
+  activeTab: { backgroundColor: '#fff', elevation: 2 },
+  tabLabel: { fontSize: 10, fontWeight: '800' },
+  card: { flexDirection: 'row', alignItems: 'center', padding: 15, borderRadius: 20, marginBottom: 12, elevation: 3 },
   iconBox: { width: 45, height: 45, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginRight: 15 },
-  cardTitle: { fontSize: 16, fontWeight: 'bold' },
-
-  modelCard: { borderRadius: 20, marginBottom: 20, overflow: 'hidden', elevation: 4, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 10 },
-  modelThumbContainer: { height: 200, backgroundColor: '#f0f4f2', position: 'relative' },
-  modelInfo: { padding: 16 },
-  modelDesc: { fontSize: 13, marginTop: 5, lineHeight: 18 },
-  viewBtn: { marginTop: 15, paddingVertical: 10, borderRadius: 10, alignItems: 'center' },
-  viewBtnText: { color: '#153c2a', fontWeight: 'bold', fontSize: 14 },
-  bookmarkFloat: { position: 'absolute', top: 12, right: 12, backgroundColor: 'rgba(255,255,255,0.85)', padding: 8, borderRadius: 20, zIndex: 10 },
-  
-  emptyState: { alignItems: 'center', marginTop: 100 }
+  cardTitle: { fontSize: 15, fontWeight: '800' },
+  metadataText: { fontSize: 10, color: '#94A3B8', fontWeight: '600' },
+  actionGroup: { flexDirection: 'row', gap: 12 },
+  modelCard: { borderRadius: 25, marginBottom: 20, overflow: 'hidden', elevation: 4 },
+  modelThumbContainer: { height: 180 },
+  modelInfo: { padding: 20 },
+  viewBtn: { marginTop: 15, backgroundColor: '#153c2a', paddingVertical: 12, borderRadius: 15, alignItems: 'center' },
+  viewBtnText: { color: '#fff', fontWeight: '900', fontSize: 12 }
 });

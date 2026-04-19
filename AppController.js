@@ -23,6 +23,8 @@ import StudentMonitoring from './Pages/StudentMonitoring';
 import StudentProgressDetail from './Pages/StudentProgressDetail';
 import UploadLesson from './Pages/UploadLesson';
 import Bookmarks from './Pages/Bookmarks';
+import ArchiveLessons from './Pages/ArchiveLessons';
+import AssessmentQuestionsView from './Pages/AssessmentQuestionsView';
 
 const Stack = createStackNavigator();
 
@@ -88,6 +90,8 @@ export default function AppController() {
         <Stack.Screen name="StudentProgressDetail" component={StudentProgressDetail} options={{ headerShown: false }} />
         <Stack.Screen name="UploadLesson" component={UploadLesson} options={{ headerShown: false }} />
         <Stack.Screen name="Bookmarks" component={Bookmarks} options={{ headerShown: false }} />
+        <Stack.Screen name="ArchiveLessons" component={ArchiveLessons} options={{ headerShown: false }} />
+        <Stack.Screen name="AssessmentQuestionsView" component={AssessmentQuestionsView} options={{ headerShown: false }} />
       </Stack.Navigator>
     </NavigationContainer>
   );

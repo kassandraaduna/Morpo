@@ -1,6 +1,4 @@
-// themes.js
 export const COLORS = {
-    // Primary Web Branding
     primary: '#153c2a',      // Dark Forest Green (from web buttons/headers)
     accent: '#2d6a4f',       // Medium Green
     background: '#f4f7f5',   // Very light grey-green (Web background)

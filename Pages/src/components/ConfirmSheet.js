@@ -37,7 +37,6 @@ export default function ConfirmSheet({
         onRequestClose={onCancel}
         >
         <View style={{ flex: 1 }}>
-            {/* BLUR BACKDROP */}
             <Pressable
             style={{ flex: 1 }}
             onPress={onCancel}
@@ -49,7 +48,6 @@ export default function ConfirmSheet({
             />
             </Pressable>
 
-            {/* SLIDING CONFIRM SHEET */}
             <Animated.View
                 style={[
                     styles.confirmSheet,
