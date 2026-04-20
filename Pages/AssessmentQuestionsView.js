@@ -1,117 +1,189 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, FlatList } from 'react-native';
+import React, { useState, useEffect, useContext } from 'react';
+import { 
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, 
+  ActivityIndicator, FlatList, Image 
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import api from './src/services/api';
-import moment from 'moment';
+import api, { toAbsUrl } from './src/services/api';
+import { ThemeContext } from './src/context/ThemeContext';
+import { toastError } from './src/components/ToastMsg';
+
+const getInitials = (name) => {
+  if (!name) return 'S';
+  const parts = name.trim().split(' ');
+  if (parts.length > 1) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  return parts[0][0].toUpperCase();
+};
 
 export default function AssessmentQuestionsView({ route, navigation }) {
   const { assessment } = route.params;
+  const { theme } = useContext(ThemeContext);
   const [activeSubTab, setActiveSubTab] = useState('questions'); 
   const [studentStatusList, setStudentStatusList] = useState([]);
+  const [rawMappedList, setRawMappedList] = useState([]); 
   const [loading, setLoading] = useState(false);
+  const [filterMode, setFilterMode] = useState('default'); // 'default', 'pending', 'complete'
 
   useEffect(() => {
-    if (activeSubTab === 'takes') fetchMonitoringData();
-  }, [activeSubTab]);
+    fetchMonitoringData();
+  }, []);
+
+  // STRICT FILTERING LOGIC
+  useEffect(() => {
+    let result = [...rawMappedList];
+
+    if (filterMode === 'pending') {
+      // ONLY show students who have NOT taken it
+      result = result.filter(s => !s.hasTaken);
+    } else if (filterMode === 'complete') {
+      // ONLY show students who HAVE taken it
+      result = result.filter(s => s.hasTaken);
+    } else {
+      // Default: Show ALL students, sorted alphabetically
+      result.sort((a, b) => a.name.localeCompare(b.name));
+    }
+
+    setStudentStatusList(result);
+  }, [filterMode, rawMappedList]);
 
   const fetchMonitoringData = async () => {
     try {
       setLoading(true);
-      // 1. Fetch all students and the specific submission records for this quiz
-      const [allStudentsRes, submissionsRes] = await Promise.all([
-        api.get('/admin/users?role=student'), // Get all students
-        api.get(`/instructor/assessment-monitoring?assessmentId=${assessment._id}`) // Get who took it
-      ]);
+      const res = await api.get('/instructor/assessment-monitoring'); 
+      const allData = res.data?.data || [];
 
-      const allStudents = allStudentsRes.data?.data || [];
-      const takers = submissionsRes.data?.data || [];
-
-      // 2. Filter students based on Assessment Targets (Section/Year)
-      // If targetSections is empty, it means it's assigned to everyone.
-      let eligibleStudents = allStudents;
+      // Filter by section assignment
+      let filteredList = allData;
       if (assessment.targetSections?.length > 0) {
-        eligibleStudents = allStudents.filter(s => 
-          assessment.targetSections.includes(s.section)
-        );
+        filteredList = allData.filter(student => {
+          const studentSection = String(student.section || '').toUpperCase();
+          return assessment.targetSections.some(target => 
+            String(target).toUpperCase() === studentSection || studentSection.includes(String(target).toUpperCase())
+          );
+        });
       }
 
-      // 3. Map status (Taken vs Not Taken)
-      const combinedList = eligibleStudents.map(student => {
-        const record = takers.find(t => t.studentId === student._id);
+      const mapped = filteredList.map(item => {
+        const quizRecord = item.assessments?.find(a => String(a.assessmentId) === String(assessment._id));
         return {
-          ...student,
-          hasTaken: !!record,
-          score: record ? record.lastPercent : null,
-          attempts: record ? record.attemptCount : 0,
-          completedAt: record ? record.updatedAt : null
+          _id: item.studentId, 
+          name: item.studentName,
+          yearLevel: item.yearLevel,
+          section: item.section,
+          avatar: item.avatar,
+          hasTaken: !!quizRecord,
+          score: quizRecord ? quizRecord.lastPercent : null,
+          attempts: quizRecord ? quizRecord.takeCount : 0, 
         };
       });
 
-      // Sort: Put those who haven't taken it at the top or bottom as preferred
-      setStudentStatusList(combinedList.sort((a, b) => b.hasTaken - a.hasTaken));
+      setRawMappedList(mapped);
     } catch (e) {
-      console.error("Monitoring Error:", e);
+      toastError("Failed to sync student status.");
     } finally {
       setLoading(false);
     }
   };
 
-  const renderStudentItem = ({ item }) => (
-    <View style={localStyles.studentRow}>
-      <View style={{ flex: 1 }}>
-        <Text style={localStyles.studentName}>{item.fname} {item.lname}</Text>
-        <Text style={localStyles.studentMeta}>{item.yearLevel} - {item.section}</Text>
-      </View>
-      
-      <View style={{ alignItems: 'flex-end' }}>
-        {item.hasTaken ? (
-          <>
-            <View style={localStyles.statusBadgeSuccess}>
-              <Text style={localStyles.statusText}>COMPLETED</Text>
+  const renderStudentItem = ({ item }) => {
+    const isPassing = item.score >= (assessment.passingScore || 70);
+
+    return (
+      <View style={[localStyles.studentCard, { backgroundColor: theme.card }]}>
+        <View style={localStyles.rowLeft}>
+          {item.avatar ? (
+            <Image source={{ uri: toAbsUrl(item.avatar) }} style={localStyles.avatar} />
+          ) : (
+            <View style={localStyles.initialsCircle}>
+              <Text style={localStyles.initialsText}>{getInitials(item.name)}</Text>
             </View>
-            <Text style={[localStyles.scoreText, { color: item.score >= (assessment.passingScore || 70) ? '#10B981' : '#EF4444' }]}>
-              {item.score}% ({item.attempts} attempts)
+          )}
+          
+          <View style={{ flex: 1 }}>
+            <Text style={[localStyles.studentName, { color: theme.text }]}>
+              {item.name.toUpperCase()}
             </Text>
-          </>
-        ) : (
-          <>
-            <View style={localStyles.statusBadgePending}>
-              <Text style={[localStyles.statusText, { color: '#64748B' }]}>PENDING</Text>
+            <Text style={localStyles.studentMeta}>{item.yearLevel} • {item.section}</Text>
+          </View>
+        </View>
+        
+        <View style={localStyles.rowRight}>
+          {item.hasTaken ? (
+            <View style={{ alignItems: 'flex-end' }}>
+              <View style={localStyles.statusBadgeSuccess}>
+                <Text style={localStyles.statusTextSuccess}>COMPLETED</Text>
+              </View>
+              <Text style={[localStyles.scoreText, { color: isPassing ? '#10B981' : '#EF4444' }]}>
+                {item.score}%
+              </Text>
+              <Text style={localStyles.attemptMeta}>
+                {item.attempts} {item.attempts === 1 ? 'attempt' : 'attempts'}
+              </Text>
             </View>
-            <Text style={localStyles.studentMeta}>No records</Text>
-          </>
-        )}
+          ) : (
+            <View style={{ alignItems: 'flex-end' }}>
+              <View style={localStyles.statusBadgePending}>
+                <Text style={localStyles.statusTextPending}>PENDING</Text>
+              </View>
+              <Text style={localStyles.attemptMeta}>No records found</Text>
+            </View>
+          )}
+        </View>
       </View>
-    </View>
-  );
+    );
+  };
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#fff' }}>
+    <View style={{ flex: 1, backgroundColor: theme.bg }}>
       <View style={localStyles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={26} color="#fff" />
         </TouchableOpacity>
-        <Text style={localStyles.headerText}>Monitoring: {assessment.targetSections?.length > 0 ? assessment.targetSections.join(', ') : 'All Sections'}</Text>
+        <Text style={localStyles.headerText}>Monitoring</Text>
       </View>
 
       <View style={localStyles.tabBar}>
         <TouchableOpacity onPress={() => setActiveSubTab('questions')} style={[localStyles.tab, activeSubTab === 'questions' && localStyles.activeTab]}>
-          <Text style={[localStyles.tabLabel, activeSubTab === 'questions' && { color: '#153c2a' }]}>QUESTIONS</Text>
+          <Text style={[localStyles.tabLabel, { color: activeSubTab === 'questions' ? '#153c2a' : '#64748B' }]}>ASSESSMENT QUESTIONS</Text>
         </TouchableOpacity>
         <TouchableOpacity onPress={() => setActiveSubTab('takes')} style={[localStyles.tab, activeSubTab === 'takes' && localStyles.activeTab]}>
-          <Text style={[localStyles.tabLabel, activeSubTab === 'takes' && { color: '#153c2a' }]}>STUDENT STATUS</Text>
+          <Text style={[localStyles.tabLabel, { color: activeSubTab === 'takes' ? '#153c2a' : '#64748B' }]}>ASSESSMENT STATUS</Text>
         </TouchableOpacity>
       </View>
 
+      <View style={localStyles.titleSection}>
+        <Text style={localStyles.assessmentTitle}>{assessment.title}</Text>
+      </View>
+
+      {activeSubTab === 'takes' && (
+        <View style={localStyles.filterContainer}>
+          <Text style={localStyles.filterPrefix}>Sort by:</Text>
+          {['default', 'pending', 'complete'].map((mode) => (
+            <TouchableOpacity 
+              key={mode} 
+              onPress={() => setFilterMode(mode)} 
+              style={[localStyles.filterBtn, filterMode === mode && localStyles.filterBtnActive]}
+            >
+              <Text style={[localStyles.filterBtnText, { color: filterMode === mode ? '#fff' : '#64748B' }]}>
+                {mode === 'default' ? 'ALL' : mode.toUpperCase()}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+
       {activeSubTab === 'questions' ? (
-        <ScrollView contentContainerStyle={{ padding: 22 }}>
-          <Text style={localStyles.title}>{assessment.title}</Text>
+        <ScrollView contentContainerStyle={{ paddingHorizontal: 22, paddingBottom: 30 }}>
           {assessment.questions.map((q, idx) => (
-            <View key={idx} style={localStyles.qCard}>
-              <Text style={localStyles.qText}>{idx + 1}. {q.text}</Text>
+            <View key={idx} style={[localStyles.qCard, { backgroundColor: theme.card }]}>
+              <Text style={[localStyles.qText, { color: theme.text }]}>{idx + 1}. {q.text}</Text>
               {q.options.map((opt, i) => (
                 <View key={i} style={localStyles.optRow}>
-                  <Ionicons name={q.correctIndex === i ? "checkmark-circle" : "ellipse-outline"} size={16} color={q.correctIndex === i ? "#10B981" : "#ccc"} />
+                  <Ionicons 
+                    name={q.correctIndex === i ? "checkmark-circle" : "ellipse-outline"} 
+                    size={16} 
+                    color={q.correctIndex === i ? "#10B981" : "#ccc"} 
+                  />
                   <Text style={[localStyles.optText, q.correctIndex === i && { color: '#10B981', fontWeight: 'bold' }]}>{opt}</Text>
                 </View>
               ))}
@@ -121,12 +193,12 @@ export default function AssessmentQuestionsView({ route, navigation }) {
       ) : (
         <View style={{ flex: 1 }}>
           {loading ? <ActivityIndicator size="large" color="#153c2a" style={{ marginTop: 40 }} /> : (
-            <FlatList
-              data={studentStatusList}
-              keyExtractor={(item) => item._id}
-              renderItem={renderStudentItem}
-              contentContainerStyle={{ padding: 22 }}
-              ListEmptyComponent={<Text style={localStyles.emptyText}>No eligible students found for this section.</Text>}
+            <FlatList 
+              data={studentStatusList} 
+              keyExtractor={(item) => item._id} 
+              renderItem={renderStudentItem} 
+              contentContainerStyle={{ paddingHorizontal: 22, paddingBottom: 30 }} 
+              ListEmptyComponent={<Text style={localStyles.emptyText}>No students found for this filter.</Text>}
             />
           )}
         </View>
@@ -136,23 +208,39 @@ export default function AssessmentQuestionsView({ route, navigation }) {
 }
 
 const localStyles = StyleSheet.create({
-    header: { backgroundColor: '#153c2a', paddingTop: 60, paddingBottom: 20, paddingHorizontal: 22, flexDirection: 'row', alignItems: 'center' },
-    headerText: { color: '#fff', fontSize: 16, fontWeight: '800', marginLeft: 15, flex: 1 },
-    tabBar: { flexDirection: 'row', backgroundColor: '#F1F5F9', marginHorizontal: 22, marginTop: 20, marginBottom: 20, borderRadius: 12, padding: 4 },
-    tab: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 10 },
-    activeTab: { backgroundColor: '#fff', elevation: 2 },
-    tabLabel: { fontSize: 10, fontWeight: '900', color: '#64748B' },
-    title: { fontSize: 20, fontWeight: '900', color: '#153c2a', marginBottom: 20 },
-    qCard: { padding: 15, backgroundColor: '#F8FAFC', borderRadius: 15, marginBottom: 15, borderWidth: 1, borderColor: '#E2E8F0' },
-    qText: { fontSize: 14, fontWeight: '800', marginBottom: 10 },
-    optRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 5 },
-    optText: { marginLeft: 10, fontSize: 13, color: '#475569' },
-    studentRow: { flexDirection: 'row', paddingVertical: 15, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', alignItems: 'center' },
-    studentName: { fontSize: 14, fontWeight: '800', color: '#1E293B' },
-    studentMeta: { fontSize: 10, color: '#94A3B8', fontWeight: '700' },
-    statusBadgeSuccess: { backgroundColor: '#E1F8F0', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 5, marginBottom: 4 },
-    statusBadgePending: { backgroundColor: '#F1F5F9', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 5, marginBottom: 4 },
-    statusText: { fontSize: 9, fontWeight: '900', color: '#10B981' },
-    scoreText: { fontSize: 14, fontWeight: '900' },
-    emptyText: { textAlign: 'center', marginTop: 50, color: '#94A3B8', fontWeight: '700' }
+  header: { backgroundColor: '#153c2a', paddingTop: 60, paddingBottom: 20, paddingHorizontal: 22, flexDirection: 'row', alignItems: 'center' },
+  headerText: { color: '#fff', fontSize: 18, fontWeight: '800', marginLeft: 15 },
+  tabBar: { flexDirection: 'row', backgroundColor: '#F1F5F9', marginHorizontal: 22, marginTop: 20, marginBottom: 10, borderRadius: 12, padding: 4 },
+  tab: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 10 },
+  activeTab: { backgroundColor: '#fff', elevation: 2 },
+  tabLabel: { fontSize: 10, fontWeight: '900' },
+  titleSection: { paddingHorizontal: 22, paddingBottom: 15, paddingTop: 5 },
+  titleLabel: { fontSize: 9, fontWeight: '900', color: '#94A3B8', letterSpacing: 1, marginBottom: 2 },
+  assessmentTitle: { fontSize: 20, fontWeight: '900', color: '#153c2a' },
+
+  filterContainer: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 22, marginBottom: 15 },
+  filterPrefix: { fontSize: 11, fontWeight: '900', color: '#94A3B8', marginRight: 10, textTransform: 'uppercase' },
+  filterBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, backgroundColor: '#F1F5F9', marginRight: 8 },
+  filterBtnActive: { backgroundColor: '#153c2a' },
+  filterBtnText: { fontSize: 9, fontWeight: '800' },
+
+  studentCard: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 22, marginBottom: 14, elevation: 4, shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 12 },
+  rowLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
+  avatar: { width: 48, height: 48, borderRadius: 16, marginRight: 12 },
+  initialsCircle: { width: 48, height: 48, borderRadius: 16, backgroundColor: '#E7F5EE', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  initialsText: { color: '#153c2a', fontSize: 18, fontWeight: '900' },
+  studentName: { fontSize: 14, fontWeight: '800' },
+  studentMeta: { fontSize: 10, color: '#94A3B8', fontWeight: '700', marginTop: 2 },
+  rowRight: { justifyContent: 'center' },
+  scoreText: { fontSize: 18, fontWeight: '900' },
+  attemptMeta: { fontSize: 9, color: '#94A3B8', fontWeight: '700' },
+  statusBadgeSuccess: { backgroundColor: '#E1F8F0', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 8, marginBottom: 4 },
+  statusTextSuccess: { fontSize: 9, fontWeight: '900', color: '#10B981' },
+  statusBadgePending: { backgroundColor: '#F1F5F9', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 8, marginBottom: 4 },
+  statusTextPending: { fontSize: 9, fontWeight: '900', color: '#64748B' },
+  qCard: { padding: 18, borderRadius: 20, marginBottom: 15, elevation: 2, borderWidth: 1, borderColor: '#f1f5f9' },
+  qText: { fontSize: 15, fontWeight: '800', marginBottom: 12 },
+  optRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
+  optText: { marginLeft: 10, fontSize: 14, color: '#475569' },
+  emptyText: { textAlign: 'center', marginTop: 40, color: '#94A3B8', fontWeight: '800' }
 });

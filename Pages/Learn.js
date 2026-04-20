@@ -61,18 +61,17 @@ export default function Learn({ navigation, route }) {
 
   const handleArchive = async (id) => {
     Alert.alert("Archive Lesson", "Move this to your archive list?", [
-      { text: "Cancel" },
+      { text: "Cancel", style: "cancel" },
       { text: "Archive", onPress: async () => {
           try {
             await api.put(`/lessons/${id}`, { 
               isArchived: true, 
               modifiedBy: user?._id 
             });
-            toastSuccess("Archived successfully");
+            toastSuccess("Moved to Archive");
             fetchData();
-          } catch (e) { 
-            console.error(e);
-            toastError("Archive failed"); 
+          } catch (e) {
+            toastError("Archive failed");
           }
       }}
     ]);
@@ -226,7 +225,7 @@ const localStyles = StyleSheet.create({
   archiveHeaderBtn: { backgroundColor: 'rgba(255,255,255,0.2)', padding: 10, borderRadius: 12 },
   searchContainer: { flexDirection: 'row', backgroundColor: '#fff', borderRadius: 15, paddingHorizontal: 15, height: 45, alignItems: 'center' },
   searchInput: { flex: 1, marginLeft: 10, fontSize: 14, fontWeight: '600' },
-  tabWrapper: { flexDirection: 'row', marginHorizontal: 22, marginTop: 20, marginBottom: 20, backgroundColor: '#F1F5F9', borderRadius: 12, padding: 4 },
+  tabWrapper: { flexDirection: 'row', marginHorizontal: 22, marginTop: 20, marginBottom: 10, backgroundColor: '#F1F5F9', borderRadius: 12, padding: 4 },
   tabItem: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 10 },
   activeTab: { backgroundColor: '#fff', elevation: 2 },
   tabLabel: { fontSize: 10, fontWeight: '800' },

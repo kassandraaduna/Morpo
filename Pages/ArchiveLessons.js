@@ -43,19 +43,30 @@ export default function ArchiveLessons({ navigation }) {
         }
     };
 
-    const handlePermanentDelete = (id) => {
-        Alert.alert("Delete Permanently", "This cannot be undone. Delete permanently?", [
-            { text: "Cancel", style: "cancel" },
-            { text: "Delete", style: "destructive", onPress: async () => {
-                try {
-                    await api.delete(`/lessons/${id}`);
-                    toastSuccess("Lesson deleted permanently");
-                    fetchArchived();
-                } catch (e) { 
-                    toastError("Delete failed"); 
+    const handleDeletePermanently = async (id) => {
+        Alert.alert(
+            "Permanent Delete", 
+            "This will remove the lesson from the database and web dashboard forever. This cannot be undone.", 
+            [
+                { text: "Cancel", style: "cancel" },
+                { 
+                    text: "Delete", 
+                    style: "destructive", 
+                    onPress: async () => {
+                        try {
+                            await api.delete(`/lessons/${id}`);
+                            
+                            toastSuccess("Lesson permanently deleted");
+
+                            fetchArchived(); 
+                        } catch (e) {
+                            console.error(e);
+                            toastError("Failed to delete from server");
+                        }
+                    } 
                 }
-            }}
-        ]);
+            ]
+        );
     };
 
     useEffect(() => { fetchArchived(); }, []);
@@ -102,7 +113,7 @@ export default function ArchiveLessons({ navigation }) {
                                     <Ionicons name="refresh-circle" size={28} color="#153c2a" />
                                 </TouchableOpacity>
                                 <TouchableOpacity 
-                                    onPress={() => handlePermanentDelete(item._id)} 
+                                    onPress={() => handleDeletePermanently(item._id)} 
                                     style={localStyles.actionBtn}
                                 >
                                     <Ionicons name="trash" size={24} color="#EF4444" />
