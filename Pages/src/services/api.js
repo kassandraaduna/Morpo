@@ -1,9 +1,25 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+/*==========================================
+  1. LOCAL DEVELOPMENT
+  ========================================== 
+*/
+
 const BASE_IP = '192.168.1.24'; 
-const BASE_URL = `http://${BASE_IP}:8000/api`; 
 export const FILE_BASE = `http://${BASE_IP}:8000`;
+const BASE_URL = `${FILE_BASE}/api`; 
+
+
+/* ==========================================
+  2. PRODUCTION (Deployed to the Web)
+  ========================================== 
+  Uncomment this section when backend is live on the internet.
+  Replace the URL with actual deployed backend link!
+*/
+// export const FILE_BASE = 'https://your-live-backend-website.com'; 
+// const BASE_URL = `${FILE_BASE}/api`;
+
 
 const api = axios.create({
   baseURL: BASE_URL,
