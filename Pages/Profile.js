@@ -145,7 +145,7 @@ const localStyles = StyleSheet.create({
     headerTop: { 
       flexDirection: 'column',
       alignItems: 'flex-start',
-      marginBottom: 20 
+      marginBottom: 10 
     },
     headerTitle: { 
       fontSize: 24, 

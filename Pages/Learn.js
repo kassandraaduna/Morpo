@@ -257,7 +257,7 @@ export default function Learn({ navigation, route }) {
 }
 
 const localStyles = StyleSheet.create({
-  headerColored: { backgroundColor: '#153c2a', paddingTop: 60, paddingBottom: 25, paddingHorizontal: 22, borderBottomLeftRadius: 25, borderBottomRightRadius: 25 },
+  headerColored: { backgroundColor: '#153c2a', paddingTop: 60, paddingBottom: 25, paddingHorizontal: 22, borderBottomLeftRadius: 30, borderBottomRightRadius: 30 },
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
   headerTitle: { fontSize: 24, fontWeight: '900', color: '#fff' },
   archiveHeaderBtn: { backgroundColor: 'rgba(255,255,255,0.2)', padding: 10, borderRadius: 12 },

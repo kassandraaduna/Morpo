@@ -1,52 +1,81 @@
 import React, { useContext } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, FlatList } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, FlatList, Image, Platform, StatusBar } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ThemeContext } from './src/context/ThemeContext';
+import { toAbsUrl } from './src/services/api';
+
+const getInitials = (name) => {
+    if (!name) return 'U';
+    const parts = name.trim().split(' ');
+    if (parts.length > 1) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    return parts[0][0].toUpperCase();
+};
 
 export default function StudentProgressDetail({ route, navigation }) {
     const { student } = route.params;
     const { theme } = useContext(ThemeContext);
 
-    const renderQuizItem = ({ item }) => (
-        <View style={[localStyles.quizCard, { backgroundColor: theme.card }]}>
-            <View style={{ flex: 1 }}>
-                <Text style={[localStyles.quizTitle, { color: theme.text }]}>{item.title.toUpperCase()}</Text>
-                <Text style={localStyles.quizMeta}>Submitted: {new Date(item.lastSubmittedAt).toLocaleDateString()}</Text>
-                <Text style={localStyles.quizMeta}>Attempts: {item.takeCount}</Text>
+    const renderQuizItem = ({ item }) => {
+        const isPassing = item.lastPercent >= 50;
+
+        return (
+            <View style={[localStyles.quizCard, { backgroundColor: theme.card }]}>
+                <View style={{ flex: 1 }}>
+                    <Text style={[localStyles.quizTitle, { color: theme.text }]}>{item.title.toUpperCase()}</Text>
+                    <Text style={localStyles.quizMeta}>Submitted: {new Date(item.lastSubmittedAt).toLocaleDateString()}</Text>
+                    <Text style={localStyles.quizMeta}>Attempts: {item.takeCount}</Text>
+                </View>
+                <View style={localStyles.scoreColumn}>
+                    <Text style={[localStyles.scoreValue, { color: isPassing ? '#10B981' : '#EF4444' }]}>
+                        {item.lastPercent}%
+                    </Text>
+                    <Text style={localStyles.scoreLabel}>{item.lastScore} / {item.lastTotal} pts</Text>
+                </View>
             </View>
-            <View style={localStyles.scoreColumn}>
-                <Text style={localStyles.scoreValue}>{item.lastPercent}%</Text>
-                <Text style={localStyles.scoreLabel}>{item.lastScore}/{item.lastTotal}</Text>
-            </View>
-        </View>
-    );
+        );
+    };
 
     return (
         <View style={{ flex: 1, backgroundColor: theme.bg }}>
-            <View style={localStyles.header}>
-                <TouchableOpacity onPress={() => navigation.goBack()} style={localStyles.backBtn}>
-                    <Ionicons name="arrow-back" size={24} color="#fff" />
-                </TouchableOpacity>
+            <StatusBar barStyle="light-content" />
+
+            <View style={[localStyles.header, { backgroundColor: '#153c2a' }]}>
+                <View style={localStyles.headerTopRow}>
+                    <TouchableOpacity onPress={() => navigation.goBack()} style={{ marginRight: 15 }}>
+                        <Ionicons name="arrow-back" size={28} color="#fff" />
+                    </TouchableOpacity>
+                    <Text style={localStyles.headerTopTitle}>Student Performance Overview</Text>
+                </View>
+
                 <View style={localStyles.profileSection}>
                     <View style={localStyles.largeAvatar}>
-                        <Text style={localStyles.largeAvatarText}>{student.studentName[0]}</Text>
+                        {student.avatar ? (
+                            <Image source={{ uri: toAbsUrl(student.avatar) }} style={localStyles.largeAvatarImage} />
+                        ) : (
+                            <Text style={localStyles.largeAvatarText}>{getInitials(student.studentName)}</Text>
+                        )}
                     </View>
-                    <Text style={localStyles.headerName}>{student.studentName.toUpperCase()}</Text>
-                    <Text style={localStyles.headerSub}>{student.yearLevel} • {student.section}</Text>
+                    <Text style={localStyles.headerName}>{(student.studentName || 'Unknown').toUpperCase()}</Text>
+                    <Text style={localStyles.headerSub}>{student.yearLevel || 'N/A'} • {student.section || 'N/A'}</Text>
                 </View>
             </View>
 
-            <View style={{ flex: 1, padding: 20 }}>
-                <Text style={[localStyles.sectionTitle, { color: theme.text }]}>ASSESSMENT HISTORY</Text>
-                
+            <View style={{ flex: 1 }}>
                 <FlatList
                     data={student.assessments}
                     keyExtractor={(item, index) => index.toString()}
                     renderItem={renderQuizItem}
+                    contentContainerStyle={{ padding: 20, paddingBottom: 100 }}
+                    ListHeaderComponent={
+                        <Text style={[localStyles.sectionTitle, { color: theme.text }]}>ASSESSMENT HISTORY</Text>
+                    }
                     ListEmptyComponent={
-                        <Text style={{ textAlign: 'center', color: '#999', marginTop: 40 }}>
-                            No assessment data found for this student.
-                        </Text>
+                        <View style={{ alignItems: 'center', marginTop: 40 }}>
+                            <Ionicons name="document-text-outline" size={50} color={theme.subText + '44'} style={{ marginBottom: 10 }} />
+                            <Text style={{ color: theme.subText, fontSize: 14, fontWeight: '600' }}>
+                                No assessment data found for this student.
+                            </Text>
+                        </View>
                     }
                 />
             </View>
@@ -55,18 +84,20 @@ export default function StudentProgressDetail({ route, navigation }) {
 }
 
 const localStyles = StyleSheet.create({
-    header: { backgroundColor: '#153c2a', paddingTop: 60, paddingBottom: 30, borderBottomLeftRadius: 30, borderBottomRightRadius: 30 },
-    backBtn: { marginLeft: 20, marginBottom: 10 },
+    header: { paddingHorizontal: 20, paddingTop: Platform.OS === 'ios' ? 60 : 40, paddingBottom: 35, borderBottomLeftRadius: 30, borderBottomRightRadius: 30 },
+    headerTopRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 25 },
+    headerTopTitle: { fontSize: 20, fontWeight: '900', color: '#fff' },
     profileSection: { alignItems: 'center' },
-    largeAvatar: { width: 80, height: 80, borderRadius: 40, backgroundColor: 'rgba(255,255,255,0.2)', justifyContent: 'center', alignItems: 'center', marginBottom: 15, borderWidth: 2, borderColor: '#fff' },
-    largeAvatarText: { color: '#fff', fontSize: 32, fontWeight: 'bold' },
-    headerName: { color: '#fff', fontSize: 20, fontWeight: '900' },
-    headerSub: { color: 'rgba(255,255,255,0.7)', fontSize: 13, marginTop: 5 },
-    sectionTitle: { fontSize: 12, fontWeight: '900', marginBottom: 20, letterSpacing: 1 },
-    quizCard: { flexDirection: 'row', alignItems: 'center', padding: 20, borderRadius: 20, marginBottom: 12, elevation: 2 },
-    quizTitle: { fontSize: 13, fontWeight: '800', marginBottom: 5 },
-    quizMeta: { fontSize: 10, color: '#999', marginTop: 2 },
+    largeAvatar: { width: 86, height: 86, borderRadius: 43, backgroundColor: '#E7F5EE', justifyContent: 'center', alignItems: 'center', marginBottom: 15, borderWidth: 3, borderColor: '#fff', overflow: 'hidden' },
+    largeAvatarImage: { width: '100%', height: '100%', resizeMode: 'cover' },
+    largeAvatarText: { color: '#153c2a', fontSize: 32, fontWeight: '900', letterSpacing: 2 },
+    headerName: { color: '#fff', fontSize: 22, fontWeight: '900', textAlign: 'center' },
+    headerSub: { color: '#d1fae5', fontSize: 13, marginTop: 4, fontWeight: '600' },
+    sectionTitle: { fontSize: 13, fontWeight: '900', marginBottom: 15, letterSpacing: 1, color: '#153c2a' },
+    quizCard: { flexDirection: 'row', alignItems: 'center', padding: 18, borderRadius: 20, marginBottom: 12, elevation: 2, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 5 },
+    quizTitle: { fontSize: 14, fontWeight: '800', marginBottom: 6 },
+    quizMeta: { fontSize: 12, color: '#94A3B8', marginTop: 2, fontWeight: '600' },
     scoreColumn: { alignItems: 'flex-end', marginLeft: 15 },
-    scoreValue: { fontSize: 20, fontWeight: '900', color: '#153c2a' },
-    scoreLabel: { fontSize: 10, color: '#999', fontWeight: 'bold' }
+    scoreValue: { fontSize: 22, fontWeight: '900' },
+    scoreLabel: { fontSize: 12, color: '#94A3B8', fontWeight: '800', marginTop: 2 }
 });

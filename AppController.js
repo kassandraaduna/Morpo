@@ -71,23 +71,23 @@ export default function AppController() {
         initialRouteName={initialRoute}
         screenOptions={{ headerShown: false }}
       >
-        <Stack.Screen name="Splash" component={Splash} />
-        <Stack.Screen name="Onboarding" component={Onboarding} />
-        <Stack.Screen name="Login" component={Login} />
-        <Stack.Screen name="Register" component={Register} />
-        <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
+        <Stack.Screen name="Splash" component={Splash} options={{ headerShown: false }}/>
+        <Stack.Screen name="Onboarding" component={Onboarding} options={{ headerShown: false }}/>
+        <Stack.Screen name="Login" component={Login} options={{ headerShown: false }}/>
+        <Stack.Screen name="Register" component={Register} options={{ headerShown: false }}/>
+        <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} options={{ headerShown: false }}/>
         <Stack.Screen name="StudentBottomTab" component={StudentBottomTab} />
-        <Stack.Screen name="EditProfile" component={EditProfile} />
-        <Stack.Screen name="Termms" component={Terms} />
-        <Stack.Screen name="Privacy" component={Privacy} />
-        <Stack.Screen name="ChangePassword" component={ChangePassword} />
-        <Stack.Screen name="FAQs" component={FAQs} />
-        <Stack.Screen name="About" component={About} />
+        <Stack.Screen name="EditProfile" component={EditProfile} options={{ headerShown: false }}/>
+        <Stack.Screen name="Termms" component={Terms} options={{ headerShown: false }}/>
+        <Stack.Screen name="Privacy" component={Privacy} options={{ headerShown: false }}/>
+        <Stack.Screen name="ChangePassword" component={ChangePassword} options={{ headerShown: false }}/>
+        <Stack.Screen name="FAQs" component={FAQs} options={{ headerShown: false }}/>
+        <Stack.Screen name="About" component={About} options={{ headerShown: false }}/>
         <Stack.Screen name="InstructorBottomTab" component={InstructorBottomTab} />
-        <Stack.Screen name="LessonStudent" component={LessonStudent} />
-        <Stack.Screen name="TakeAssessment" component={TakeAssessment} />
-        <Stack.Screen name="ModelViewerMobile" component={ModelViewerMobile} />
-        <Stack.Screen name="CreatePractice" component={CreatePractice} />
+        <Stack.Screen name="LessonStudent" component={LessonStudent} options={{ headerShown: false }}/>
+        <Stack.Screen name="TakeAssessment" component={TakeAssessment} options={{ headerShown: false }}/>
+        <Stack.Screen name="ModelViewerMobile" component={ModelViewerMobile} options={{ headerShown: false }}/>
+        <Stack.Screen name="CreatePractice" component={CreatePractice} options={{ headerShown: false }}/>
         <Stack.Screen name="StudentMonitoring" component={StudentMonitoring} options={{ headerShown: false }} />
         <Stack.Screen name="StudentProgressDetail" component={StudentProgressDetail} options={{ headerShown: false }} />
         <Stack.Screen name="UploadLesson" component={UploadLesson} options={{ headerShown: false }} />

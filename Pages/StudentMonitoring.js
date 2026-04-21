@@ -1,8 +1,15 @@
 import React, { useEffect, useState, useContext } from 'react';
-import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, StyleSheet, TextInput, RefreshControl } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, StyleSheet, TextInput, RefreshControl, Image, Platform, StatusBar } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import api from './src/services/api';
+import api, { toAbsUrl } from './src/services/api';
 import { ThemeContext } from './src/context/ThemeContext';
+
+const getInitials = (name) => {
+    if (!name) return 'U';
+    const parts = name.trim().split(' ');
+    if (parts.length > 1) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    return parts[0][0].toUpperCase();
+};
 
 export default function StudentMonitoring({ navigation }) {
     const { theme } = useContext(ThemeContext);
@@ -25,10 +32,11 @@ export default function StudentMonitoring({ navigation }) {
 
     useEffect(() => { fetchMonitoring(); }, []);
 
-    const filteredStudents = students.filter(s => 
-        s.studentName.toLowerCase().includes(search.toLowerCase()) ||
-        s.section.toLowerCase().includes(search.toLowerCase())
-    );
+    const filteredStudents = students.filter(s => {
+        const nameMatch = (s.studentName || '').toLowerCase().includes(search.toLowerCase());
+        const sectionMatch = (s.section || '').toLowerCase().includes(search.toLowerCase());
+        return nameMatch || sectionMatch;
+    });
 
     const renderStudent = ({ item }) => (
         <TouchableOpacity 
@@ -36,14 +44,22 @@ export default function StudentMonitoring({ navigation }) {
             onPress={() => navigation.navigate('StudentProgressDetail', { student: item })}
         >
             <View style={localStyles.avatarCircle}>
-                <Text style={localStyles.avatarText}>{item.studentName[0]}</Text>
+                {item.avatar ? (
+                    <Image source={{ uri: toAbsUrl(item.avatar) }} style={localStyles.avatarImage} />
+                ) : (
+                    <Text style={localStyles.avatarText}>{getInitials(item.studentName)}</Text>
+                )}
             </View>
-            <View style={{ flex: 1, marginLeft: 15 }}>
-                <Text style={[localStyles.name, { color: theme.text }]}>{item.studentName.toUpperCase()}</Text>
-                <Text style={{ color: theme.subText, fontSize: 11 }}>{item.yearLevel} • {item.section}</Text>
+            <View style={{ flex: 1, marginLeft: 15, marginRight: 10 }}>
+                <Text style={[localStyles.name, { color: theme.text }]} numberOfLines={1}>
+                    {(item.studentName || 'Unknown').toUpperCase()}
+                </Text>
+                <Text style={{ color: theme.subText, fontSize: 12, marginTop: 2, fontWeight: '600' }}>
+                    {item.yearLevel || 'N/A'} • {item.section || 'N/A'}
+                </Text>
             </View>
             <View style={localStyles.badge}>
-                <Text style={localStyles.badgeText}>{item.assessments.length} QUIZZES</Text>
+                <Text style={localStyles.badgeText}>{item.assessments?.length || 0} QUIZZES</Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color={theme.subText} />
         </TouchableOpacity>
@@ -51,36 +67,49 @@ export default function StudentMonitoring({ navigation }) {
 
     return (
         <View style={{ flex: 1, backgroundColor: theme.bg }}>
-            <View style={localStyles.header}>
+            <StatusBar barStyle="light-content" />
+
+            <View style={[localStyles.header, { backgroundColor: '#153c2a' }]}>
                 <View style={localStyles.headerRow}>
-                    <TouchableOpacity onPress={() => navigation.goBack()}>
-                        <Ionicons name="arrow-back" size={24} color={theme.text} />
+                    <TouchableOpacity onPress={() => navigation.goBack()} style={{ marginRight: 15 }}>
+                        <Ionicons name="arrow-back" size={28} color="#fff" />
                     </TouchableOpacity>
-                    <Text style={[localStyles.title, { color: theme.text }]}>Student Monitoring</Text>
+                    <View>
+                        <Text style={localStyles.title}>Student Monitoring</Text>
+                        <Text style={localStyles.subtitle}>Track progress and assessment scores</Text>
+                    </View>
                 </View>
                 
-                <View style={[localStyles.searchBox, { backgroundColor: theme.card }]}>
-                    <Ionicons name="search" size={18} color={theme.subText} />
+                <View style={localStyles.searchBox}>
+                    <Ionicons name="search" size={18} color="#94A3B8" />
                     <TextInput 
                         placeholder="Search student or section..." 
-                        placeholderTextColor="#999"
-                        style={{ flex: 1, marginLeft: 10, color: theme.text }}
+                        placeholderTextColor="#94A3B8"
+                        style={localStyles.searchInput}
                         value={search}
                         onChangeText={setSearch}
+                        clearButtonMode="while-editing"
                     />
                 </View>
             </View>
 
             {loading ? (
-                <ActivityIndicator style={{ marginTop: 50 }} color="#153c2a" />
+                <View style={{ flex: 1, justifyContent: 'center' }}><ActivityIndicator size="large" color="#153c2a" /></View>
             ) : (
                 <FlatList
                     data={filteredStudents}
-                    keyExtractor={(item) => item.studentId}
+                    keyExtractor={(item) => item.studentId || Math.random().toString()}
                     renderItem={renderStudent}
                     contentContainerStyle={{ padding: 20, paddingBottom: 100 }}
-                    refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => {setRefreshing(true); fetchMonitoring();}} />}
-                    ListEmptyComponent={<Text style={localStyles.empty}>No students enrolled.</Text>}
+                    refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => {setRefreshing(true); fetchMonitoring();}} tintColor="#153c2a" />}
+                    ListEmptyComponent={
+                        <View style={localStyles.emptyState}>
+                            <Ionicons name="people-outline" size={60} color={theme.subText + '44'} style={{ marginBottom: 10 }} />
+                            <Text style={{ color: theme.text, fontSize: 16, fontWeight: 'bold' }}>
+                                {search ? "No matching students found." : "No students enrolled."}
+                            </Text>
+                        </View>
+                    }
                 />
             )}
         </View>
@@ -88,15 +117,18 @@ export default function StudentMonitoring({ navigation }) {
 }
 
 const localStyles = StyleSheet.create({
-    header: { paddingHorizontal: 20, paddingTop: 60, paddingBottom: 15 },
-    headerRow: { flexDirection: 'row', alignItems: 'center' },
-    title: { fontSize: 22, fontWeight: '900', marginLeft: 15 },
-    searchBox: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 15, height: 45, borderRadius: 12, marginTop: 20, elevation: 2 },
-    studentCard: { flexDirection: 'row', alignItems: 'center', padding: 18, borderRadius: 20, marginBottom: 12, elevation: 3 },
-    avatarCircle: { width: 45, height: 45, borderRadius: 22.5, backgroundColor: '#153c2a', justifyContent: 'center', alignItems: 'center' },
-    avatarText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
-    name: { fontSize: 13, fontWeight: '800' },
-    badge: { backgroundColor: '#e6f4ea', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, marginRight: 10 },
-    badgeText: { fontSize: 9, fontWeight: 'bold', color: '#153c2a' },
-    empty: { textAlign: 'center', marginTop: 50, color: '#999', fontWeight: 'bold' }
+    header: { paddingHorizontal: 20, paddingTop: Platform.OS === 'ios' ? 60 : 40, paddingBottom: 25, borderBottomLeftRadius: 30, borderBottomRightRadius: 30 },
+    headerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
+    title: { fontSize: 22, fontWeight: '900', color: '#fff', marginTop: 20  },
+    subtitle: { fontSize: 13, color: '#d1fae5', marginTop: 2 },
+    searchBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', paddingHorizontal: 15, height: 45, borderRadius: 15 },
+    searchInput: { flex: 1, marginLeft: 10, fontSize: 14, fontWeight: '600', color: '#334155' },
+    studentCard: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 20, marginBottom: 14, elevation: 3, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8 },
+    avatarCircle: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#E7F5EE', justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
+    avatarImage: { width: '100%', height: '100%', resizeMode: 'cover' },
+    avatarText: { color: '#153c2a', fontWeight: '900', fontSize: 18, letterSpacing: 1 },
+    name: { fontSize: 15, fontWeight: '800' },
+    badge: { backgroundColor: '#F1F5F9', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, marginRight: 10 },
+    badgeText: { fontSize: 10, fontWeight: 'bold', color: '#64748B' },
+    emptyState: { alignItems: 'center', marginTop: 60 }
 });

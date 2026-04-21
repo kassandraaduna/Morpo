@@ -1,13 +1,16 @@
 import React, { useEffect, useState, useContext } from 'react';
-import { View, Text, TextInput, ScrollView, TouchableOpacity, ActivityIndicator, Image, } from 'react-native';
+import { 
+    View, Text, TextInput, ScrollView, TouchableOpacity, 
+    ActivityIndicator, Image, StyleSheet, Platform, StatusBar 
+} from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import axios from 'axios';
 import * as ImagePicker from 'expo-image-picker';
-import styles from './src/styles/Styles';
 import ConfirmSheet from './src/components/ConfirmSheet';
 import { toastError, toastSuccess } from './src/components/ToastMsg';
 import { ThemeContext } from './src/context/ThemeContext';
+import { toAbsUrl } from './src/services/api'; 
 
 const API_URL = 'http://192.168.1.24:8000/api';
 
@@ -26,28 +29,23 @@ export default function EditProfile({ navigation }) {
     const [loading, setLoading] = useState(false);
     const [confirmCancel, setConfirmCancel] = useState(false);
 
-    /* ================= LOAD USER ================= */
     useEffect(() => {
         (async () => {
-        const raw = await AsyncStorage.getItem('user');
-        if (!raw) return;
+            const raw = await AsyncStorage.getItem('user');
+            if (!raw) return;
 
-        const u = JSON.parse(raw);
-        setUser(u);
-        setForm(u);
-        setOriginal(u);
-
-        setAvatar(u.avatar || null);
-        setOriginalAvatar(u.avatar || null);
+            const u = JSON.parse(raw);
+            setUser(u);
+            setForm(u);
+            setOriginal(u);
+            setAvatar(u.avatar || null);
+            setOriginalAvatar(u.avatar || null);
         })();
     }, []);
 
     if (!user) return null;
 
-    /* ================= HELPERS ================= */
-    const hasChanges =
-        JSON.stringify(form) !== JSON.stringify(original) ||
-        avatar !== originalAvatar;
+    const hasChanges = JSON.stringify(form) !== JSON.stringify(original) || avatar !== originalAvatar;
 
     const onChange = (key, value) => {
         setForm((p) => ({ ...p, [key]: value }));
@@ -64,7 +62,6 @@ export default function EditProfile({ navigation }) {
         return e;
     };
 
-    /* ================= IMAGE PICKER ================= */
     const pickImage = async () => {
         if (!editMode) return;
         const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -84,54 +81,43 @@ export default function EditProfile({ navigation }) {
         }
     };
 
-    /* ================= SAVE ================= */
     const onSave = async () => {
         if (!hasChanges) {
-        toastSuccess('Saved without changes');
-        setEditMode(false);
-        return;
+            toastSuccess('Saved without changes');
+            setEditMode(false);
+            return;
         }
 
         const v = validate();
         if (Object.keys(v).length) {
-        setErrors(v);
-        toastError('Please fix the errors');
-        return;
+            setErrors(v);
+            toastError('Please fix the errors');
+            return;
         }
 
         try {
-        setLoading(true);
+            setLoading(true);
+            const res = await axios.put(`${API_URL}/meds/${user._id}`, {
+                fname: form.fname,
+                lname: form.lname,
+                dob: form.dob,
+                gender: form.gender,
+                username: form.username,
+                email: form.email,
+                number: form.number,
+            });
 
-        const res = await axios.put(
-            `${API_URL}/meds/${user._id}`,
-            {
-            fname: form.fname,
-            lname: form.lname,
-            dob: form.dob,
-            gender: form.gender,
-            username: form.username,
-            email: form.email,
-            number: form.number,
-            }
-        );
+            const updatedUser = { ...res.data, avatar: avatar };
+            await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
 
-        const updatedUser = {
-            ...res.data,
-            avatar: avatar,
-        };
+            setOriginal(updatedUser);
+            setForm(updatedUser);
+            setUser(updatedUser);
+            setOriginalAvatar(avatar);
+            setEditMode(false);
 
-        await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
-
-        setOriginal(updatedUser);
-        setForm(updatedUser);
-        setUser(updatedUser);
-        setOriginalAvatar(avatar);
-
-        setEditMode(false);
-
-        toastSuccess('Profile updated successfully');
-        } 
-        catch (err) {
+            toastSuccess('Profile updated successfully');
+        } catch (err) {
             const data = err.response?.data;
             if (data?.errors) {
                 setErrors(data.errors);
@@ -139,186 +125,149 @@ export default function EditProfile({ navigation }) {
             } else {
                 toastError(data?.error || 'Failed to update profile');
             }
-        }
-        finally {
-        setLoading(false);
+        } finally {
+            setLoading(false);
         }
     };
 
-    /* ================= FIELD ================= */
-    const Field = ({ field, value, editable, placeholder }) => (
-        <View style={styles.editFieldWrap}>
-        <TextInput
-            style={[
-            styles.editInput,
-            { backgroundColor: theme.search, color: theme.text },
-            !editable && styles.editDisabled,
-            ]}
-            value={String(value || '')}
-            editable={editable}
-            placeholder={placeholder}
-            placeholderTextColor={theme.subText}
-            onChangeText={(v) => onChange(field, v)}
-        />
-        {errors[field] && (
-            <Text style={styles.fieldError}>{errors[field]}</Text>
-        )}
+    const displayAvatar = avatar?.startsWith('file') ? avatar : toAbsUrl(avatar);
+
+    const Field = ({ field, value, editable, placeholder, icon }) => (
+        <View style={localStyles.fieldContainer}>
+            <Text style={[localStyles.fieldLabel, { color: theme.text }]}>{placeholder}</Text>
+            <View style={[localStyles.inputWrapper, { backgroundColor: theme.card, borderColor: editable ? '#10b981' : '#E2E8F0', borderWidth: editable ? 1 : 0 }]}>
+                <Ionicons name={icon} size={18} color="#94A3B8" style={localStyles.inputIcon} />
+                <TextInput
+                    style={[localStyles.input, { color: editable ? theme.text : theme.subText }]}
+                    value={String(value || '')}
+                    editable={editable}
+                    placeholder={placeholder}
+                    placeholderTextColor="#94A3B8"
+                    onChangeText={(v) => onChange(field, v)}
+                />
+            </View>
+            {errors[field] && <Text style={localStyles.errorText}>{errors[field]}</Text>}
         </View>
     );
 
-    /* ================= UI ================= */
     return (
-        <>
-        <ScrollView
-            style={{ backgroundColor: theme.bg }}
-            contentContainerStyle={{ paddingBottom: 40, paddingHorizontal: 15, }}
-        >
-            {/* HEADER */}
-            <View style={[styles.editHeader, { flexDirection: 'row', alignItems: 'center', },]}>
-                <View style={{ width: 40 }}>
-                    <TouchableOpacity onPress={() => navigation.goBack()}>
-                    <Ionicons name="arrow-back" size={22} color={theme.text} />
+        <View style={{ flex: 1, backgroundColor: theme.bg }}>
+            <StatusBar barStyle="light-content" />
+
+            <View style={[localStyles.header, { backgroundColor: '#153c2a' }]}>
+                <View style={localStyles.headerRow}>
+                    <TouchableOpacity onPress={() => navigation.goBack()} style={{ marginRight: 15 }}>
+                        <Ionicons name="arrow-back" size={28} color="#fff" />
+                    </TouchableOpacity>
+                    <View style={{ flex: 1 }}>
+                        <Text style={localStyles.title}>Account Information</Text>
+                        <Text style={localStyles.subtitle}>View and update your personal information</Text>
+                    </View>
+                    <TouchableOpacity onPress={() => editMode ? setConfirmCancel(true) : setEditMode(true)}>
+                        <Ionicons name={editMode ? 'close-circle' : 'create-outline'} size={28} color={editMode ? '#EF4444' : '#ffffff'} />
                     </TouchableOpacity>
                 </View>
+            </View>
 
-                <View style={{ flex: 1, alignItems: 'center' }}>
-                    <Text style={[styles.editTitle, { color: theme.text }]}>
-                    EDIT PROFILE
-                    </Text>
+            <ScrollView contentContainerStyle={{ paddingBottom: 50, paddingHorizontal: 20 }}>
+                <View style={localStyles.avatarSection}>
+                    <TouchableOpacity activeOpacity={0.8} onPress={pickImage} disabled={!editMode}>
+                        <View style={localStyles.avatarCircle}>
+                            {avatar ? (
+                                <Image source={{ uri: displayAvatar }} style={localStyles.avatarImage} />
+                            ) : (
+                                <Ionicons name="person" size={45} color="#94A3B8" />
+                            )}
+                            {editMode && (
+                                <View style={localStyles.editBadge}>
+                                    <Ionicons name="camera" size={16} color="#fff" />
+                                </View>
+                            )}
+                        </View>
+                    </TouchableOpacity>
+                    <Text style={[localStyles.accountName, { color: theme.text }]}>{user.fname} {user.lname}</Text>
+                    <View style={localStyles.roleBadge}>
+                        <Text style={localStyles.roleText}>{user.role || 'Student'}</Text>
+                    </View>
                 </View>
 
-                <View style={{ width: 40 }} />
+                <View style={localStyles.formContainer}>
+                    <Field field="fname" value={form.fname} editable={editMode} placeholder="First Name" icon="person-outline" />
+                    <Field field="lname" value={form.lname} editable={editMode} placeholder="Last Name" icon="person-outline" />
+                    <Field field="username" value={form.username} editable={editMode} placeholder="Username" icon="at-outline" />
+                    <Field field="email" value={form.email} editable={editMode} placeholder="Email Address" icon="mail-outline" />
+                    <Field field="number" value={form.number} editable={editMode} placeholder="Mobile Number" icon="call-outline" />
+                    <Field field="gender" value={form.gender} editable={editMode} placeholder="Gender" icon="male-female-outline" />
+                    <Field field="dob" value={form.dob?.slice?.(0, 10)} editable={editMode} placeholder="Date of Birth (YYYY-MM-DD)" icon="calendar-outline" />
                 </View>
-
-            {/* PROFILE IMAGE */}
-            <View style={{ alignItems: 'center', marginBottom: 16 }}>
-            <TouchableOpacity activeOpacity={0.8} onPress={pickImage}>
-                <View
-                style={{
-                    width: 110,
-                    height: 110,
-                    borderRadius: 110,
-                    borderWidth: 1,
-                    borderColor: '#E0E0E0',
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                    backgroundColor: '#FFF',
-                    marginTop: 25
-                }}
-                >
-                {avatar ? (
-                    <Image
-                    source={{ uri: avatar }}
-                    style={{
-                        width: 110,
-                        height: 110,
-                        borderRadius: 110,
-                    }}
-                    />
-                ) : (
-                    <Ionicons
-                    name="camera-outline"
-                    size={32}
-                    color="#F2A1B3"
-                    />
-                )}
 
                 {editMode && (
-                    <View
-                    style={{
-                        position: 'absolute',
-                        bottom: 6,
-                        right: 6,
-                        backgroundColor: '#FFF',
-                        borderRadius: 14,
-                        padding: 4,
-                    }}
-                    >
-                    <Ionicons
-                        name="pencil"
-                        size={20}
-                        color="#E14B4B"
-                    />
-                    </View>
+                    <TouchableOpacity style={localStyles.saveBtn} onPress={onSave} disabled={loading}>
+                        {loading ? <ActivityIndicator color="#fff" /> : <Text style={localStyles.saveBtnText}>Save Changes</Text>}
+                    </TouchableOpacity>
                 )}
-                </View>
-            </TouchableOpacity>
+            </ScrollView>
 
-            <Text style={[styles.accountName, { marginTop: 10, fontWeight: '700', color: theme.text, }]}>
-                {user.fname} {user.lname}
-            </Text>
-            </View>
-
-            {/* ACCOUNT INFO */}
-            <View
-                style={[{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    marginHorizontal: 16,
-                    marginBottom: 8,
-                    marginTop: 25,
-                }]}
-                >
-                <Text style={[styles.sectionTitle, { color: theme.text }]}>
-                    ACCOUNT INFORMATION
-                </Text>
-
-                <TouchableOpacity
-                    onPress={() =>
-                    editMode ? setConfirmCancel(true) : setEditMode(true)
-                    }
-                >
-                    <Ionicons
-                        name={editMode ? 'close-circle' : 'pencil'}
-                        size={20}
-                        color={editMode ? '#E14B4B' : theme.edit}
-                    />
-                </TouchableOpacity>
-            </View>
-
-            <View style={[styles.editCard, {backgroundColor: theme.editCard,}]}>
-            <Field field="fname" value={form.fname} editable={editMode} placeholder="First Name" />
-            <Field field="lname" value={form.lname} editable={editMode} placeholder="Last Name" />
-            <Field field="dob" value={form.dob?.slice?.(0, 10)} editable={editMode} placeholder="Date of Birth" />
-            <Field field="gender" value={form.gender} editable={editMode} placeholder="Gender" />
-            <Field field="username" value={form.username} editable={editMode} placeholder="Username" />
-            <Field field="email" value={form.email} editable={editMode} placeholder="Email" />
-            <Field field="number" value={form.number} editable={editMode} placeholder="Mobile Number" />
-            </View>
-
-            {/* SAVE */}
-            {editMode && (
-            <TouchableOpacity
-                style={styles.saveBtn}
-                onPress={onSave}
-                disabled={loading}
-            >
-                {loading ? (
-                <ActivityIndicator color="#000" />
-                ) : (
-                <Text style={styles.saveBtnText}>Save</Text>
-                )}
-            </TouchableOpacity>
-            )}
-        </ScrollView>
-
-        {/* CANCEL CONFIRM */}
-        <ConfirmSheet
-            visible={confirmCancel}
-            title="Discard changes?"
-            message="Your unsaved changes will be lost."
-            confirmText="Discard"
-            danger
-            onCancel={() => setConfirmCancel(false)}
-            onConfirm={() => {
-            setForm(original);
-            setAvatar(originalAvatar);
-            setErrors({});
-            setEditMode(false);
-            setConfirmCancel(false);
-            }}
-        />
-        </>
+            <ConfirmSheet
+                visible={confirmCancel}
+                title="Discard changes?"
+                message="Your unsaved changes will be lost."
+                confirmText="Discard"
+                danger
+                onCancel={() => setConfirmCancel(false)}
+                onConfirm={() => {
+                    setForm(original);
+                    setAvatar(originalAvatar);
+                    setErrors({});
+                    setEditMode(false);
+                    setConfirmCancel(false);
+                }}
+            />
+        </View>
     );
 }
+
+const localStyles = StyleSheet.create({
+    header: { 
+        paddingHorizontal: 20, paddingTop: Platform.OS === 'ios' ? 60 : 40, 
+        paddingBottom: 25, borderBottomLeftRadius: 30, borderBottomRightRadius: 30 
+    },
+    headerRow: { flexDirection: 'row', alignItems: 'center' },
+    title: { fontSize: 22, fontWeight: '900', color: '#fff', marginTop: 20 },
+    subtitle: { fontSize: 13, color: '#d1fae5', marginTop: 2 },
+
+    avatarSection: { alignItems: 'center', marginTop: 25, marginBottom: 20 },
+    avatarCircle: { 
+        width: 110, height: 110, borderRadius: 55, backgroundColor: '#f1f5f9', 
+        justifyContent: 'center', alignItems: 'center', elevation: 4, 
+        shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 10, overflow: 'visible' 
+    },
+    avatarImage: { width: 110, height: 110, borderRadius: 55, resizeMode: 'cover' },
+    editBadge: { 
+        position: 'absolute', bottom: 0, right: 0, backgroundColor: '#10b981', 
+        width: 34, height: 34, borderRadius: 17, justifyContent: 'center', 
+        alignItems: 'center', borderWidth: 3, borderColor: '#fff' 
+    },
+    accountName: { fontSize: 20, fontWeight: '900', marginTop: 15 },
+    roleBadge: { alignSelf: 'center', backgroundColor: '#e7f8f2', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, marginTop: 8 },
+    roleText: { color: '#153c2a', fontSize: 10, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.5 },
+
+    formContainer: { marginTop: 10 },
+    fieldContainer: { marginBottom: 15 },
+    fieldLabel: { fontSize: 13, fontWeight: '800', marginBottom: 6, marginLeft: 4, color: '#153c2a' },
+    inputWrapper: { 
+        flexDirection: 'row', alignItems: 'center', height: 55, 
+        borderRadius: 14, paddingHorizontal: 15, elevation: 1, 
+        shadowColor: '#000', shadowOpacity: 0.02, shadowRadius: 5 
+    },
+    inputIcon: { marginRight: 10 },
+    input: { flex: 1, fontSize: 15, fontWeight: '600' },
+    errorText: { color: '#EF4444', fontSize: 11, marginTop: 4, marginLeft: 4, fontWeight: 'bold' },
+
+    saveBtn: { 
+        backgroundColor: '#153c2a', height: 55, borderRadius: 16, 
+        justifyContent: 'center', alignItems: 'center', marginTop: 15, 
+        elevation: 3, shadowColor: '#153c2a', shadowOpacity: 0.3, shadowRadius: 8 
+    },
+    saveBtnText: { color: '#fff', fontSize: 16, fontWeight: '900', letterSpacing: 0.5 }
+});
