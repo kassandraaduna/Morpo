@@ -1,5 +1,5 @@
 import React, { useContext, useEffect, useState } from 'react';
-import { View, TouchableOpacity, StyleSheet, ActivityIndicator, StatusBar, Platform } from 'react-native';
+import { View, TouchableOpacity, StyleSheet, ActivityIndicator, StatusBar, Platform, Text } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { WebView } from 'react-native-webview';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,7 +10,9 @@ const SERVER_URL = 'http://192.168.1.24:8000';
 export default function ModelViewerMobile({ route, navigation }) {
     const { modelId, modelTitle, modelUrl, labels } = route.params;
     const { theme } = useContext(ThemeContext);
+    
     const [isBookmarked, setIsBookmarked] = useState(false);
+    const [isDarkMode, setIsDarkMode] = useState(true);
 
     useEffect(() => {
         StatusBar.setHidden(true, 'fade');
@@ -19,12 +21,12 @@ export default function ModelViewerMobile({ route, navigation }) {
 
     useEffect(() => {
         const checkBookmark = async () => {
-          if (!modelId) return;
-          const stored = await AsyncStorage.getItem('studentBookmarks_v1');
-          if (stored) {
-             const parsed = JSON.parse(stored);
-             if (parsed.models?.includes(modelId)) setIsBookmarked(true);
-          }
+            if (!modelId) return;
+            const stored = await AsyncStorage.getItem('studentBookmarks_v1');
+            if (stored) {
+                const parsed = JSON.parse(stored);
+                if (parsed.models?.includes(modelId)) setIsBookmarked(true);
+            }
         };
         checkBookmark();
     }, [modelId]);
@@ -54,6 +56,7 @@ export default function ModelViewerMobile({ route, navigation }) {
     };
 
     const finalUrl = getCleanUrl(modelUrl);
+    const bgColor = isDarkMode ? '#000000' : '#f0f4f2';
 
     const hotspotHtml = labels?.map((lbl, index) => `
         <button class="hotspot" slot="hotspot-${index}" data-position="${lbl.position}" data-normal="${lbl.normal}">
@@ -61,6 +64,7 @@ export default function ModelViewerMobile({ route, navigation }) {
         </button>
     `).join('') || '';
 
+    // The HTML is re-injected dynamically if isDarkMode changes
     const htmlContent = `
         <!DOCTYPE html>
         <html>
@@ -69,7 +73,7 @@ export default function ModelViewerMobile({ route, navigation }) {
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
         <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.3.0/model-viewer.min.js"></script>
         <style>
-            body, html { margin: 0; padding: 0; width: 100vw; height: 100vh; background-color: #000; overflow: hidden; }
+            body, html { margin: 0; padding: 0; width: 100vw; height: 100vh; background-color: ${bgColor}; overflow: hidden; transition: background-color 0.3s; }
             model-viewer { width: 100%; height: 100%; --poster-color: transparent; outline: none; }
             
             .hotspot {
@@ -117,60 +121,79 @@ export default function ModelViewerMobile({ route, navigation }) {
 
     return (
         <View style={localStyles.container}>
-        <WebView
-            originWhitelist={['*']}
-            source={{ html: htmlContent }}
-            style={localStyles.webview}
-            scrollEnabled={false}
-            startInLoadingState={true}
-            renderLoading={() => (
-            <View style={localStyles.loader}>
-                <ActivityIndicator size="large" color="#fff" />
-            </View>
-            )}
-        />
+            <WebView
+                originWhitelist={['*']}
+                source={{ html: htmlContent }}
+                style={[localStyles.webview, { backgroundColor: bgColor }]}
+                scrollEnabled={false}
+                startInLoadingState={true}
+                renderLoading={() => (
+                <View style={[localStyles.loader, { backgroundColor: bgColor }]}>
+                    <ActivityIndicator size="large" color={isDarkMode ? "#fff" : "#153c2a"} />
+                </View>
+                )}
+            />
 
-        <TouchableOpacity 
-            style={localStyles.closeButton} 
-            onPress={() => navigation.goBack()}
-        >
-            <Ionicons name="close" size={30} color="#fff" />
-        </TouchableOpacity>
-
-        {modelId && (
+            {/* Back Button */}
             <TouchableOpacity 
-                style={localStyles.bookmarkButton} 
-                onPress={toggleBookmark}
+                style={localStyles.closeButton} 
+                onPress={() => navigation.goBack()}
             >
-                <Ionicons name={isBookmarked ? "bookmark" : "bookmark-outline"} size={26} color="#fff" />
+                <Ionicons name="close" size={26} color="#fff" />
             </TouchableOpacity>
-        )}
+
+            {/* Background Color Toggle */}
+            <TouchableOpacity 
+                style={localStyles.bgToggleButton} 
+                onPress={() => setIsDarkMode(!isDarkMode)}
+            >
+                <Ionicons name={isDarkMode ? "sunny" : "moon"} size={22} color="#fff" />
+            </TouchableOpacity>
+
+            {/* Bookmark Button */}
+            {modelId && (
+                <TouchableOpacity 
+                    style={localStyles.bookmarkButton} 
+                    onPress={toggleBookmark}
+                >
+                    <Ionicons name={isBookmarked ? "bookmark" : "bookmark-outline"} size={22} color="#fff" />
+                </TouchableOpacity>
+            )}
+            
+            {/* Title Overlay */}
+            <View style={localStyles.titleOverlay}>
+                <Text style={localStyles.titleText}>{modelTitle}</Text>
+            </View>
         </View>
     );
-    }
+}
 
-    const localStyles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: '#000',
-    },
-    webview: {
-        flex: 1,
-        backgroundColor: '#000',
-    },
-    loader: {
-        ...StyleSheet.absoluteFillObject,
-        backgroundColor: '#000',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
+const localStyles = StyleSheet.create({
+    container: { flex: 1, backgroundColor: '#000' },
+    webview: { flex: 1 },
+    loader: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center' },
+    
     closeButton: {
         position: 'absolute',
         top: Platform.OS === 'ios' ? 50 : 30,
         right: 20,
-        width: 50,
-        height: 50,
-        borderRadius: 25,
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.3)',
+        zIndex: 100,
+    },
+    bgToggleButton: {
+        position: 'absolute',
+        top: Platform.OS === 'ios' ? 50 : 30,
+        right: 74,
+        width: 44,
+        height: 44,
+        borderRadius: 22,
         backgroundColor: 'rgba(0,0,0,0.5)',
         justifyContent: 'center',
         alignItems: 'center',
@@ -181,15 +204,32 @@ export default function ModelViewerMobile({ route, navigation }) {
     bookmarkButton: {
         position: 'absolute',
         top: Platform.OS === 'ios' ? 50 : 30,
-        right: 85,
-        width: 50,
-        height: 50,
-        borderRadius: 25,
+        right: 128,
+        width: 44,
+        height: 44,
+        borderRadius: 22,
         backgroundColor: 'rgba(0,0,0,0.5)',
         justifyContent: 'center',
         alignItems: 'center',
         borderWidth: 1,
         borderColor: 'rgba(255,255,255,0.3)',
         zIndex: 100,
+    },
+    titleOverlay: {
+        position: 'absolute',
+        bottom: 40,
+        left: 20,
+        right: 20,
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        paddingVertical: 10,
+        paddingHorizontal: 15,
+        borderRadius: 12,
+        alignItems: 'center',
+    },
+    titleText: {
+        color: '#fff',
+        fontWeight: 'bold',
+        fontSize: 16,
+        textAlign: 'center',
     }
 });

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useContext } from 'react';
 import { 
   View, Text, ScrollView, TouchableOpacity, StyleSheet, 
-  ActivityIndicator, FlatList, Image 
+  ActivityIndicator, Platform, StatusBar,  FlatList, Image 
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import api, { toAbsUrl } from './src/services/api';
@@ -22,24 +22,20 @@ export default function AssessmentQuestionsView({ route, navigation }) {
   const [studentStatusList, setStudentStatusList] = useState([]);
   const [rawMappedList, setRawMappedList] = useState([]); 
   const [loading, setLoading] = useState(false);
-  const [filterMode, setFilterMode] = useState('default'); // 'default', 'pending', 'complete'
+  const [filterMode, setFilterMode] = useState('default');
 
   useEffect(() => {
     fetchMonitoringData();
   }, []);
 
-  // STRICT FILTERING LOGIC
   useEffect(() => {
     let result = [...rawMappedList];
 
     if (filterMode === 'pending') {
-      // ONLY show students who have NOT taken it
       result = result.filter(s => !s.hasTaken);
     } else if (filterMode === 'complete') {
-      // ONLY show students who HAVE taken it
       result = result.filter(s => s.hasTaken);
     } else {
-      // Default: Show ALL students, sorted alphabetically
       result.sort((a, b) => a.name.localeCompare(b.name));
     }
 
@@ -52,7 +48,6 @@ export default function AssessmentQuestionsView({ route, navigation }) {
       const res = await api.get('/instructor/assessment-monitoring'); 
       const allData = res.data?.data || [];
 
-      // Filter by section assignment
       let filteredList = allData;
       if (assessment.targetSections?.length > 0) {
         filteredList = allData.filter(student => {
@@ -134,12 +129,21 @@ export default function AssessmentQuestionsView({ route, navigation }) {
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: theme.bg }}>
+<View style={{ flex: 1, backgroundColor: theme.bg }}>
+      <StatusBar barStyle="light-content" />
+      
       <View style={localStyles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={26} color="#fff" />
-        </TouchableOpacity>
-        <Text style={localStyles.headerText}>Monitoring</Text>
+        <View style={localStyles.headerRow}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={{ marginRight: 15, marginTop: 2 }}>
+            <Ionicons name="arrow-back" size={28} color="#fff" />
+          </TouchableOpacity>
+          <View style={localStyles.headerTextContainer}>
+            <Text style={localStyles.headerTitle}>Assessment Details</Text>
+            <Text style={localStyles.headerSubtitle}>
+              Track assessment results and view assessment questions
+            </Text>
+          </View>
+        </View>
       </View>
 
       <View style={localStyles.tabBar}>
@@ -147,7 +151,7 @@ export default function AssessmentQuestionsView({ route, navigation }) {
           <Text style={[localStyles.tabLabel, { color: activeSubTab === 'questions' ? '#153c2a' : '#64748B' }]}>ASSESSMENT QUESTIONS</Text>
         </TouchableOpacity>
         <TouchableOpacity onPress={() => setActiveSubTab('takes')} style={[localStyles.tab, activeSubTab === 'takes' && localStyles.activeTab]}>
-          <Text style={[localStyles.tabLabel, { color: activeSubTab === 'takes' ? '#153c2a' : '#64748B' }]}>ASSESSMENT STATUS</Text>
+          <Text style={[localStyles.tabLabel, { color: activeSubTab === 'takes' ? '#153c2a' : '#64748B' }]}>ASSESSMENT RESULT</Text>
         </TouchableOpacity>
       </View>
 
@@ -208,8 +212,34 @@ export default function AssessmentQuestionsView({ route, navigation }) {
 }
 
 const localStyles = StyleSheet.create({
-  header: { backgroundColor: '#153c2a', paddingTop: 60, paddingBottom: 20, paddingHorizontal: 22, flexDirection: 'row', alignItems: 'center' },
-  headerText: { color: '#fff', fontSize: 18, fontWeight: '800', marginLeft: 15 },
+header: { 
+    backgroundColor: '#153c2a', 
+    paddingHorizontal: 20, 
+    paddingTop: Platform.OS === 'ios' ? 60 : 40, 
+    paddingBottom: 25, 
+    borderBottomLeftRadius: 30, 
+    borderBottomRightRadius: 30 
+  },
+  headerRow: { 
+    flexDirection: 'row', 
+    alignItems: 'flex-start',
+    marginBottom: 20,
+    marginTop: 10
+  },
+  headerTextContainer: {
+    flex: 1,
+    flexDirection: 'column',
+  },
+  headerTitle: { 
+    fontSize: 24, 
+    fontWeight: '900', 
+    color: '#fff',
+  },
+  headerSubtitle: { 
+    fontSize: 13, 
+    color: '#d1fae5', 
+    marginTop: 2 
+  },
   tabBar: { flexDirection: 'row', backgroundColor: '#F1F5F9', marginHorizontal: 22, marginTop: 20, marginBottom: 10, borderRadius: 12, padding: 4 },
   tab: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 10 },
   activeTab: { backgroundColor: '#fff', elevation: 2 },

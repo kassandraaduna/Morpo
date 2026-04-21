@@ -86,7 +86,7 @@ export default function AssessmentStudent({ navigation }) {
               </View>
             ) : item.isCompleted ? (
               <View style={[localStyles.statusBadge, { backgroundColor: '#e6f4ea' }]}>
-                <Text style={[localStyles.badgeText, { color: '#2d6a4f' }]}>COMPLETED {canRetake ? '/ RETAKE' : ''}</Text>
+                <Text style={[localStyles.badgeText, { color: '#10b981' }]}>COMPLETED {canRetake ? '/ RETAKE' : ''}</Text>
               </View>
             ) : (
                 <View style={[localStyles.statusBadge, { backgroundColor: '#fef3c7' }]}>

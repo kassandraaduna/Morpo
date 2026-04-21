@@ -25,6 +25,8 @@ import UploadLesson from './Pages/UploadLesson';
 import Bookmarks from './Pages/Bookmarks';
 import ArchiveLessons from './Pages/ArchiveLessons';
 import AssessmentQuestionsView from './Pages/AssessmentQuestionsView';
+import ScanHistory from './Pages/ScanHistory';
+import DatasetLibrary from './Pages/DatasetLibrary';
 
 const Stack = createStackNavigator();
 
@@ -92,6 +94,8 @@ export default function AppController() {
         <Stack.Screen name="Bookmarks" component={Bookmarks} options={{ headerShown: false }} />
         <Stack.Screen name="ArchiveLessons" component={ArchiveLessons} options={{ headerShown: false }} />
         <Stack.Screen name="AssessmentQuestionsView" component={AssessmentQuestionsView} options={{ headerShown: false }} />
+        <Stack.Screen name="ScanHistory" component={ScanHistory} options={{ headerShown: false }} />
+        <Stack.Screen name="DatasetLibrary" component={DatasetLibrary} options={{ headerShown: false }} />
       </Stack.Navigator>
     </NavigationContainer>
   );

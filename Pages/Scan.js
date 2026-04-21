@@ -1,7 +1,7 @@
 import React, { useState, useContext, useEffect } from 'react';
 import { 
   View, Text, TouchableOpacity, Image, ActivityIndicator, 
-  ScrollView, StyleSheet, Platform, StatusBar, Alert
+  ScrollView, StyleSheet, Platform, StatusBar 
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
@@ -144,14 +144,11 @@ export default function Scan({ navigation }) {
       <StatusBar barStyle="light-content" />
       
       <View style={[styles.header, { backgroundColor: '#153c2a' }]}>
-        {navigation?.goBack && (
-          <TouchableOpacity onPress={() => navigation.goBack()} style={{ marginRight: 15 }}>
-            <Ionicons name="arrow-back" size={26} color="#fff" />
-          </TouchableOpacity>
-        )}
-        <View>
+        <View style={styles.headerTop}>
           <Text style={styles.headerTitle}>AI Scanner</Text>
-          <Text style={styles.headerSubtitle}>Classify fungal specimens instantly</Text>
+          <Text style={styles.headerSubtitle}>
+            Classify fungi using macroscopic or microscopic images
+          </Text>
         </View>
       </View>
 
@@ -197,7 +194,7 @@ export default function Scan({ navigation }) {
                   ) : (
                     <>
                       <Ionicons name="scan-outline" size={20} color="#fff" />
-                      <Text style={styles.scanBtnText}>Analyze Image</Text>
+                      <Text style={styles.scanBtnText}>Classify Image</Text>
                     </>
                   )}
                 </TouchableOpacity>
@@ -242,7 +239,7 @@ export default function Scan({ navigation }) {
             
             <TouchableOpacity style={styles.scanAgainBtn} onPress={clearScanner}>
               <Ionicons name="reload-outline" size={16} color="#153c2a" />
-              <Text style={styles.scanAgainText}>Scan Another Specimen</Text>
+              <Text style={styles.scanAgainText}>Classify Another</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -251,7 +248,7 @@ export default function Scan({ navigation }) {
           <View style={styles.historySection}>
             <View style={styles.historyHeaderRow}>
               <Text style={[styles.historyTitle, { color: theme.text }]}>Recent Scans</Text>
-              <TouchableOpacity>
+              <TouchableOpacity onPress={() => navigation.navigate('ScanHistory')}>
                 <Text style={{ color: '#059669', fontWeight: 'bold' }}>View All</Text>
               </TouchableOpacity>
             </View>
@@ -296,19 +293,29 @@ export default function Scan({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  header: { 
+header: { 
     paddingHorizontal: 20, 
-    paddingTop: Platform.OS === 'ios' ? 60 : 50, 
-    paddingBottom: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowOffset: { width: 0, height: 2 },
+    paddingTop: Platform.OS === 'ios' ? 60 : 40,
+    paddingBottom: 25,
+    borderBottomLeftRadius: 30,
+    borderBottomRightRadius: 30
   },
-  headerTitle: { fontSize: 22, fontWeight: '900', color: '#fff' },
-  headerSubtitle: { fontSize: 12, color: '#d1fae5', marginTop: 2 },
+  headerTop: { 
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    marginBottom: 20 
+  },
+  headerTitle: { 
+    fontSize: 24, 
+    fontWeight: '900', 
+    color: '#fff',
+    marginTop: 20,
+  },
+  headerSubtitle: { 
+    fontSize: 13, 
+    color: '#d1fae5', 
+    marginTop: 2 
+  },
   mainCard: { 
     borderRadius: 20, 
     padding: 15,
@@ -354,7 +361,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center' 
   },
   scanBtn: { 
-    backgroundColor: '#059669', 
+    backgroundColor: '#153c2a', 
     flexDirection: 'row', justifyContent: 'center', alignItems: 'center', 
     height: 54, borderRadius: 12, gap: 8, elevation: 2 
   },
@@ -385,7 +392,7 @@ const styles = StyleSheet.create({
   scanAgainText: { color: '#153c2a', fontWeight: '900', fontSize: 14 },
   historySection: { marginTop: 10 },
   historyHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
-  historyTitle: { fontWeight: '900', fontSize: 18 },
+  historyTitle: { fontSize: 14, fontWeight: '900', color: '#153c2a', letterSpacing: 1.2, textTransform: 'uppercase',  },
   historyItem: { 
     flexDirection: 'row', alignItems: 'center', padding: 12, 
     borderRadius: 14, marginBottom: 10, elevation: 1,

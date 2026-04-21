@@ -21,6 +21,7 @@ export default function Learn({ navigation, route }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [user, setUser] = useState(null);
+  const [bookmarks, setBookmarks] = useState({ lessons: [], models: [] });
 
   const fetchData = async () => {
     try {
@@ -43,12 +44,21 @@ export default function Learn({ navigation, route }) {
     }
   };
 
+  const loadBookmarks = async () => {
+    const stored = await AsyncStorage.getItem('studentBookmarks_v1');
+    if (stored) setBookmarks(JSON.parse(stored));
+  };
+
   useEffect(() => {
     AsyncStorage.getItem('user').then(u => setUser(JSON.parse(u)));
     fetchData();
+    loadBookmarks();
   }, []);
 
-  useFocusEffect(useCallback(() => { fetchData(); }, []));
+  useFocusEffect(useCallback(() => { 
+    fetchData(); 
+    loadBookmarks();
+  }, []));
 
   useEffect(() => {
     const list = data[activeTab] || [];
@@ -58,6 +68,22 @@ export default function Learn({ navigation, route }) {
         : list
     );
   }, [searchQuery, activeTab, data]);
+
+  const handleToggleBookmark = async (type, id) => {
+    let newBookmarks = { ...bookmarks };
+    if (!newBookmarks[type]) newBookmarks[type] = [];
+    
+    if (newBookmarks[type].includes(id)) {
+      newBookmarks[type] = newBookmarks[type].filter(itemId => itemId !== id);
+      toastSuccess("Removed from Bookmarked");
+    } else {
+      newBookmarks[type].push(id);
+      toastSuccess("Saved to Bookmarked");
+    }
+    
+    setBookmarks(newBookmarks);
+    await AsyncStorage.setItem('studentBookmarks_v1', JSON.stringify(newBookmarks));
+  };
 
   const handleArchive = async (id) => {
     Alert.alert("Archive Lesson", "Move this to your archive list?", [
@@ -79,7 +105,6 @@ export default function Learn({ navigation, route }) {
 
   const onLessonPress = async (lessonId) => {
     try {
-      // FIX 3: Trigger the access endpoint to update "Last Modified" metadata
       await api.post(`/lessons/${lessonId}/access`, { userId: user?._id });
       navigation.navigate('LessonStudent', { lessonId });
     } catch (e) {
@@ -89,9 +114,9 @@ export default function Learn({ navigation, route }) {
 
   const renderLessonItem = ({ item }) => {
     const isInstructor = user?.role?.toLowerCase() === 'instructor';
-
     const actor = item.modifiedBy ? `${item.modifiedBy.fname} ${item.modifiedBy.lname}` : 'System';
     const time = moment(item.lastAccessedAt || item.updatedAt).format('MMM DD, YYYY | hh:mm A');
+    const isBookmarked = bookmarks.lessons?.includes(item._id);
 
     return (
       <View style={[localStyles.card, { backgroundColor: theme.card }]}>
@@ -101,44 +126,61 @@ export default function Learn({ navigation, route }) {
               <Ionicons name="document-text" size={22} color="#153c2a" />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={[localStyles.cardTitle, { color: theme.text }]}>{item.title}</Text>
+              <Text style={[localStyles.cardTitle, { color: theme.text }]} numberOfLines={1}>{item.title}</Text>
               <Text style={localStyles.metadataText}>Last modified by: {actor}</Text>
               <Text style={localStyles.metadataText}>on: {time}</Text>
             </View>
           </View>
         </TouchableOpacity>
-        {isInstructor && (
-          <View style={localStyles.actionGroup}>
-            <TouchableOpacity onPress={() => navigation.navigate('UploadLesson', { lesson: item })}>
-              <Ionicons name="create" size={20} color="#153c2a" />
+
+        <View style={localStyles.actionGroup}>
+          {!isInstructor && (
+            <TouchableOpacity onPress={() => handleToggleBookmark('lessons', item._id)}>
+              <Ionicons name={isBookmarked ? "bookmark" : "bookmark-outline"} size={22} color={isBookmarked ? "#10b981" : "#94A3B8"} />
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => handleArchive(item._id)}>
-              <Ionicons name="archive" size={20} color="#d97706" />
-            </TouchableOpacity>
-          </View>
-        )}
+          )}
+          {isInstructor && (
+            <>
+              <TouchableOpacity onPress={() => navigation.navigate('UploadLesson', { lesson: item })}>
+                <Ionicons name="create" size={20} color="#153c2a" />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => handleArchive(item._id)}>
+                <Ionicons name="archive" size={20} color="#d97706" />
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
       </View>
     );
   };
 
-  const renderModelItem = ({ item }) => (
-    <View style={[localStyles.modelCard, { backgroundColor: theme.card }]}>
-      <View style={localStyles.modelThumbContainer}>
-        <WebView scrollEnabled={false} source={{ html: `<html><body style="margin:0; background:#f0f4f2;"><script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.3.0/model-viewer.min.js"></script><model-viewer src="${toAbsUrl(item.fileUrl)}" auto-rotate interaction-prompt="none" style="width:100%; height:100%;"></model-viewer></body></html>` }} />
+  const renderModelItem = ({ item }) => {
+    const isBookmarked = bookmarks.models?.includes(item._id);
+    return (
+      <View style={[localStyles.modelCard, { backgroundColor: theme.card }]}>
+        <View style={localStyles.modelThumbContainer}>
+          <WebView scrollEnabled={false} source={{ html: `<html><body style="margin:0; background:#f0f4f2;"><script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.3.0/model-viewer.min.js"></script><model-viewer src="${toAbsUrl(item.fileUrl)}" auto-rotate interaction-prompt="none" style="width:100%; height:100%;"></model-viewer></body></html>` }} />
+          
+          <TouchableOpacity 
+            style={localStyles.bookmarkFloat}
+            onPress={() => handleToggleBookmark('models', item._id)}
+          >
+            <Ionicons name={isBookmarked ? "bookmark" : "bookmark-outline"} size={20} color={isBookmarked ? "#10b981" : "#153c2a"} />
+          </TouchableOpacity>
+        </View>
+        <View style={localStyles.modelInfo}>
+          <Text style={[localStyles.cardTitle, { color: theme.text }]}>{item.title}</Text>
+          <Text style={localStyles.metadataText} numberOfLines={2}>{item.description || "No description provided."}</Text>
+          <TouchableOpacity style={localStyles.viewBtn} onPress={() => navigation.navigate('ModelViewerMobile', { modelId: item._id, modelTitle: item.title, modelUrl: item.fileUrl, labels: item.labels })}>
+            <Text style={localStyles.viewBtnText}>VIEW 3D MODEL</Text>
+          </TouchableOpacity>
+        </View>
       </View>
-      <View style={localStyles.modelInfo}>
-        <Text style={[localStyles.cardTitle, { color: theme.text }]}>{item.title}</Text>
-        <Text style={localStyles.metadataText} numberOfLines={2}>{item.description || "No description provided."}</Text>
-        <TouchableOpacity style={localStyles.viewBtn} onPress={() => navigation.navigate('ModelViewerMobile', { modelId: item._id, modelTitle: item.title, modelUrl: item.fileUrl, labels: item.labels })}>
-          <Text style={localStyles.viewBtnText}>VIEW 3D MODEL</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
+    );
+  };
 
   const renderAssessmentItem = ({ item }) => {
     const isInstructor = user?.role?.toLowerCase() === 'instructor';
-
     const qCount = item.questions?.length || 0;
     const timerText = item.timer?.enabled ? `${item.timer.minutes}m Timer` : 'No Timer';
     const deadline = item.deadlineAt ? moment(item.deadlineAt).format('MMM DD, hh:mm A') : 'No Deadline';
@@ -155,13 +197,9 @@ export default function Learn({ navigation, route }) {
             <Ionicons name="clipboard" size={22} color="#4338ca" />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={[localStyles.cardTitle, { color: theme.text }]}>{item.title}</Text>
-            <Text style={localStyles.metadataText}>
-              {qCount} Questions • {timerText}
-            </Text>
-            <Text style={localStyles.metadataText}>
-              Deadline: {deadline}
-            </Text>
+            <Text style={[localStyles.cardTitle, { color: theme.text }]} numberOfLines={1}>{item.title}</Text>
+            <Text style={localStyles.metadataText}>{qCount} Questions • {timerText}</Text>
+            <Text style={localStyles.metadataText}>Deadline: {deadline}</Text>
           </View>
         </View>
         <Ionicons name="chevron-forward" size={18} color="#ccc" />
@@ -232,11 +270,12 @@ const localStyles = StyleSheet.create({
   card: { flexDirection: 'row', alignItems: 'center', padding: 15, borderRadius: 20, marginBottom: 12, elevation: 3 },
   iconBox: { width: 45, height: 45, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginRight: 15 },
   cardTitle: { fontSize: 15, fontWeight: '800' },
-  metadataText: { fontSize: 10, color: '#94A3B8', fontWeight: '600' },
-  actionGroup: { flexDirection: 'row', gap: 12 },
+  metadataText: { fontSize: 10, color: '#94A3B8', fontWeight: '600', marginTop: 2 },
+  actionGroup: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   modelCard: { borderRadius: 25, marginBottom: 20, overflow: 'hidden', elevation: 4 },
-  modelThumbContainer: { height: 180 },
+  modelThumbContainer: { height: 180, position: 'relative' },
   modelInfo: { padding: 20 },
   viewBtn: { marginTop: 15, backgroundColor: '#153c2a', paddingVertical: 12, borderRadius: 15, alignItems: 'center' },
-  viewBtnText: { color: '#fff', fontWeight: '900', fontSize: 12 }
+  viewBtnText: { color: '#fff', fontWeight: '900', fontSize: 12 },
+  bookmarkFloat: { position: 'absolute', top: 12, right: 12, backgroundColor: 'rgba(255,255,255,0.9)', padding: 8, borderRadius: 20, zIndex: 10 },
 });
