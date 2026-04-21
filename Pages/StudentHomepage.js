@@ -1,9 +1,19 @@
 import React, { useState, useEffect, useContext } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, TextInput, Image, ActivityIndicator, RefreshControl, StyleSheet, Platform } from 'react-native';
+import { 
+    View, Text, ScrollView, TouchableOpacity, TextInput, 
+    Image, ActivityIndicator, RefreshControl, StyleSheet, Platform, StatusBar 
+} from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
-import api, { FILE_BASE } from './src/services/api';
+import api, { FILE_BASE, toAbsUrl } from './src/services/api';
 import { ThemeContext } from './src/context/ThemeContext';
+
+const getInitials = (name) => {
+  if (!name) return 'S';
+  const parts = name.trim().split(' ');
+  if (parts.length > 1) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  return parts[0][0].toUpperCase();
+};
 
 export default function StudentHomepage({ navigation }) {
   const [user, setUser] = useState(null);
@@ -27,13 +37,22 @@ export default function StudentHomepage({ navigation }) {
         api.get('/lessons')
       ]);
 
-      setScans(scanRes.data?.data?.slice(0, 5) || []);
+      // 1. Get the 5 most recent scans (not just bookmarked ones)
+      const allScans = scanRes.data?.data || [];
+      const sortedScans = allScans.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      setScans(sortedScans.slice(0, 5));
 
-      setSuggestedLessons(lessonRes.data?.data?.slice(0, 5) || []);
+      // 2. Sort lessons by most recently accessed/updated
+      const recentLessons = (lessonRes.data?.data || []).sort((a, b) => {
+          const dateA = new Date(a.lastAccessedAt || a.updatedAt);
+          const dateB = new Date(b.lastAccessedAt || b.updatedAt);
+          return dateB - dateA;
+      });
+      setSuggestedLessons(recentLessons.slice(0, 5));
 
+      // 3. Get latest assessment
       const historyData = historyRes.data?.data || {};
       const allAttempts = [];
-      
       Object.values(historyData).forEach(group => {
         group.attempts.forEach(attempt => {
           allAttempts.push({ ...attempt, title: group.title });
@@ -58,162 +77,219 @@ export default function StudentHomepage({ navigation }) {
     return unsubscribe;
   }, [navigation]);
 
+  // Function to toggle bookmark status from the dashboard directly
+  const toggleScanBookmark = async (scanId, currentStatus) => {
+    // Optimistically update the UI instantly
+    setScans(scans.map(scan => 
+      scan._id === scanId ? { ...scan, bookmarked: !currentStatus } : scan
+    ));
+    
+    try {
+      // Send the update to your backend 
+      // (Adjust this route if your backend uses a specific bookmark endpoint)
+      await api.put(`/scan/${scanId}`, { bookmarked: !currentStatus });
+    } catch (error) {
+      console.error("Failed to toggle bookmark", error);
+      // Revert UI if the API call fails
+      setScans(scans.map(scan => 
+        scan._id === scanId ? { ...scan, bookmarked: currentStatus } : scan
+      ));
+    }
+  };
+
   if (!user || loading) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: theme.bg }}>
+      <View style={localStyles.centered}>
         <ActivityIndicator size="large" color="#153c2a" />
       </View>
     );
   }
 
+  const ActionItem = ({ icon, label, onPress }) => (
+    <TouchableOpacity style={localStyles.actionBtn} onPress={onPress} activeOpacity={0.7}>
+      <View style={localStyles.iconCircle}>
+        <Ionicons name={icon} size={28} color="#153c2a" />
+      </View>
+      <Text style={[localStyles.actionLabel, { color: theme.text }]}>{label}</Text>
+    </TouchableOpacity>
+  );
+
   return (
-    <ScrollView
-      style={{ flex: 1, backgroundColor: theme.bg }}
-      contentContainerStyle={{ paddingBottom: 100 }}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => {setRefreshing(true); loadDashboardData();}} />}
-    >
-      <View style={localStyles.header}>
-        <Text style={[localStyles.appTitle, { color: theme.text }]}>MyphoLens</Text>
-        <TouchableOpacity 
-          style={[localStyles.profilePill, { backgroundColor: theme.card }]}
-          onPress={() => navigation.navigate('Profile')}
-        >
-          {user.avatar ? (
-            <Image source={{ uri: `${FILE_BASE}${user.avatar}` }} style={localStyles.miniAvatar} />
-          ) : (
-            <Ionicons name="person-circle-outline" size={24} color={theme.text} style={{ marginRight: 5 }} />
-          )}
-          <Text style={{ color: theme.text, fontWeight: 'bold' }}>{user.fname}</Text>
-        </TouchableOpacity>
+    <View style={{ flex: 1, backgroundColor: theme.bg }}>
+      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
+
+      <View style={localStyles.coloredHeader}>
+        <View style={localStyles.headerTop}>
+          <View>
+            <Text style={localStyles.greetText}>Welcome back,</Text>
+            <Text style={localStyles.userName}>{user?.fname + ' ' + user?.lname || ''}</Text>
+          </View>
+          <TouchableOpacity onPress={() => navigation.navigate('Profile')}>
+            {user?.avatar ? (
+              <Image source={{ uri: toAbsUrl(user.avatar) }} style={localStyles.headerAvatar} />
+            ) : (
+              <View style={localStyles.initialsCircle}>
+                <Text style={localStyles.initialsText}>{getInitials(user?.fname + ' ' + user?.lname)}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
 
-      <View style={{ paddingHorizontal: 20 }}>
-        <Text style={[localStyles.greeting, { color: theme.text }]}>Hello, {user.fname} {user.lname}</Text>
-        
-        <View style={[localStyles.searchBar, { backgroundColor: theme.card }]}>
-          <Ionicons name="search-outline" size={18} color={theme.subText} />
-          <TextInput placeholder="Search" placeholderTextColor="#999" style={{ flex: 1, marginLeft: 10, color: theme.text }} />
-        </View>
+      <ScrollView
+        contentContainerStyle={{ paddingBottom: 100 }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => {setRefreshing(true); loadDashboardData();}} tintColor="#153c2a" />}
+      >
+        <View style={localStyles.contentBody}>
 
-        <View style={localStyles.grid}>
-          {[
-            { label: 'AI CLASSIFIER', icon: 'scan-outline', screen: 'Scan' },
-            { label: '3D MODELS', icon: 'cube-outline', screen: 'Learn' },
-            { label: 'LEARN MYCOLOGY', icon: 'book-outline', screen: 'Learn' },
-            { label: 'ASSESSMENTS', icon: 'clipboard-outline', screen: 'Assessments' },
-            { label: 'BOOKMARKS', icon: 'bookmark-outline', screen: 'Bookmarks' },
-            { label: 'SCAN HISTORY', icon: 'time-outline', screen: 'ScanHistory' },
-          ].map((item, i) => (
-            <TouchableOpacity 
-                key={i} 
-                style={[localStyles.quickCard, { backgroundColor: theme.card }]}
-                onPress={() => navigation.navigate(item.screen)}
-            >
-              <Ionicons name={item.icon} size={28} color="#153c2a" />
-              <Text style={[localStyles.gridLabel, { color: theme.text }]}>{item.label}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+          <Text style={localStyles.sectionLabel}>Quick Links</Text>
+          <View style={localStyles.actionGrid}>
+            <ActionItem icon="book" label="Lessons" onPress={() => navigation.navigate('Learn', { initialTab: 'lessons' })} />
+            <ActionItem icon="cube" label="3D Models" onPress={() => navigation.navigate('Learn', { initialTab: 'models' })} />
+            <ActionItem icon="clipboard" label="Assessments" onPress={() => navigation.navigate('Assessments')} />
+            <ActionItem icon="scan" label="AI Scanner" onPress={() => navigation.navigate('Scan')} />
+            <ActionItem icon="bookmark" label="Bookmarks" onPress={() => navigation.navigate('Bookmarks')} />
+            <ActionItem icon="time" label="Scan History" onPress={() => navigation.navigate('ScanHistory')} />
+          </View>
 
-        <Text style={[localStyles.sectionTitle, { color: theme.text }]}>RECENT SCANS</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          {scans.length > 0 ? scans.map((scan, i) => (
-            <TouchableOpacity key={i} style={[localStyles.scanCard, { backgroundColor: theme.card }]}>
-              <View style={localStyles.scanRow}>
-                <Image source={{ uri: `${FILE_BASE}${scan.imageUrl}` }} style={localStyles.scanThumb} />
-                <View style={{ flex: 1, marginLeft: 12 }}>
-                    <View style={{flexDirection:'row', justifyContent:'space-between'}}>
-                      <Text style={{ fontWeight: '800', color: theme.text }}>
-                        {scan?.classification?.toUpperCase() || 'UNKNOWN'}
+          <Text style={[localStyles.sectionLabel, { marginTop: 15 }]}>Recent Scans</Text>
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false} 
+            contentContainerStyle={localStyles.horizontalScrollPadding}
+            style={{ flexGrow: 0 }}
+          >
+            {scans.length > 0 ? scans.map((scan, i) => (
+              <View key={i} style={[localStyles.scanCard, { backgroundColor: theme.card }]}>
+                <View style={localStyles.scanRow}>
+                  <Image source={{ uri: toAbsUrl(scan.imageUrl) }} style={localStyles.scanThumb} />
+                  <View style={{ flex: 1, marginLeft: 14 }}>
+                      <View style={{flexDirection:'row', justifyContent:'space-between', alignItems: 'center'}}>
+                        <Text style={{ fontWeight: '900', color: theme.text, flex: 1, fontSize: 13 }} numberOfLines={1}>
+                          {scan?.classification?.toUpperCase() || 'UNKNOWN'}
+                        </Text>
+
+                        <TouchableOpacity 
+                          onPress={() => toggleScanBookmark(scan._id, scan.bookmarked)}
+                          style={localStyles.bookmarkBtn}
+                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        >
+                          <Ionicons 
+                            name={scan.bookmarked ? "bookmark" : "bookmark-outline"} 
+                            size={20} 
+                            color={scan.bookmarked ? "#10b981" : "#94A3B8"} 
+                          />
+                        </TouchableOpacity>
+                      </View>
+                      <Text style={localStyles.scanMeta}>{new Date(scan.createdAt).toLocaleDateString()}</Text>
+                      <Text style={[localStyles.scanMeta, { color: '#10b981', fontWeight: 'bold' }]}>{scan.confidence}% confidence</Text>
+                  </View>
+                </View>
+              </View>
+            )) : (
+                <View style={[localStyles.emptyCard, { backgroundColor: theme.card }]}>
+                    <Ionicons name="scan-outline" size={30} color={theme.subText} style={{ marginBottom: 5 }} />
+                    <Text style={{color: theme.subText, fontSize: 12, fontWeight: 'bold' }}>No recent scans yet.</Text>
+                </View>
+            )}
+          </ScrollView>
+
+          <Text style={[localStyles.sectionLabel, { marginTop: 25 }]}>Latest Assessment Score</Text>
+          {latestQuiz ? (
+              <View style={[localStyles.assessmentCard, { backgroundColor: theme.card }]}>
+                  <View style={{ flex: 1, paddingRight: 10 }}>
+                      <Text style={[localStyles.assessmentTitle, { color: theme.text }]} numberOfLines={1}>
+                        {latestQuiz?.title?.toUpperCase() || 'ASSESSMENT'}
                       </Text>
-                        <Ionicons name="bookmark-outline" size={16} color={theme.subText} />
-                    </View>
-                    <Text style={localStyles.scanMeta}>{new Date(scan.createdAt).toLocaleDateString()}</Text>
-                    <Text style={[localStyles.scanMeta, { color: '#153c2a', fontWeight: 'bold' }]}>{scan.confidence}% confidence</Text>
-                </View>
+                      <Text style={localStyles.assessmentMeta}>Submitted: {new Date(latestQuiz.submittedAt).toLocaleDateString()}</Text>
+                      <Text style={[localStyles.assessmentFeedback, { color: theme.subText }]} numberOfLines={2}>{latestQuiz.feedback}</Text>
+                  </View>
+                  <View style={localStyles.scoreBoxNoBg}>
+                      <Text style={[localStyles.scoreTextOnly, { color: latestQuiz.percent >= 70 ? '#10B981' : '#EF4444' }]}>
+                          {latestQuiz.percent}%
+                      </Text>
+                      <TouchableOpacity style={localStyles.viewBtnLink} onPress={() => navigation.navigate('Assessments')}>
+                          <Text style={localStyles.viewBtnLinkText}>VIEW ALL</Text>
+                      </TouchableOpacity>
+                  </View>
               </View>
-              <Text style={localStyles.scanDesc} numberOfLines={2}>{scan.description}</Text>
-              <View style={localStyles.scanActions}>
-                  <TouchableOpacity style={localStyles.outlineBtn}><Text style={localStyles.outlineText}>LEARN MORE</Text></TouchableOpacity>
-                  <TouchableOpacity style={localStyles.outlineBtn} onPress={() => navigation.navigate('Learn')}><Text style={localStyles.outlineText}>VIEW MODEL</Text></TouchableOpacity>
+          ) : (
+              <View style={[localStyles.emptyCard, { backgroundColor: theme.card }]}>
+                  <Text style={{ color: theme.subText, fontWeight: 'bold' }}>No assessments completed yet.</Text>
               </View>
-            </TouchableOpacity>
-          )) : <Text style={{color: theme.subText, fontSize: 12, fontStyle:'italic'}}>No recent scans.</Text>}
-        </ScrollView>
+          )}
 
-        <Text style={[localStyles.sectionTitle, { color: theme.text, marginTop: 30 }]}>LATEST ASSESSMENT SCORE</Text>
-        {latestQuiz ? (
-            <View style={[localStyles.assessmentCard, { backgroundColor: theme.card }]}>
-                <View style={{ flex: 1 }}>
-                    <Text style={[localStyles.assessmentTitle, { color: theme.text }]}>
-                      {latestQuiz?.title?.toUpperCase() || 'ASSESSMENT'}
-                    </Text>
-                    <Text style={localStyles.assessmentMeta}>Submitted on {new Date(latestQuiz.submittedAt).toLocaleDateString()}</Text>
-                    <Text style={[localStyles.assessmentFeedback, { color: theme.text }]} numberOfLines={2}>{latestQuiz.feedback}</Text>
+          <Text style={[localStyles.sectionLabel, { marginTop: 35 }]}>Recently Opened Lessons</Text>
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={localStyles.horizontalScrollPadding}
+            style={{ flexGrow: 0 }}
+          >
+            {suggestedLessons.length > 0 ? suggestedLessons.map((lesson, i) => (
+              <TouchableOpacity 
+                  key={i} 
+                  style={localStyles.topicCard}
+                  onPress={() => navigation.navigate('LessonStudent', { lessonId: lesson._id })}
+              >
+                <View style={[localStyles.topicImage, { backgroundColor: '#F0F9F4' }]}>
+                    <Ionicons name="document-text" size={35} color="#153c2a" />
                 </View>
-                <View style={localStyles.scoreBoxNoBg}>
-                    <Text style={localStyles.scoreTextOnly}>{latestQuiz.percent}%</Text>
-                    <TouchableOpacity style={localStyles.viewBtnLink} onPress={() => navigation.navigate('Assessments')}>
-                        <Text style={localStyles.viewBtnLinkText}>VIEW</Text>
-                    </TouchableOpacity>
-                </View>
-            </View>
-        ) : (
-            <View style={[localStyles.assessmentCard, { backgroundColor: theme.card, justifyContent:'center' }]}>
-                <Text style={{ color: theme.subText, textAlign:'center' }}>No assessments completed yet.</Text>
-            </View>
-        )}
+                <Text style={[localStyles.topicText, { color: theme.text }]} numberOfLines={1}>
+                  {lesson?.title?.toUpperCase() || 'LESSON'}
+                </Text>
+              </TouchableOpacity>
+            )) : (
+                <Text style={{color: theme.subText, fontSize: 12, fontStyle:'italic'}}>No recent lessons opened.</Text>
+            )}
+          </ScrollView>
 
-        <Text style={[localStyles.sectionTitle, { color: theme.text, marginTop: 30 }]}>SUGGESTED TOPICS</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          {suggestedLessons.map((lesson, i) => (
-            <TouchableOpacity 
-                key={i} 
-                style={localStyles.topicCard}
-                onPress={() => navigation.navigate('LessonStudent', { lessonId: lesson._id })}
-            >
-              <View style={[localStyles.topicImage, { backgroundColor: '#153c2a10' }]}>
-                  <Ionicons name="document-text" size={35} color="#153c2a" />
-              </View>
-              <Text style={[localStyles.topicText, { color: theme.text }]} numberOfLines={1}>
-                {lesson?.title?.toUpperCase() || 'LESSON'}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </View>
-    </ScrollView>
+        </View>
+      </ScrollView>
+    </View>
   );
 }
 
 const localStyles = StyleSheet.create({
-  header: { paddingHorizontal: 20, paddingTop: Platform.OS === 'ios' ? 60 : 40, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-  appTitle: { fontSize: 22, fontWeight: '900', letterSpacing: -0.5 },
-  profilePill: { flexDirection: 'row', alignItems: 'center', padding: 5, paddingRight: 15, borderRadius: 20, elevation: 2 },
-  miniAvatar: { width: 30, height: 30, borderRadius: 15, marginRight: 8 },
-  greeting: { fontSize: 24, fontWeight: 'bold', marginBottom: 15 },
-  searchBar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 15, height: 45, borderRadius: 12, marginBottom: 25 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
-  quickCard: { width: '31%', aspectRatio: 1, borderRadius: 15, padding: 10, alignItems: 'center', justifyContent: 'center', marginBottom: 12, elevation: 3 },
-  gridLabel: { fontSize: 8, fontWeight: '900', textAlign: 'center', marginTop: 8 },
-  sectionTitle: { fontSize: 13, fontWeight: '900', marginBottom: 15, letterSpacing: 1 },
-  scanCard: { width: 280, padding: 15, borderRadius: 20, marginRight: 15, elevation: 3 },
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  
+  coloredHeader: { backgroundColor: '#153c2a', paddingTop: Platform.OS === 'ios' ? 60 : 40, paddingBottom: 30, paddingHorizontal: 22, borderBottomLeftRadius: 32, borderBottomRightRadius: 32 },
+  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  greetText: { fontSize: 20, fontWeight: '500', color: 'rgba(255,255,255,0.6)' },
+  userName: { fontSize: 26, fontWeight: '800', color: '#fff', marginTop: 2 },
+  headerAvatar: { width: 60, height: 60, borderRadius: 30, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.4)' },
+  initialsCircle: { width: 60, height: 60, borderRadius: 30, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
+  initialsText: { color: '#153c2a', fontSize: 18, fontWeight: '800' },
+  
+  contentBody: { paddingHorizontal: 22, marginTop: 25 },
+  
+  sectionLabel: { fontSize: 14, fontWeight: '900', color: '#153c2a', letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 12 },
+  
+  actionGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 10 },
+  actionBtn: { width: '31%', alignItems: 'center', marginBottom: 18 },
+  iconCircle: { width: 75, height: 75, backgroundColor: '#F0F9F4', borderRadius: 20, alignItems: 'center', justifyContent: 'center', marginBottom: 10, elevation: 2, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8 },
+  actionLabel: { fontSize: 11, fontWeight: '800', textAlign: 'center' },
+  
+  horizontalScrollPadding: { paddingVertical: 10, paddingHorizontal: 2 },
+
+  scanCard: { width: 280, padding: 18, borderRadius: 24, marginRight: 15, marginBottom: 5, elevation: 4, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8 },
   scanRow: { flexDirection: 'row', alignItems: 'center' },
-  scanThumb: { width: 65, height: 65, borderRadius: 12, backgroundColor: '#eee' },
-  scanMeta: { fontSize: 10, color: '#999', marginTop: 1 },
-  scanDesc: { fontSize: 11, marginTop: 10, lineHeight: 16, height: 32 },
-  scanActions: { flexDirection: 'row', gap: 8, marginTop: 12 },
-  outlineBtn: { flex: 1, paddingVertical: 6, borderRadius: 6, borderWidth: 1, borderColor: '#153c2a', alignItems: 'center' },
-  outlineText: { fontSize: 9, fontWeight: 'bold', color: '#153c2a' },
-  assessmentCard: { flexDirection: 'row', padding: 20, borderRadius: 20, elevation: 3, alignItems: 'center' },
-  assessmentTitle: { fontSize: 14, fontWeight: '900' },
-  assessmentMeta: { fontSize: 10, color: '#999', marginVertical: 4 },
-  assessmentFeedback: { fontSize: 11, lineHeight: 16, color: '#666' },
-  scoreBoxNoBg: { marginLeft: 15, alignItems: 'center', minWidth: 60 },
-  scoreTextOnly: { color: '#153c2a', fontSize: 32, fontWeight: '900' },
-  viewBtnLink: { marginTop: 2 },
-  viewBtnLinkText: { color: '#153c2a', fontSize: 10, fontWeight: 'bold', textDecorationLine: 'underline' },
-  topicCard: { width: 130, marginRight: 15 },
-  topicImage: { width: '100%', height: 90, borderRadius: 15, marginBottom: 8, justifyContent: 'center', alignItems: 'center' },
-  topicText: { fontSize: 10, fontWeight: '800', textAlign: 'center' }
+  scanThumb: { width: 65, height: 65, borderRadius: 16, backgroundColor: '#f1f5f9' },
+  scanMeta: { fontSize: 12, color: '#94A3B8', marginTop: 4, fontWeight: '600' },
+  bookmarkBtn: { padding: 4, marginRight: -4 },
+  
+  assessmentCard: { flexDirection: 'row', padding: 22, borderRadius: 24, elevation: 4, alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, marginBottom: 5 },
+  assessmentTitle: { fontSize: 15, fontWeight: '900' },
+  assessmentMeta: { fontSize: 12, color: '#94A3B8', marginVertical: 6, fontWeight: '600' },
+  assessmentFeedback: { fontSize: 13, lineHeight: 18 },
+  scoreBoxNoBg: { alignItems: 'flex-end', minWidth: 60 },
+  scoreTextOnly: { fontSize: 36, fontWeight: '900' },
+  viewBtnLink: { marginTop: 4 },
+  viewBtnLinkText: { color: '#153c2a', fontSize: 12, fontWeight: '900', textDecorationLine: 'underline' },
+  
+  topicCard: { width: 130, marginRight: 15, marginBottom: 5 },
+  topicImage: { width: '100%', height: 110, borderRadius: 20, marginBottom: 10, justifyContent: 'center', alignItems: 'center', elevation: 3, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 6 },
+  topicText: { fontSize: 12, fontWeight: '800', textAlign: 'center' },
+
+  emptyCard: { width: '100%', padding: 25, borderRadius: 24, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#e2e8f0', borderStyle: 'dashed' }
 });

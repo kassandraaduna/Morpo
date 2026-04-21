@@ -1,4 +1,5 @@
 import React, { useContext } from 'react';
+import { Platform } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import StudentHomepage from '../StudentHomepage';
@@ -18,30 +19,27 @@ export default function StudentBottomTab() {
       screenOptions={({ route }) => ({
         headerShown: false,
         tabBarShowLabel: true,
-        tabBarLabelStyle: { fontSize: 10, fontWeight: '700' },
-        tabBarStyle: {
-          height: 65,
-          backgroundColor: theme.bg,
-          borderTopWidth: 1,
-          borderTopColor: theme.border,
-          paddingBottom: 10,
-        },
+        tabBarLabelStyle: { fontSize: 10, fontWeight: '800' },
         tabBarActiveTintColor: '#153c2a',
-        tabBarInactiveTintColor: '#999999',
-
+        tabBarInactiveTintColor: '#94A3B8',
+        tabBarStyle: {
+          backgroundColor: theme.card,
+          borderTopWidth: 0,
+          elevation: 10,
+          shadowColor: '#000',
+          shadowOpacity: 0.05,
+          shadowRadius: 10,
+          height: Platform.OS === 'ios' ? 80 : 65,
+          paddingBottom: Platform.OS === 'ios' ? 20 : 10,
+          paddingTop: 5,
+        },
         tabBarIcon: ({ focused, color }) => {
           let icon;
-
-          if (route.name === 'Home')
-            icon = focused ? 'home' : 'home-outline';
-          if (route.name === 'Learn')
-            icon = focused ? 'book' : 'book-outline';
-          if (route.name === 'Scan')
-            icon = focused ? 'camera' : 'camera-outline';
-          if (route.name === 'Assessments')
-            icon = focused ? 'clipboard' : 'clipboard-outline';
-          if (route.name === 'Profile')
-            icon = focused ? 'person' : 'person-outline';
+          if (route.name === 'Home') icon = focused ? 'home' : 'home-outline';
+          if (route.name === 'Learn') icon = focused ? 'book' : 'book-outline';
+          if (route.name === 'Scan') icon = focused ? 'scan' : 'scan-outline';
+          if (route.name === 'Assessments') icon = focused ? 'clipboard' : 'clipboard-outline';
+          if (route.name === 'Profile') icon = focused ? 'person' : 'person-outline';
 
           return <Ionicons name={icon} size={24} color={color} />;
         },

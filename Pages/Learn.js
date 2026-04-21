@@ -23,6 +23,9 @@ export default function Learn({ navigation, route }) {
   const [user, setUser] = useState(null);
   const [bookmarks, setBookmarks] = useState({ lessons: [], models: [] });
 
+  const isInstructor = user?.role?.toLowerCase() === 'instructor';
+  const visibleTabs = isInstructor ? ['lessons', 'models', 'assessments'] : ['lessons', 'models'];
+
   const fetchData = async () => {
     try {
       const [lessonRes, modelRes, assessRes] = await Promise.all([
@@ -56,9 +59,12 @@ export default function Learn({ navigation, route }) {
   }, []);
 
   useFocusEffect(useCallback(() => { 
+    if (route.params?.initialTab) {
+        setActiveTab(route.params.initialTab.toLowerCase());
+    }
     fetchData(); 
     loadBookmarks();
-  }, []));
+  }, [route.params?.initialTab]));
 
   useEffect(() => {
     const list = data[activeTab] || [];
@@ -75,10 +81,10 @@ export default function Learn({ navigation, route }) {
     
     if (newBookmarks[type].includes(id)) {
       newBookmarks[type] = newBookmarks[type].filter(itemId => itemId !== id);
-      toastSuccess("Removed from Bookmarked");
+      toastSuccess("Removed from Bookmarks");
     } else {
       newBookmarks[type].push(id);
-      toastSuccess("Saved to Bookmarked");
+      toastSuccess("Saved to Bookmarks");
     }
     
     setBookmarks(newBookmarks);
@@ -113,7 +119,6 @@ export default function Learn({ navigation, route }) {
   };
 
   const renderLessonItem = ({ item }) => {
-    const isInstructor = user?.role?.toLowerCase() === 'instructor';
     const actor = item.modifiedBy ? `${item.modifiedBy.fname} ${item.modifiedBy.lname}` : 'System';
     const time = moment(item.lastAccessedAt || item.updatedAt).format('MMM DD, YYYY | hh:mm A');
     const isBookmarked = bookmarks.lessons?.includes(item._id);
@@ -180,7 +185,6 @@ export default function Learn({ navigation, route }) {
   };
 
   const renderAssessmentItem = ({ item }) => {
-    const isInstructor = user?.role?.toLowerCase() === 'instructor';
     const qCount = item.questions?.length || 0;
     const timerText = item.timer?.enabled ? `${item.timer.minutes}m Timer` : 'No Timer';
     const deadline = item.deadlineAt ? moment(item.deadlineAt).format('MMM DD, hh:mm A') : 'No Deadline';
@@ -213,7 +217,7 @@ export default function Learn({ navigation, route }) {
       <View style={localStyles.headerColored}>
         <View style={localStyles.headerRow}>
           <Text style={localStyles.headerTitle}>Learning Materials</Text>
-          {user?.role?.toLowerCase() === 'instructor' && (
+          {isInstructor && (
             <TouchableOpacity style={localStyles.archiveHeaderBtn} onPress={() => navigation.navigate('ArchiveLessons')}>
               <Ionicons name="archive" size={20} color="#fff" />
             </TouchableOpacity>
@@ -227,12 +231,13 @@ export default function Learn({ navigation, route }) {
             value={searchQuery}
             onChangeText={setSearchQuery}
             placeholderTextColor="#94A3B8"
+            clearButtonMode="while-editing"
           />
         </View>
       </View>
 
       <View style={localStyles.tabWrapper}>
-        {['lessons', 'models', 'assessments'].map((tab) => (
+        {visibleTabs.map((tab) => (
           <TouchableOpacity key={tab} style={[localStyles.tabItem, activeTab === tab && localStyles.activeTab]} onPress={() => setActiveTab(tab)}>
             <Text style={[localStyles.tabLabel, { color: activeTab === tab ? '#153c2a' : '#64748B' }]}>
               {tab === 'models' ? '3D MODELS' : tab.toUpperCase()}
@@ -250,6 +255,12 @@ export default function Learn({ navigation, route }) {
           renderItem={activeTab === 'lessons' ? renderLessonItem : (activeTab === 'models' ? renderModelItem : renderAssessmentItem)}
           contentContainerStyle={{ padding: 20, paddingBottom: 100 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={fetchData} tintColor="#153c2a" />}
+          ListEmptyComponent={
+            <View style={{ alignItems: 'center', marginTop: 50 }}>
+              <Ionicons name="folder-open-outline" size={60} color={theme.subText + '44'} style={{ marginBottom: 10 }} />
+              <Text style={{ color: theme.text, fontSize: 16, fontWeight: 'bold' }}>No {activeTab} found</Text>
+            </View>
+          }
         />
       )}
     </View>
