@@ -4,8 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { WebView } from 'react-native-webview';
 import { Ionicons } from '@expo/vector-icons';
 import { ThemeContext } from './src/context/ThemeContext';
-
-const SERVER_URL = 'http://192.168.1.24:8000';
+import { toAbsUrl } from './src/services/api';
 
 export default function ModelViewerMobile({ route, navigation }) {
     const { modelId, modelTitle, modelUrl, labels } = route.params;
@@ -69,15 +68,7 @@ export default function ModelViewerMobile({ route, navigation }) {
         }
     };
 
-    const getCleanUrl = (path) => {
-        if (!path) return '';
-        let clean = path.trim();
-        if (clean.startsWith('http')) return clean;
-        const base = SERVER_URL.endsWith('/') ? SERVER_URL.slice(0, -1) : SERVER_URL;
-        return `${base}${clean.startsWith('/') ? clean : '/' + clean}`;
-    };
-
-    const finalUrl = getCleanUrl(modelUrl);
+    const finalUrl = toAbsUrl(modelUrl);
     const bgColor = isDarkMode ? '#000000' : '#f0f4f2';
 
     const hotspotHtml = labels?.map((lbl, index) => `

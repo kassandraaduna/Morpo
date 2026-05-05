@@ -6,11 +6,9 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import api from './src/services/api'; 
+import api, { toAbsUrl } from './src/services/api';
 import { ThemeContext } from './src/context/ThemeContext';
 import { toastError, toastSuccess } from './src/components/ToastMsg';
-
-const SERVER_URL = 'http://192.168.1.24:8000';
 
 export default function Scan({ navigation }) {
   const { theme } = useContext(ThemeContext);
@@ -225,7 +223,7 @@ export default function Scan({ navigation }) {
             <Text style={[styles.resultTitle, { color: theme.text }]}>{result.classification}</Text>
             
             <View style={styles.confidenceRow}>
-              <Text style={styles.confidenceText}>{Number(result.confidence).toFixed(1)}% Confidence</Text>
+              <Text style={styles.confidenceText}>{Number(result.confidence).toFixed(2)}% Confidence</Text>
               <View style={styles.progressBarBg}>
                 <View style={[styles.progressBarFill, { width: `${result.confidence}%` }]} />
               </View>
@@ -262,11 +260,11 @@ export default function Scan({ navigation }) {
 
               return (
                 <View key={item._id || index} style={[styles.historyItem, { backgroundColor: theme.card }]}>
-                  <Image source={{ uri: `${SERVER_URL}${item.imageUrl}` }} style={styles.historyThumb} />
+                  <Image source={{ uri: toAbsUrl(item.imageUrl) }} style={styles.historyThumb} />
                   <View style={styles.historyInfo}>
                     <Text style={[styles.historyClass, { color: theme.text }]}>{item.classification}</Text>
                     <Text style={styles.historyMeta}>
-                      {Number(item.confidence).toFixed(1)}% confidence • {timeString}
+                      {Number(item.confidence).toFixed(2)}% confidence • {timeString}
                     </Text>
                   </View>
 

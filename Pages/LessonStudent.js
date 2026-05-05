@@ -5,12 +5,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import Pdf from 'react-native-pdf';
-import api from './src/services/api';
+import api, { toAbsUrl } from './src/services/api';
 import { ThemeContext } from './src/context/ThemeContext';
 import styles from './src/styles/Styles';
 import { toastError } from './src/components/ToastMsg';
-
-const SERVER_URL = 'http://192.168.1.24:8000';
 
 export default function LessonStudent({ route, navigation }) {
   const { lessonId, personalizedLesson } = route.params || {};
@@ -29,8 +27,8 @@ export default function LessonStudent({ route, navigation }) {
       if (!lessonId) return;
       const stored = await AsyncStorage.getItem('studentBookmarks_v1');
       if (stored) {
-         const parsed = JSON.parse(stored);
-         if (parsed.lessons?.includes(lessonId)) setIsBookmarked(true);
+          const parsed = JSON.parse(stored);
+          if (parsed.lessons?.includes(lessonId)) setIsBookmarked(true);
       }
     };
     checkBookmark();
@@ -87,22 +85,12 @@ export default function LessonStudent({ route, navigation }) {
     await AsyncStorage.setItem('studentBookmarks_v1', JSON.stringify(parsed));
   };
 
-  const getCleanUrl = (partialPath) => {
-    if (!partialPath) return '';
-    let cleanPath = partialPath.trim(); 
-    if (cleanPath.startsWith('http')) return cleanPath;
-    
-    const baseUrl = SERVER_URL.endsWith('/') ? SERVER_URL.slice(0, -1) : SERVER_URL;
-    cleanPath = cleanPath.startsWith('/') ? cleanPath : `/${cleanPath}`;
-    return `${baseUrl}${cleanPath}`;
-  };
-
   const securelyFetchPdf = async (partialUrl) => {
     try {
-      const finalUrl = getCleanUrl(partialUrl);
+      const finalUrl = toAbsUrl(partialUrl);
       const safeUrl = encodeURI(finalUrl);
       
-      console.log("Fetching PDF from:", safeUrl); // Debug log
+      console.log("Fetching PDF from:", safeUrl);
 
       const fileName = `safe_view_${Date.now()}.pdf`;
       const fileUri = `${FileSystem.cacheDirectory}${fileName}`;
@@ -110,7 +98,6 @@ export default function LessonStudent({ route, navigation }) {
       const downloadRes = await FileSystem.downloadAsync(safeUrl, fileUri);
       
       if (downloadRes.status === 200) {
-        // FIX 2: Check if the server actually sent us a PDF or just an HTML error page
         const contentType = downloadRes.headers['Content-Type'] || downloadRes.headers['content-type'] || '';
         
         if (contentType.includes('text/html')) {
@@ -133,7 +120,7 @@ export default function LessonStudent({ route, navigation }) {
     if (!lesson?.pdfUrl) return toastError('Invalid PDF URL');
     try {
       setDownloading(true);
-      const finalUrl = getCleanUrl(lesson.pdfUrl);
+      const finalUrl = toAbsUrl(lesson.pdfUrl);
       const safeUrl = encodeURI(finalUrl);
       
       const fileName = lesson?.pdfName || `Lesson_${Date.now()}.pdf`;

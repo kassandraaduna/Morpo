@@ -6,9 +6,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
   ========================================== 
 */
 
-const BASE_IP = '192.168.1.24'; 
-export const FILE_BASE = `http://${BASE_IP}:8000`;
-const BASE_URL = `${FILE_BASE}/api`; 
+// const BASE_IP = 'localhost'; 
+// export const FILE_BASE = `http://${BASE_IP}:8000`;
+// const BASE_URL = `${FILE_BASE}/api`; 
 
 
 /* ==========================================
@@ -17,13 +17,13 @@ const BASE_URL = `${FILE_BASE}/api`;
   Uncomment this section when backend is live on the internet.
   Replace the URL with actual deployed backend link!
 */
-// export const FILE_BASE = 'https://your-live-backend-website.com'; 
-// const BASE_URL = `${FILE_BASE}/api`;
+export const FILE_BASE = 'https://mypholens-backend.onrender.com'; 
+const BASE_URL = `${FILE_BASE}/api`;
 
 
 const api = axios.create({
   baseURL: BASE_URL,
-  timeout: 15000,
+  timeout: 60000,
 });
 
 api.interceptors.request.use(

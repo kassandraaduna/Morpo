@@ -1,17 +1,12 @@
 import React, { useState, useContext, useCallback, useEffect } from 'react';
-import { 
-  View, Text, FlatList, TouchableOpacity, ActivityIndicator, 
-  RefreshControl, StyleSheet, StatusBar, Platform, Image, Alert, TextInput 
-} from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl, StyleSheet, StatusBar, Platform, Image, Alert, TextInput } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useFocusEffect } from '@react-navigation/native';
-import api from './src/services/api'; 
+import { useFocusEffect } from '@react-navigation/native'; 
 import { ThemeContext } from './src/context/ThemeContext';
 import { toastError, toastSuccess } from './src/components/ToastMsg';
-
-const SERVER_URL = 'http://192.168.1.24:8000';
+import api, { toAbsUrl } from './src/services/api';
 
 export default function Bookmarks({ navigation, route }) {
   const { theme } = useContext(ThemeContext);
@@ -161,14 +156,6 @@ export default function Bookmarks({ navigation, route }) {
     );
   };
 
-  const getCleanUrl = (path) => {
-    if (!path) return '';
-    let clean = path.trim();
-    if (clean.startsWith('http')) return clean;
-    const base = SERVER_URL.endsWith('/') ? SERVER_URL.slice(0, -1) : SERVER_URL;
-    return `${base}${clean.startsWith('/') ? clean : '/' + clean}`;
-  };
-
   const renderLessonItem = ({ item }) => (
     <TouchableOpacity 
       style={[localStyles.cardWrapper, { backgroundColor: theme.card }]}
@@ -192,7 +179,7 @@ export default function Bookmarks({ navigation, route }) {
     const timeString = d.toLocaleDateString();
     return (
       <View style={[localStyles.cardWrapper, { backgroundColor: theme.card }]}>
-        <Image source={{ uri: getCleanUrl(item.imageUrl) }} style={localStyles.scanThumb} />
+        <Image source={{ uri: toAbsUrl(item.imageUrl) }} style={localStyles.scanThumb} />
         <View style={{ flex: 1, marginLeft: 12 }}>
           <Text style={[localStyles.cardTitle, { color: theme.text }]}>{item.classification}</Text>
           <Text style={{ color: theme.subText, fontSize: 12 }}>{Number(item.confidence).toFixed(1)}% Confidence Score• {timeString}</Text>
@@ -210,7 +197,7 @@ export default function Bookmarks({ navigation, route }) {
   };
 
   const renderModelItem = ({ item }) => {
-    const finalUrl = getCleanUrl(item.fileUrl);
+    const finalUrl = toAbsUrl(item.fileUrl);
     const thumbHtml = `
       <html>
         <head>

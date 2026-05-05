@@ -24,7 +24,7 @@ export default function Learn({ navigation, route }) {
   const [bookmarks, setBookmarks] = useState({ lessons: [], models: [] });
 
   const isInstructor = user?.role?.toLowerCase() === 'instructor';
-  const visibleTabs = isInstructor ? ['lessons', 'models', 'assessments'] : ['lessons', 'models'];
+  const visibleTabs = isInstructor ? ['lessons', 'assessments', 'models'] : ['lessons', 'remedial lessons','models'];
 
   const fetchData = async () => {
     try {
@@ -217,11 +217,16 @@ export default function Learn({ navigation, route }) {
       <View style={localStyles.headerColored}>
         <View style={localStyles.headerRow}>
           <Text style={localStyles.headerTitle}>Learning Materials</Text>
-          {isInstructor && (
-            <TouchableOpacity style={localStyles.archiveHeaderBtn} onPress={() => navigation.navigate('ArchiveLessons')}>
-              <Ionicons name="archive" size={20} color="#fff" />
-            </TouchableOpacity>
-          )}
+            {isInstructor && (
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <TouchableOpacity style={localStyles.archiveHeaderBtn} onPress={() => navigation.navigate('UploadLesson')}>
+                  <Ionicons name="add" size={20} color="#fff" />
+                </TouchableOpacity>
+                <TouchableOpacity style={localStyles.archiveHeaderBtn} onPress={() => navigation.navigate('ArchiveLessons')}>
+                  <Ionicons name="archive" size={20} color="#fff" />
+                </TouchableOpacity>
+              </View>
+            )}
         </View>
         <View style={localStyles.searchContainer}>
           <Ionicons name="search" size={18} color="#94A3B8" />
@@ -240,7 +245,7 @@ export default function Learn({ navigation, route }) {
         {visibleTabs.map((tab) => (
           <TouchableOpacity key={tab} style={[localStyles.tabItem, activeTab === tab && localStyles.activeTab]} onPress={() => setActiveTab(tab)}>
             <Text style={[localStyles.tabLabel, { color: activeTab === tab ? '#153c2a' : '#64748B' }]}>
-              {tab === 'models' ? '3D MODELS' : tab.toUpperCase()}
+              {tab === 'models' ? '3D MODELS' : tab === 'remedial' ? 'REMEDIAL LESSONS' : tab.toUpperCase()}
             </Text>
           </TouchableOpacity>
         ))}

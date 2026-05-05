@@ -1,15 +1,10 @@
 import React, { useState, useEffect, useContext } from 'react';
-import { 
-  View, Text, FlatList, TouchableOpacity, ActivityIndicator, 
-  StyleSheet, Platform, StatusBar, Alert, Image
-} from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, StyleSheet, Platform, StatusBar, Alert, Image} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import api from './src/services/api'; 
+import api, { toAbsUrl } from './src/services/api';
 import { ThemeContext } from './src/context/ThemeContext';
 import { toastError, toastSuccess } from './src/components/ToastMsg';
-
-const SERVER_URL = 'http://192.168.1.24:8000';
 
 export default function ScanHistory({ navigation }) {
   const { theme } = useContext(ThemeContext);
@@ -45,7 +40,6 @@ export default function ScanHistory({ navigation }) {
     }
   };
 
-  // Filter Logic
   useEffect(() => {
     if (activeFilter === 'All') {
       setFilteredHistory(history);
@@ -70,7 +64,6 @@ export default function ScanHistory({ navigation }) {
           onPress: async () => {
             setLoading(true);
             try {
-              // Loops through and deletes all items using your existing route
               await Promise.all(history.map(item => 
                 api.delete(`/scan/history/item/${item._id}?studentId=${user._id}`)
               ));
@@ -104,7 +97,7 @@ export default function ScanHistory({ navigation }) {
 
     return (
       <View style={[styles.cardWrapper, { backgroundColor: theme.card }]}>
-        <Image source={{ uri: `${SERVER_URL}${item.imageUrl}` }} style={styles.scanThumb} />
+        <Image source={{ uri: toAbsUrl(item.imageUrl) }} style={styles.scanThumb} />
         <View style={{ flex: 1, marginLeft: 12 }}>
           <Text style={[styles.cardTitle, { color: theme.text }]}>{item.classification}</Text>
           <Text style={{ color: theme.subText, fontSize: 12 }}>{Number(item.confidence).toFixed(1)}% Confidence</Text>

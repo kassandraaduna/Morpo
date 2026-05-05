@@ -1,18 +1,13 @@
 import React, { useEffect, useState, useContext } from 'react';
-import { 
-    View, Text, TextInput, ScrollView, TouchableOpacity, 
-    ActivityIndicator, Image, StyleSheet, Platform, StatusBar 
-} from 'react-native';
+import { View, Text, TextInput, ScrollView, TouchableOpacity, ActivityIndicator, Image, StyleSheet, Platform, StatusBar } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
-import axios from 'axios';
 import * as ImagePicker from 'expo-image-picker';
 import ConfirmSheet from './src/components/ConfirmSheet';
 import { toastError, toastSuccess } from './src/components/ToastMsg';
 import { ThemeContext } from './src/context/ThemeContext';
 import { toAbsUrl } from './src/services/api'; 
-
-const API_URL = 'http://192.168.1.24:8000/api';
+import api from './src/services/api';
 
 export default function EditProfile({ navigation }) {
     const { theme } = useContext(ThemeContext);
@@ -97,7 +92,7 @@ export default function EditProfile({ navigation }) {
 
         try {
             setLoading(true);
-            const res = await axios.put(`${API_URL}/meds/${user._id}`, {
+            const res = await api.put(`/meds/${user._id}`, {
                 fname: form.fname,
                 lname: form.lname,
                 dob: form.dob,

@@ -1,16 +1,11 @@
 import React, { useState, useContext, useEffect, useRef } from 'react';
-import { 
-  View, Text, TextInput, TouchableOpacity, ActivityIndicator, Image, 
-  ScrollView, KeyboardAvoidingView, Platform, StyleSheet 
-} from 'react-native';
-import axios from 'axios';
+import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, Image, ScrollView, KeyboardAvoidingView, Platform, StyleSheet } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import styles from './src/styles/Styles';
 import { toastError, toastSuccess } from './src/components/ToastMsg';
 import { ThemeContext } from './src/context/ThemeContext';
-
-const API_URL = 'http://192.168.1.24:8000/api/auth';
+import api from './src/services/api';
 
 export default function ResetPasswordScreen({ navigation }) {
   const RESEND_SECONDS = 60;
@@ -61,7 +56,7 @@ export default function ResetPasswordScreen({ navigation }) {
 
     try {
       setLoading(true);
-      const res = await axios.post(`${API_URL}/request-password-reset-otp`, { email });
+      const res = await api.post('/auth/request-password-reset-otp', { email });
 
       setOtpId(res.data.otpId);
       setStep('otp');
@@ -80,7 +75,7 @@ export default function ResetPasswordScreen({ navigation }) {
 
     try {
       setLoading(true);
-      const res = await axios.post(`${API_URL}/verify-password-reset-otp`, {
+      const res = await api.post('/auth/verify-password-reset-otp', {
         otpId,
         code: otp.join(''),
       });
@@ -105,7 +100,7 @@ export default function ResetPasswordScreen({ navigation }) {
 
     try {
       setLoading(true);
-      await axios.post(`${API_URL}/verify-password-reset-otp`, {
+      await api.post('/auth/verify-password-reset-otp', {
         otpId,
         code: otp.join(''),
         newPassword,

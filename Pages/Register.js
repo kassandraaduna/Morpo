@@ -51,7 +51,7 @@ export default function Register({ navigation }) {
       case 'lname':
         return /^[A-Za-z\s\-']+$/.test(value) ? null : "Letters, spaces, hyphens, or apostrophes only.";
       case 'email':
-        return /^[a-zA-Z0-9._%+-]+@students\.nu-moa\.edu\.ph$/.test(value) ? null : "Must use @students.nu-moa.edu.ph domain.";
+        return /^[a-zA-Z0-9._%+-]+@(students\.nu-moa\.edu\.ph|gmail\.com|yahoo\.com)$/.test(value) ? null : "Must use valid email domains (e.g., @students.nu-moa.edu.ph, @gmail.com, @yahoo.com).";
       case 'number':
         return /^\d{11}$/.test(value) ? null : "Mobile number must be exactly 11 digits.";
       case 'username':
@@ -350,7 +350,7 @@ export default function Register({ navigation }) {
                 <Text style={[styles.label, { color: theme.text }]}>Student Email</Text>
                 <TextInput 
                   style={[styles.input, { color: '#000' }, getBorderStyle('email')]} 
-                  placeholder="name@students.nu-moa.edu.ph" placeholderTextColor="#999" autoCapitalize="none" keyboardType="email-address"
+                  placeholder="name@students.nu-moa.edu.ph | name@gmail.com | name@yahoo.com" placeholderTextColor="#999" autoCapitalize="none" keyboardType="email-address"
                   value={newMed.email} onBlur={() => handleBlur('email')} onChangeText={v => handleTextChange('email', v.toLowerCase())} 
                 />
                 <FieldFeedback field="email" successLabel="Email is available." />
