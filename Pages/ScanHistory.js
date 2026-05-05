@@ -118,14 +118,16 @@ export default function ScanHistory({ navigation }) {
     <View style={{ flex: 1, backgroundColor: theme.bg }}>
       <StatusBar barStyle="light-content" />
       
-      {/* Header */}
+    {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerTop}>
           <TouchableOpacity onPress={() => navigation.goBack()} style={{ marginRight: 15 }}>
             <Ionicons name="arrow-back" size={28} color="#fff" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Scan History</Text>
-          <View style={{ flex: 1 }} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.title}>Scan History</Text>
+            <Text style={styles.subtitle}>View or clear your past scans</Text>
+          </View>
           <TouchableOpacity onPress={handleClearAll}>
              <Ionicons name="trash-outline" size={24} color="#fff" />
           </TouchableOpacity>
@@ -185,7 +187,8 @@ const styles = StyleSheet.create({
     borderBottomRightRadius: 30 
   },
   headerTop: { flexDirection: 'row', alignItems: 'center' },
-  headerTitle: { fontSize: 22, fontWeight: '900', color: '#fff' },
+  title: { fontSize: 22, fontWeight: '900', color: '#fff', marginTop: 20 },
+  subtitle: { fontSize: 13, color: '#d1fae5', marginTop: 2 },
   
   tabWrapper: { flexDirection: 'row', marginHorizontal: 20, marginTop: 20, backgroundColor: '#F1F5F9', borderRadius: 12, padding: 4 },
   tabItem: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 10 },

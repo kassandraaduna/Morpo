@@ -1,10 +1,8 @@
 import React, { useState, useContext, useEffect } from 'react';
-import { 
-    View, Text, TextInput, ScrollView, TouchableOpacity, 
-    StyleSheet, Platform, ActivityIndicator, StatusBar 
-} from 'react-native';
+import { View, Text, TextInput, ScrollView, TouchableOpacity, StyleSheet, Platform, ActivityIndicator, StatusBar } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import api from './src/services/api';
 import { ThemeContext } from './src/context/ThemeContext';
 import { toastError, toastSuccess } from './src/components/ToastMsg';
 
@@ -19,6 +17,13 @@ export default function CreatePractice({ route, navigation }) {
             : [{ text: '', options: ['', '', '', ''], correctIndex: 0, format: 'multiple_choice' }]
     );
     const [loading, setLoading] = useState(false);
+    const [userId, setUserId] = useState(null);
+
+    useEffect(() => {
+        AsyncStorage.getItem('user').then(u => {
+            if(u) setUserId(JSON.parse(u)._id);
+        });
+    }, []);
 
     const addItem = () => {
         if (type === 'flashcard') {
@@ -38,7 +43,7 @@ export default function CreatePractice({ route, navigation }) {
         }
     };
 
-    const handleSave = async () => {
+const handleSave = async () => {
         if (!title.trim()) return toastError("Please enter a title.");
         
         const isValid = items.every(item => 
@@ -46,36 +51,48 @@ export default function CreatePractice({ route, navigation }) {
         );
         
         if (!isValid) return toastError("Please fill in all fields for every item.");
+        if (!userId) return toastError("User not found. Please log in again.");
 
         setLoading(true);
 
         try {
-            // Read existing local practice assessments
-            const raw = await AsyncStorage.getItem('studentPracticeAssessments_v1');
-            const existing = raw ? JSON.parse(raw) : [];
+            // Setup immediate availability and a far-future deadline for practice
+            const now = new Date();
+            const futureDeadline = new Date();
+            futureDeadline.setFullYear(now.getFullYear() + 5);
 
-            // Create a unique local ID
-            const newId = `practice_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-
-            // Create the payload matching the web structure exactly
-            const nextItem = {
-                _id: newId,
+            // Build the payload exactly as the backend expects it
+            const payload = {
                 title: title.trim(),
-                quizType: type,
-                createdAt: new Date().toISOString(),
+                quizType: type, // 'flashcard' or 'test'
+                deliveryMode: 'internal',
+                createdBy: userId, // Link it to the student so they own it
+                allowRetakes: true,
+                maxRetakes: 20, // Simulates unlimited practice retakes
+                availableAt: now.toISOString(),         // REQUIRED BY BACKEND
+                deadlineAt: futureDeadline.toISOString(), // REQUIRED BY BACKEND
+                closeOnDeadline: false,
                 timer: { enabled: false, minutes: null },
-                questions: type === 'test' ? items.map((q, i) => ({ ...q, _id: `q_${i}`, points: 1 })) : [],
-                flashcards: type === 'flashcard' ? items : [],
-                isPracticeOnly: true
+                questions: type === 'test' ? items.map(q => ({
+                    format: q.format || 'multiple_choice',
+                    text: q.text,
+                    points: 1,
+                    options: q.options,
+                    correctIndex: q.correctIndex
+                })) : [],
+                flashcards: type === 'flashcard' ? items.map(f => ({
+                    front: f.front,
+                    back: f.back
+                })) : []
             };
 
-            // Save back to local storage (bypassing backend entirely)
-            await AsyncStorage.setItem('studentPracticeAssessments_v1', JSON.stringify([nextItem, ...existing]));
+            await api.post('/assessments', payload);
             
-            toastSuccess(`Practice ${type === 'flashcard' ? 'deck' : 'test'} saved locally!`);
+            toastSuccess(`Practice ${type === 'flashcard' ? 'deck' : 'test'} successfully saved!`);
             navigation.goBack();
         } catch (err) {
-            toastError("Failed to save locally.");
+            console.log("Save error:", err.response?.data || err.message);
+            toastError(err.response?.data?.message || "Failed to save to server.");
         } finally {
             setLoading(false);
         }

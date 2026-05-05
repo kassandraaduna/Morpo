@@ -28,22 +28,19 @@ export default function AssessmentStudent({ navigation }) {
     const fetchData = async () => {
         try {
             const userRaw = await AsyncStorage.getItem('user');
-            if (userRaw) {
-                const userObj = JSON.parse(userRaw);
-                setCurrentUser(userObj);
-                
-                // 1. Fetch Instructor assessments from Backend
-                const res = await api.get(`/assessments?studentId=${userObj._id}`);
-                const sorted = (res.data?.data || []).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-                setInstructorAssessments(sorted);
-            }
+            if (!userRaw) return;
+            
+            const userObj = JSON.parse(userRaw);
+            setCurrentUser(userObj);
+            
+            const res = await api.get(`/assessments?studentId=${userObj._id}`);
+            const allAssessments = res.data?.data || [];
 
-            // 2. Fetch Practice assessments from Local Storage
-            const rawPractice = await AsyncStorage.getItem('studentPracticeAssessments_v1');
-            if (rawPractice) setPracticeAssessments(JSON.parse(rawPractice));
+            const instructors = allAssessments.filter(a => a.createdBy !== userObj._id);
+            const practices = allAssessments.filter(a => a.createdBy === userObj._id);
 
-            const rawHistory = await AsyncStorage.getItem('studentPracticeAssessmentHistory_v1');
-            if (rawHistory) setPracticeHistory(JSON.parse(rawHistory));
+            setInstructorAssessments(instructors.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
+            setPracticeAssessments(practices.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
 
         } catch (err) {
             toastError('Failed to load assessments');
@@ -59,10 +56,13 @@ export default function AssessmentStudent({ navigation }) {
         Alert.alert("Delete Practice", "Are you sure you want to remove this practice set?", [
             { text: "Cancel", style: "cancel" },
             { text: "Delete", style: "destructive", onPress: async () => {
-                const nextItems = practiceAssessments.filter(p => p._id !== id);
-                setPracticeAssessments(nextItems);
-                await AsyncStorage.setItem('studentPracticeAssessments_v1', JSON.stringify(nextItems));
-                toastSuccess("Practice deleted.");
+                try {
+                    await api.delete(`/assessments/${id}`);
+                    setPracticeAssessments(prev => prev.filter(p => p._id !== id));
+                    toastSuccess("Practice deleted globally.");
+                } catch (e) {
+                    toastError("Failed to delete practice.");
+                }
             }}
         ]);
     };
@@ -210,9 +210,9 @@ export default function AssessmentStudent({ navigation }) {
                         </Text>
                     </View>
                     <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
-                        <TouchableOpacity style={localStyles.topIconBtn} onPress={() => navigation.navigate('History')}>
+                        {/* <TouchableOpacity style={localStyles.topIconBtn} onPress={() => navigation.navigate('History')}>
                             <Ionicons name="analytics" size={20} color="#fff" />
-                        </TouchableOpacity>
+                        </TouchableOpacity> */}
                         {mainTab === 'practice' && (
                             <TouchableOpacity style={localStyles.topAddBtn} onPress={() => setShowTypeModal(true)}>
                                 <Ionicons name="add" size={20} color="#153c2a" />

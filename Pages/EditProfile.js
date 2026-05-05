@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useContext } from 'react';
-import { View, Text, TextInput, ScrollView, TouchableOpacity, ActivityIndicator, Image, StyleSheet, Platform, StatusBar } from 'react-native';
+import { View, Text, TextInput, ScrollView, TouchableOpacity, ActivityIndicator, Image, StyleSheet, Platform, StatusBar, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -90,39 +90,51 @@ export default function EditProfile({ navigation }) {
             return;
         }
 
-        try {
-            setLoading(true);
-            const res = await api.put(`/meds/${user._id}`, {
-                fname: form.fname,
-                lname: form.lname,
-                dob: form.dob,
-                gender: form.gender,
-                username: form.username,
-                email: form.email,
-                number: form.number,
-            });
+        Alert.alert(
+            "Save Changes",
+            "Are you sure you want to update your profile information?",
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "Save",
+                    onPress: async () => {
+                        try {
+                            setLoading(true);
+                            const res = await api.put(`/meds/${user._id}`, {
+                                fname: form.fname,
+                                lname: form.lname,
+                                dob: form.dob,
+                                gender: form.gender,
+                                username: form.username,
+                                email: form.email,
+                                number: form.number,
+                            });
 
-            const updatedUser = { ...res.data, avatar: avatar };
-            await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
+                            const updatedUser = { ...res.data, avatar: avatar };
+                            await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
 
-            setOriginal(updatedUser);
-            setForm(updatedUser);
-            setUser(updatedUser);
-            setOriginalAvatar(avatar);
-            setEditMode(false);
+                            setOriginal(updatedUser);
+                            setForm(updatedUser);
+                            setUser(updatedUser);
+                            setOriginalAvatar(avatar);
+                            setEditMode(false);
 
-            toastSuccess('Profile updated successfully');
-        } catch (err) {
-            const data = err.response?.data;
-            if (data?.errors) {
-                setErrors(data.errors);
-                toastError('Some fields need attention');
-            } else {
-                toastError(data?.error || 'Failed to update profile');
-            }
-        } finally {
-            setLoading(false);
-        }
+                            toastSuccess('Profile updated successfully');
+                        } catch (err) {
+                            const data = err.response?.data;
+                            if (data?.errors) {
+                                setErrors(data.errors);
+                                toastError('Some fields need attention');
+                            } else {
+                                toastError(data?.error || 'Failed to update profile');
+                            }
+                        } finally {
+                            setLoading(false);
+                        }
+                    }
+                }
+            ]
+        );
     };
 
     const displayAvatar = avatar?.startsWith('file') ? avatar : toAbsUrl(avatar);

@@ -14,31 +14,54 @@ import moment from 'moment';
 
 export default function Learn({ navigation, route }) {
   const { theme } = useContext(ThemeContext);
-  const [activeTab, setActiveTab] = useState(route.params?.initialTab?.toLowerCase() || 'lessons'); 
-  const [data, setData] = useState({ lessons: [], models: [], assessments: [] });
+  
+  // 1. Initialize all arrays, including 'remedial'
+  const [data, setData] = useState({ lessons: [], models: [], assessments: [], remedial: [] });
   const [filteredData, setFilteredData] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
+  
+  const [activeTab, setActiveTab] = useState(route.params?.initialTab?.toLowerCase() || 'lessons'); 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [user, setUser] = useState(null);
   const [bookmarks, setBookmarks] = useState({ lessons: [], models: [] });
 
   const isInstructor = user?.role?.toLowerCase() === 'instructor';
-  const visibleTabs = isInstructor ? ['lessons', 'assessments', 'models'] : ['lessons', 'remedial lessons','models'];
+  const visibleTabs = isInstructor ? ['lessons', 'models', 'assessments'] : ['lessons', 'remedial', 'models'];
 
+  // 2. Safe Fetch Logic
   const fetchData = async () => {
     try {
+      setLoading(true);
+      const rawUser = await AsyncStorage.getItem('user');
+      const currentUser = rawUser ? JSON.parse(rawUser) : null;
+      const isInst = currentUser?.role?.toLowerCase() === 'instructor';
+      setUser(currentUser);
+
       const [lessonRes, modelRes, assessRes] = await Promise.all([
         api.get('/lessons'),
         api.get('/models3d'),
         api.get('/assessments')
       ]);
-      const fetched = {
+
+      let remedialData = [];
+      if (!isInst && currentUser?._id) {
+        try {
+          const remedialRes = await api.get(`/ai/personalized-lessons/${currentUser._id}`);
+          remedialData = remedialRes.data?.data || [];
+        } catch (e) {
+          console.log("Remedial Fetch Error:", e);
+          toastError("Could not load remedial lessons.");
+        }
+      }
+
+      setData({
         lessons: (lessonRes.data?.data || []).filter(l => !l.is_archived),
         models: modelRes.data?.data || [],
-        assessments: assessRes.data?.data || []
-      };
-      setData(fetched);
+        assessments: assessRes.data?.data || [],
+        remedial: remedialData 
+      });
+
     } catch (err) {
       toastError('Failed to load content');
     } finally {
@@ -52,12 +75,6 @@ export default function Learn({ navigation, route }) {
     if (stored) setBookmarks(JSON.parse(stored));
   };
 
-  useEffect(() => {
-    AsyncStorage.getItem('user').then(u => setUser(JSON.parse(u)));
-    fetchData();
-    loadBookmarks();
-  }, []);
-
   useFocusEffect(useCallback(() => { 
     if (route.params?.initialTab) {
         setActiveTab(route.params.initialTab.toLowerCase());
@@ -66,13 +83,19 @@ export default function Learn({ navigation, route }) {
     loadBookmarks();
   }, [route.params?.initialTab]));
 
+  // 3. Safe Search Filter (checks for topic or title)
   useEffect(() => {
     const list = data[activeTab] || [];
-    setFilteredData(
-      searchQuery 
-        ? list.filter(item => item.title?.toLowerCase().includes(searchQuery.toLowerCase())) 
-        : list
-    );
+    if (!searchQuery.trim()) {
+      setFilteredData(list);
+    } else {
+      const query = searchQuery.toLowerCase();
+      const filtered = list.filter(item => {
+        const name = (item.title || item.topic || '').toLowerCase();
+        return name.includes(query);
+      });
+      setFilteredData(filtered);
+    }
   }, [searchQuery, activeTab, data]);
 
   const handleToggleBookmark = async (type, id) => {
@@ -159,6 +182,29 @@ export default function Learn({ navigation, route }) {
     );
   };
 
+  const renderRemedialItem = ({ item }) => {
+    return (
+      <TouchableOpacity 
+        style={[localStyles.card, { backgroundColor: theme.card }]}
+        onPress={() => navigation.navigate('LessonStudent', { personalizedLesson: item })}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+          <View style={[localStyles.iconBox, { backgroundColor: '#FEF2F2' }]}>
+            <Ionicons name="medical" size={22} color="#EF4444" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[localStyles.cardTitle, { color: theme.text }]} numberOfLines={2}>
+              Remedial: {item.topic}
+            </Text>
+            <Text style={localStyles.metadataText}>Personalized Remedial Lesson</Text>
+            <Text style={localStyles.metadataText}>Generated: {moment(item.createdAt).format('MMM DD, YYYY')}</Text>
+          </View>
+        </View>
+        <Ionicons name="chevron-forward" size={18} color="#ccc" />
+      </TouchableOpacity>
+    );
+  };
+
   const renderModelItem = ({ item }) => {
     const isBookmarked = bookmarks.models?.includes(item._id);
     return (
@@ -211,22 +257,30 @@ export default function Learn({ navigation, route }) {
     );
   };
 
+  // 4. Guaranteed Safe Rendering
+  const renderContentItem = ({ item }) => {
+    if (activeTab === 'remedial') return renderRemedialItem({ item });
+    if (activeTab === 'models') return renderModelItem({ item });
+    if (activeTab === 'assessments') return renderAssessmentItem({ item });
+    return renderLessonItem({ item });
+  };
+
   return (
     <View style={{ flex: 1, backgroundColor: theme.bg }}>
       <StatusBar barStyle="light-content" />
       <View style={localStyles.headerColored}>
         <View style={localStyles.headerRow}>
           <Text style={localStyles.headerTitle}>Learning Materials</Text>
-            {isInstructor && (
-              <View style={{ flexDirection: 'row', gap: 10 }}>
-                <TouchableOpacity style={localStyles.archiveHeaderBtn} onPress={() => navigation.navigate('UploadLesson')}>
-                  <Ionicons name="add" size={20} color="#fff" />
-                </TouchableOpacity>
-                <TouchableOpacity style={localStyles.archiveHeaderBtn} onPress={() => navigation.navigate('ArchiveLessons')}>
-                  <Ionicons name="archive" size={20} color="#fff" />
-                </TouchableOpacity>
-              </View>
-            )}
+          {isInstructor && (
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <TouchableOpacity style={localStyles.archiveHeaderBtn} onPress={() => navigation.navigate('UploadLesson')}>
+                <Ionicons name="add" size={20} color="#fff" />
+              </TouchableOpacity>
+              <TouchableOpacity style={localStyles.archiveHeaderBtn} onPress={() => navigation.navigate('ArchiveLessons')}>
+                <Ionicons name="archive" size={20} color="#fff" />
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
         <View style={localStyles.searchContainer}>
           <Ionicons name="search" size={18} color="#94A3B8" />
@@ -245,7 +299,7 @@ export default function Learn({ navigation, route }) {
         {visibleTabs.map((tab) => (
           <TouchableOpacity key={tab} style={[localStyles.tabItem, activeTab === tab && localStyles.activeTab]} onPress={() => setActiveTab(tab)}>
             <Text style={[localStyles.tabLabel, { color: activeTab === tab ? '#153c2a' : '#64748B' }]}>
-              {tab === 'models' ? '3D MODELS' : tab === 'remedial' ? 'REMEDIAL LESSONS' : tab.toUpperCase()}
+              {tab === 'models' ? '3D MODELS' : tab === 'remedial' ? 'REMEDIAL' : tab.toUpperCase()}
             </Text>
           </TouchableOpacity>
         ))}
@@ -257,7 +311,7 @@ export default function Learn({ navigation, route }) {
         <FlatList
           data={filteredData}
           keyExtractor={(item) => item._id}
-          renderItem={activeTab === 'lessons' ? renderLessonItem : (activeTab === 'models' ? renderModelItem : renderAssessmentItem)}
+          renderItem={renderContentItem}
           contentContainerStyle={{ padding: 20, paddingBottom: 100 }}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={fetchData} tintColor="#153c2a" />}
           ListEmptyComponent={

@@ -1,5 +1,8 @@
 import React, { useEffect, useState, useContext } from 'react';
-import { View, Text, ActivityIndicator, TouchableOpacity, StyleSheet, Dimensions } from 'react-native';
+import { 
+    View, Text, ActivityIndicator, TouchableOpacity, StyleSheet, 
+    Dimensions, ScrollView, Platform, StatusBar 
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -7,12 +10,16 @@ import * as Sharing from 'expo-sharing';
 import Pdf from 'react-native-pdf';
 import api, { toAbsUrl } from './src/services/api';
 import { ThemeContext } from './src/context/ThemeContext';
-import styles from './src/styles/Styles';
-import { toastError } from './src/components/ToastMsg';
+import { toastError, toastSuccess } from './src/components/ToastMsg';
 
 export default function LessonStudent({ route, navigation }) {
   const { lessonId, personalizedLesson } = route.params || {};
   const { theme } = useContext(ThemeContext);
+  
+  const [currentUser, setCurrentUser] = useState(null);
+  const [generatingQuiz, setGeneratingQuiz] = useState(false);
+  
+  const [remedialAssessmentId, setRemedialAssessmentId] = useState(personalizedLesson?.remedialAssessmentId || null);
   
   const [lesson, setLesson] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -23,12 +30,18 @@ export default function LessonStudent({ route, navigation }) {
   const [pdfError, setPdfError] = useState('');
 
   useEffect(() => {
+    AsyncStorage.getItem('user').then(u => {
+        if(u) setCurrentUser(JSON.parse(u));
+    });
+
     const checkBookmark = async () => {
-      if (!lessonId) return;
+      const targetId = lessonId || personalizedLesson?._id;
+      if (!targetId) return;
+
       const stored = await AsyncStorage.getItem('studentBookmarks_v1');
       if (stored) {
-          const parsed = JSON.parse(stored);
-          if (parsed.lessons?.includes(lessonId)) setIsBookmarked(true);
+         const parsed = JSON.parse(stored);
+         if (parsed.lessons?.includes(targetId)) setIsBookmarked(true);
       }
     };
     checkBookmark();
@@ -70,17 +83,21 @@ export default function LessonStudent({ route, navigation }) {
   }, [lessonId, personalizedLesson]);
 
   const toggleBookmark = async () => {
-    if (!lessonId) return;
+    const targetId = lessonId || personalizedLesson?._id;
+    if (!targetId) return;
+
     const stored = await AsyncStorage.getItem('studentBookmarks_v1');
     let parsed = stored ? JSON.parse(stored) : { lessons: [], models: [] };
     if (!parsed.lessons) parsed.lessons = [];
     
-    if (parsed.lessons.includes(lessonId)) {
-        parsed.lessons = parsed.lessons.filter(id => id !== lessonId);
+    if (parsed.lessons.includes(targetId)) {
+        parsed.lessons = parsed.lessons.filter(id => id !== targetId);
         setIsBookmarked(false);
+        toastSuccess("Removed from Bookmarks");
     } else {
-        parsed.lessons.push(lessonId);
+        parsed.lessons.push(targetId);
         setIsBookmarked(true);
+        toastSuccess("Saved to Bookmarks");
     }
     await AsyncStorage.setItem('studentBookmarks_v1', JSON.stringify(parsed));
   };
@@ -90,8 +107,6 @@ export default function LessonStudent({ route, navigation }) {
       const finalUrl = toAbsUrl(partialUrl);
       const safeUrl = encodeURI(finalUrl);
       
-      console.log("Fetching PDF from:", safeUrl);
-
       const fileName = `safe_view_${Date.now()}.pdf`;
       const fileUri = `${FileSystem.cacheDirectory}${fileName}`;
       
@@ -109,7 +124,6 @@ export default function LessonStudent({ route, navigation }) {
         setPdfError(`File missing from server (HTTP ${downloadRes.status})`);
       }
     } catch (error) {
-      console.log('Network error:', error);
       setPdfError('Network connection failed while downloading document.');
     } finally {
       setLoading(false);
@@ -135,91 +149,140 @@ export default function LessonStudent({ route, navigation }) {
         toastError('Sharing not available on this device.');
       }
     } catch (err) {
-      console.log(err);
       toastError('Failed to download PDF.');
     } finally {
       setDownloading(false);
     }
   };
 
+  const handleRemedialAction = async () => {
+      if (!personalizedLesson) return;
+
+      if (remedialAssessmentId) {
+          navigation.navigate('TakeAssessment', { assessmentId: remedialAssessmentId });
+          return;
+      }
+
+      try {
+          setGeneratingQuiz(true);
+          
+          // Ensure we extract ONLY the text content, removing the hidden PDF URL marker
+          const cleanContent = String(personalizedLesson.content || '').split('|||PDF_URL|||')[0];
+
+          const res = await api.post('/ai/generate-remedial', {
+              studentId: currentUser._id,
+              topic: personalizedLesson.topic,
+              lessonContent: cleanContent,
+              personalizedLessonId: personalizedLesson._id,
+              failedQuestions: personalizedLesson.failedQuestions || [],
+              questionCount: 5,
+              sourceAssessmentId: personalizedLesson.sourceAssessmentId
+          });
+          
+          toastSuccess("Remedial Assessment Generated!");
+          setRemedialAssessmentId(res.data.assessmentId);
+          navigation.navigate('TakeAssessment', { assessmentId: res.data.assessmentId });
+      } catch (err) {
+          toastError(err.response?.data?.message || "Failed to generate assessment. MyphoAI might be busy.");
+      } finally {
+          setGeneratingQuiz(false);
+      }
+  };
+
   if (loading) {
     return (
-      <View style={[styles.screen, { backgroundColor: theme.bg, justifyContent: 'center' }]}>
-        <ActivityIndicator size="large" color={theme.primary} />
-        <Text style={{ color: theme.subText, marginTop: 10 }}>Fetching Document...</Text>
+      <View style={[localStyles.center, { backgroundColor: theme.bg }]}>
+        <ActivityIndicator size="large" color="#153c2a" />
+        <Text style={{ color: theme.subText, marginTop: 10, fontWeight: '600' }}>Fetching Document...</Text>
       </View>
     );
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: theme.bg, paddingTop: 40 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', padding: 16, borderBottomWidth: 1, borderBottomColor: theme.subText + '33' }}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={{ marginRight: 15 }}>
-          <Ionicons name="arrow-back" size={24} color={theme.text} />
-        </TouchableOpacity>
-        <Text style={{ fontSize: 18, fontWeight: 'bold', color: theme.text, flex: 1 }} numberOfLines={1}>
-          {lesson?.title || 'Lesson Details'}
-        </Text>
-        
-        {!personalizedLesson && (
-          <TouchableOpacity onPress={toggleBookmark} style={{ paddingHorizontal: 10 }}>
-            <Ionicons name={isBookmarked ? "bookmark" : "bookmark-outline"} size={24} color={theme.primary} />
+    <View style={{ flex: 1, backgroundColor: theme.bg }}>
+      <StatusBar barStyle="light-content" />
+      
+      <View style={[localStyles.header, { backgroundColor: '#153c2a' }]}>
+        <View style={localStyles.headerRow}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={{ marginRight: 15 }}>
+            <Ionicons name="arrow-back" size={28} color="#fff" />
           </TouchableOpacity>
-        )}
+          <View style={{ flex: 1 }}>
+            <Text style={localStyles.title} numberOfLines={2}>
+              {lesson?.title || 'Lesson Details'}
+            </Text>
+            <Text style={localStyles.subtitle}>
+              {personalizedLesson ? 'Personalized Remedial Module' : 'Learning Module'}
+            </Text>
+          </View>
+          
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <TouchableOpacity onPress={toggleBookmark} style={localStyles.iconBtn}>
+              <Ionicons name={isBookmarked ? "bookmark" : "bookmark-outline"} size={22} color="#fff" />
+            </TouchableOpacity>
 
-        {lesson?.pdfUrl && !pdfError && (
-          <TouchableOpacity onPress={downloadPdfOffline} disabled={downloading} style={{ paddingLeft: 10 }}>
-            {downloading ? (
-              <ActivityIndicator size="small" color={theme.text} />
-            ) : (
-              <Ionicons name="download-outline" size={24} color={theme.text} />
+            {lesson?.pdfUrl && !pdfError && (
+              <TouchableOpacity onPress={downloadPdfOffline} disabled={downloading} style={localStyles.iconBtn}>
+                {downloading ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Ionicons name="download-outline" size={22} color="#fff" />
+                )}
+              </TouchableOpacity>
             )}
-          </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+
+      <View style={{ flex: 1 }}>
+        {lesson?.educationalContent && (!personalizedLesson || pdfError) ? (
+          <ScrollView 
+            style={[localStyles.textContent, { backgroundColor: theme.card, maxHeight: localPdfPath ? 240 : undefined }]}
+            nestedScrollEnabled={true}
+          >
+            <Text style={{ color: theme.text, fontSize: 14, lineHeight: 24 }}>
+              {lesson.educationalContent}
+            </Text>
+          </ScrollView>
+        ) : null}
+
+        {pdfError ? (
+          <View style={[localStyles.center, { padding: 20 }]}>
+            <Ionicons name="alert-circle-outline" size={50} color="#ef4444" style={{ marginBottom: 10 }} />
+            <Text style={{ color: theme.text, fontSize: 16, fontWeight: 'bold', marginBottom: 5 }}>Document Unavailable</Text>
+            <Text style={{ color: theme.subText, textAlign: 'center' }}>{pdfError}</Text>
+          </View>
+        ) : localPdfPath ? (
+          <View style={localStyles.pdfContainer}>
+            <Pdf
+              source={{ uri: localPdfPath, cache: true }}
+              trustAllCerts={false} 
+              style={localStyles.pdfView}
+            />
+          </View>
+        ) : (
+          <View style={[localStyles.center, { padding: 20 }]}>
+            <Ionicons name="document-text-outline" size={48} color={theme.subText} style={{ marginBottom: 10 }} />
+            <Text style={{ color: theme.subText, textAlign: 'center' }}>No PDF document assigned to this lesson.</Text>
+          </View>
         )}
       </View>
 
-      {lesson?.educationalContent ? (
-        <View style={{ padding: 16, backgroundColor: theme.card, marginHorizontal: 16, borderRadius: 12, marginTop: 16, marginBottom: 10 }}>
-          <Text style={{ color: theme.text, fontSize: 14, lineHeight: 22 }}>
-            {lesson.educationalContent}
-          </Text>
-        </View>
-      ) : null}
-
-      {pdfError ? (
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
-          <Ionicons name="alert-circle-outline" size={50} color="#ef4444" style={{ marginBottom: 10 }} />
-          <Text style={{ color: theme.text, fontSize: 16, fontWeight: 'bold', marginBottom: 5 }}>
-            Document Unavailable
-          </Text>
-          <Text style={{ color: theme.subText, textAlign: 'center' }}>
-            {pdfError}
-          </Text>
-          <Text style={{ color: theme.subText, textAlign: 'center', marginTop: 10, fontSize: 12 }}>
-            Please verify that this lesson has a valid PDF file assigned to it on the server.
-          </Text>
-        </View>
-      ) : localPdfPath ? (
-        <View style={localStyles.pdfContainer}>
-          <Pdf
-            /* FIX 1: Removed toAbsUrl(). Using the raw local file:// path */
-            source={{ uri: localPdfPath, cache: true }}
-            trustAllCerts={false} 
-            onLoadComplete={(numberOfPages) => {
-              console.log(`Successfully loaded PDF with ${numberOfPages} pages`);
-            }}
-            onError={(error) => {
-              console.log('PDF Render Error:', error);
-            }}
-            style={localStyles.pdfView}
-          />
-        </View>
-      ) : (
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
-          <Ionicons name="document-text-outline" size={48} color={theme.subText} style={{ marginBottom: 10 }} />
-          <Text style={{ color: theme.subText, textAlign: 'center' }}>
-            No PDF document assigned to this lesson.
-          </Text>
+      {!!personalizedLesson?._id && (
+        <View style={[localStyles.footer, { backgroundColor: theme.card }]}>
+            <TouchableOpacity 
+                style={[localStyles.submitBtn, generatingQuiz && { opacity: 0.7 }]}
+                onPress={handleRemedialAction}
+                disabled={generatingQuiz}
+            >
+                {generatingQuiz ? (
+                    <ActivityIndicator color="#fff" />
+                ) : (
+                    <Text style={localStyles.submitBtnText}>
+                        {remedialAssessmentId ? 'Take Remedial Assessment' : 'Generate Remedial Assessment'}
+                    </Text>
+                )}
+            </TouchableOpacity>
         </View>
       )}
     </View>
@@ -227,13 +290,62 @@ export default function LessonStudent({ route, navigation }) {
 }
 
 const localStyles = StyleSheet.create({
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  
+  header: { 
+    paddingHorizontal: 20, 
+    paddingTop: Platform.OS === 'ios' ? 60 : 40, 
+    paddingBottom: 25, 
+    borderBottomLeftRadius: 30, 
+    borderBottomRightRadius: 30 
+  },
+  headerRow: { flexDirection: 'row', alignItems: 'center' },
+  title: { fontSize: 20, fontWeight: '900', color: '#fff', marginTop: 10 },
+  subtitle: { fontSize: 13, color: '#d1fae5', marginTop: 2 },
+  iconBtn: { backgroundColor: 'rgba(255,255,255,0.2)', padding: 8, borderRadius: 12, marginTop: 10 },
+
+  textContent: {
+    margin: 16,
+    padding: 16,
+    borderRadius: 16,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 8
+  },
+
   pdfContainer: {
     flex: 1,
     width: Dimensions.get('window').width,
     backgroundColor: '#E5E5E5',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    overflow: 'hidden'
   },
   pdfView: {
     flex: 1,
     width: Dimensions.get('window').width,
+  },
+
+  footer: { 
+    padding: 20, 
+    borderTopWidth: 1, 
+    borderColor: '#eee',
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 10
+  },
+  submitBtn: { 
+    backgroundColor: '#153c2a', 
+    padding: 18, 
+    borderRadius: 16, 
+    alignItems: 'center' 
+  },
+  submitBtnText: { 
+    color: '#fff', 
+    fontWeight: '900', 
+    fontSize: 15,
+    letterSpacing: 0.5 
   }
 });

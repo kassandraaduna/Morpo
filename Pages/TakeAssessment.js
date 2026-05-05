@@ -14,10 +14,13 @@ export default function TakeAssessment({ route, navigation }) {
     const { theme } = useContext(ThemeContext);
     
     const [studentId, setStudentId] = useState(null);
+    const [currentUser, setCurrentUser] = useState(null);
     const [assessment, setAssessment] = useState(null);
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
+    
     const [answers, setAnswers] = useState({});
+    const answersRef = useRef({}); 
     const [result, setResult] = useState(null);
 
     const [secondsLeft, setSecondsLeft] = useState(null);
@@ -29,12 +32,12 @@ export default function TakeAssessment({ route, navigation }) {
                 const userRaw = await AsyncStorage.getItem('user');
                 const user = JSON.parse(userRaw);
                 setStudentId(user._id);
+                setCurrentUser(user);
 
                 const res = await api.get(`/assessments/${assessmentId}?studentId=${user._id}`);
                 const data = res.data?.data;
                 setAssessment(data);
 
-                // Initialize timer only if it's enabled by the instructor
                 if (data?.timer?.enabled && data?.timer?.minutes) {
                     setSecondsLeft(data.timer.minutes * 60);
                 }
@@ -47,15 +50,14 @@ export default function TakeAssessment({ route, navigation }) {
         };
         init();
         return () => clearInterval(timerRef.current);
-    }, []);
+    }, [assessmentId]);
 
-    // Timer Countdown Logic
     useEffect(() => {
         if (secondsLeft === null) return;
         if (secondsLeft <= 0) {
             clearInterval(timerRef.current);
             Alert.alert("Time's Up!", "Your assessment is being submitted automatically.", [
-                { text: "OK", onPress: submitToBackend }
+                { text: "OK", onPress: executeSubmit }
             ]);
             return;
         }
@@ -73,7 +75,6 @@ export default function TakeAssessment({ route, navigation }) {
         return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
     };
 
-    // Auto-Submit Validation for Back Button
     const handleBackPress = () => {
         Alert.alert(
             "Exit Assessment?",
@@ -83,21 +84,69 @@ export default function TakeAssessment({ route, navigation }) {
                 { 
                     text: "Submit & Exit", 
                     style: "destructive", 
-                    onPress: submitToBackend 
+                    onPress: executeSubmit 
                 }
             ]
         );
     };
 
-    const submitToBackend = async () => {
+    const confirmSubmit = () => {
+        Alert.alert(
+            "Submit Assessment?",
+            "Are you sure you are ready to submit your answers? You cannot change them after submission.",
+            [
+                { text: "Review", style: "cancel" },
+                { text: "Submit", onPress: executeSubmit }
+            ]
+        );
+    };
+
+    const executeSubmit = async () => {
         if (submitting) return;
         setSubmitting(true);
         clearInterval(timerRef.current);
         
+        const currentAnswers = answersRef.current;
+
+        const isPractice = String(assessment?.createdBy) === String(currentUser?._id);
+
+        if (isPractice) {
+            let score = 0;
+            let total = 0;
+            
+            assessment.questions.forEach(q => {
+                total += q.points || 1;
+                if (currentAnswers[q._id] === q.correctIndex) {
+                    score += q.points || 1;
+                }
+            });
+            
+            const percent = total > 0 ? Math.round((score / total) * 100) : 0;
+            
+            const attempt = {
+                score, 
+                total, 
+                percent,
+                feedback: percent >= 70 ? 'Great job on your practice!' : 'Keep practicing to improve.'
+            };
+
+            const rawHistory = await AsyncStorage.getItem('studentPracticeAssessmentHistory_v1');
+            const history = rawHistory ? JSON.parse(rawHistory) : {};
+            if (!history[assessmentId]) history[assessmentId] = [];
+            history[assessmentId].unshift({ ...attempt, submittedAt: new Date().toISOString() });
+            
+            await AsyncStorage.setItem('studentPracticeAssessmentHistory_v1', JSON.stringify(history));
+
+            setResult(attempt);
+            toastSuccess('Practice Completed!');
+            setSubmitting(false);
+            return; 
+        }
+
         const formattedAnswers = assessment.questions.map(q => ({
             questionId: q._id,
             format: q.format || 'multiple_choice',
-            selectedIndex: answers[q._id] !== undefined ? answers[q._id] : null,
+            selectedIndex: currentAnswers[q._id] !== undefined ? currentAnswers[q._id] : -1,
         }));
 
         try {
@@ -106,8 +155,51 @@ export default function TakeAssessment({ route, navigation }) {
                 answers: formattedAnswers,
                 timeSpentSec: assessment?.timer?.enabled ? ((assessment.timer.minutes * 60) - (secondsLeft || 0)) : 0
             });
-            setResult(res.data.data);
+            
+            const resultData = res.data.data;
+            setResult(resultData);
             toastSuccess('Submitted Successfully!');
+
+            if (!assessment?.isRemedial && resultData.percent < 70) {
+                const failKey = `failCount_${currentUser._id}`;
+                const storedFails = await AsyncStorage.getItem(failKey);
+                let failCount = storedFails ? parseInt(storedFails, 10) : 0;
+                
+                failCount += 1;
+
+                if (failCount >= 3) {
+                    toastSuccess("Generating personalized remedial lesson...");
+
+                    const failedQuestions = assessment.questions.filter(q => {
+                        const selected = currentAnswers[q._id] !== undefined ? currentAnswers[q._id] : -1;
+                        return selected !== q.correctIndex;
+                    }).map(q => ({
+                        text: String(q.text || ''),
+                        format: String(q.format || 'multiple_choice'),
+                        correctAnswer: q.options && q.options[q.correctIndex] ? String(q.options[q.correctIndex]) : '',
+                        acceptedAnswers: Array.isArray(q.acceptedAnswers) ? q.acceptedAnswers : [],
+                        isCorrect: false
+                    }));
+
+                    api.post('/ai/intervention', {
+                        studentId: currentUser._id,
+                        studentName: `${currentUser.fname} ${currentUser.lname}`.trim(),
+                        topic: assessment.title || 'Assessment',
+                        score: resultData.score || 0,
+                        total: resultData.total || 0,
+                        lessonId: null,
+                        sourceAssessmentId: assessmentId,
+                        sourceAttemptId: resultData.attemptId || null,
+                        failedQuestions: failedQuestions,
+                        failedItemCount: failedQuestions.length
+                    }).catch(err => console.log("Intervention failed to generate:", err));
+
+                    failCount = 0;
+                }
+                
+                await AsyncStorage.setItem(failKey, failCount.toString());
+            }
+
         } catch (err) {
             toastError("Submission failed.");
         } finally {
@@ -117,14 +209,28 @@ export default function TakeAssessment({ route, navigation }) {
 
     if (loading) return <View style={localStyles.center}><ActivityIndicator size="large" color="#153c2a" /></View>;
 
-    // ─── RESULT SCREEN ───
+    if (assessment?.isCompleted && !assessment?.canRetake && !result) {
+        return (
+            <View style={[localStyles.center, { backgroundColor: theme.bg, padding: 25 }]}>
+                <Ionicons name="lock-closed" size={80} color="#EF4444" />
+                <Text style={{ color: theme.text, marginTop: 20, fontSize: 22, fontWeight: '900' }}>Assessment Completed</Text>
+                <Text style={{ color: theme.subText, textAlign: 'center', marginTop: 10, fontSize: 15, lineHeight: 22 }}>
+                    You have already completed this assessment. Retakes are not permitted for this module.
+                </Text>
+                <TouchableOpacity style={[localStyles.backBtn, { marginTop: 30, backgroundColor: theme.primary }]} onPress={() => navigation.goBack()}>
+                    <Text style={localStyles.backBtnText}>Go Back</Text>
+                </TouchableOpacity>
+            </View>
+        );
+    }
+
     if (result) return (
         <View style={[localStyles.container, { backgroundColor: theme.bg, justifyContent: 'center', alignItems: 'center', padding: 25 }]}>
             <View style={localStyles.resultIconCircle}>
                 <Ionicons name="trophy" size={60} color="#F59E0B" />
             </View>
             <Text style={[localStyles.scoreText, { color: theme.text }]}>{result.score} <Text style={{fontSize: 24, color: theme.subText}}>/ {result.total}</Text></Text>
-            <Text style={{ color: result.percent >= 70 ? '#10B981' : '#EF4444', fontSize: 18, fontWeight: '900', marginTop: 10 }}>{result.percent}% Score</Text>
+            <Text style={{ color: result.percent >= 50 ? '#10B981' : '#EF4444', fontSize: 18, fontWeight: '900', marginTop: 10 }}>{result.percent}% Score</Text>
             
             <View style={[localStyles.feedbackBox, { backgroundColor: theme.card }]}>
                 <Ionicons name="chatbubbles-outline" size={24} color="#94A3B8" style={{ marginBottom: 10 }} />
@@ -146,7 +252,6 @@ export default function TakeAssessment({ route, navigation }) {
         <View style={{ flex: 1, backgroundColor: theme.bg }}>
             <StatusBar barStyle="dark-content" />
             
-            {/* ─── STICKY HEADER WITH BACK BUTTON ─── */}
             <View style={[localStyles.stickyHeader, { backgroundColor: theme.card, borderBottomColor: isUrgent ? '#EF4444' : '#E2E8F0' }]}>
                 <View style={localStyles.headerLeft}>
                     <TouchableOpacity onPress={handleBackPress} style={localStyles.headerBackBtn}>
@@ -158,7 +263,6 @@ export default function TakeAssessment({ route, navigation }) {
                     </View>
                 </View>
                 
-                {/* ─── DYNAMIC TIMER PILL ─── */}
                 <View style={[localStyles.timerPill, { backgroundColor: hasTimer ? (isUrgent ? '#FEE2E2' : '#F1F5F9') : '#F8FAFC' }]}>
                     {hasTimer ? (
                         <>
@@ -170,15 +274,12 @@ export default function TakeAssessment({ route, navigation }) {
                     ) : (
                         <>
                             <Ionicons name="infinite" size={16} color="#94A3B8" />
-                            <Text style={[localStyles.timerText, { color: '#64748B', fontSize: 12 }]}>
-                                No Timer
-                            </Text>
+                            <Text style={[localStyles.timerText, { color: '#64748B', fontSize: 12 }]}>No Timer</Text>
                         </>
                     )}
                 </View>
             </View>
 
-            {/* ─── QUESTION LIST ─── */}
             <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 120 }}>
                 {assessment?.questions?.map((q, idx) => (
                     <View key={q._id} style={[localStyles.qCard, { backgroundColor: theme.card }]}>
@@ -202,7 +303,11 @@ export default function TakeAssessment({ route, navigation }) {
                                             { backgroundColor: theme.bg, borderColor: theme.bg },
                                             isSelected && { borderColor: '#10B981', backgroundColor: '#E7F5EE' }
                                         ]}
-                                        onPress={() => setAnswers({...answers, [q._id]: optIdx})}
+                                        onPress={() => {
+                                            const newAnswers = { ...answers, [q._id]: optIdx };
+                                            setAnswers(newAnswers);
+                                            answersRef.current = newAnswers; 
+                                        }}
                                         activeOpacity={0.7}
                                     >
                                         <Ionicons 
@@ -224,7 +329,7 @@ export default function TakeAssessment({ route, navigation }) {
             <View style={[localStyles.footer, { backgroundColor: theme.card }]}>
                 <TouchableOpacity 
                     style={[localStyles.submitBtn, submitting && { opacity: 0.7 }]} 
-                    onPress={submitToBackend} 
+                    onPress={confirmSubmit} 
                     disabled={submitting}
                 >
                     {submitting ? <ActivityIndicator color="#fff" /> : <Text style={localStyles.submitBtnText}>Submit Assessment</Text>}

@@ -17,7 +17,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+        "foregroundImage": "./assets/mypholens_logo.png",
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
@@ -25,6 +25,11 @@
     },
     "web": {
       "favicon": "./assets/mypholens_logo.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "2e7ca1e1-85a9-4e2a-981e-84e6cb6e149e"
+      }
     }
   }
 }

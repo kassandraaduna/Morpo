@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useContext } from 'react';
-import { View, Text, FlatList, TouchableOpacity, Alert, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, Alert, ActivityIndicator, StyleSheet, Platform, StatusBar } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ThemeContext } from './src/context/ThemeContext';
 import api from './src/services/api';
@@ -31,22 +31,34 @@ export default function ArchiveLessons({ navigation }) {
     };
 
     const handleRestore = async (id) => {
-        try {
-            await api.put(`/lessons/${id}`, { 
-                isArchived: false,
-                modifiedBy: user?._id 
-            });
-            toastSuccess("Lesson restored!");
-            fetchArchived();
-        } catch (e) { 
-            toastError("Restore failed"); 
-        }
+        Alert.alert(
+            "Restore Lesson",
+            "Are you sure you want to restore this lesson to the active library?",
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "Restore",
+                    onPress: async () => {
+                        try {
+                            await api.put(`/lessons/${id}`, { 
+                                isArchived: false,
+                                modifiedBy: user?._id 
+                            });
+                            toastSuccess("Lesson restored!");
+                            fetchArchived();
+                        } catch (e) { 
+                            toastError("Restore failed"); 
+                        }
+                    }
+                }
+            ]
+        );
     };
 
     const handleDeletePermanently = async (id) => {
         Alert.alert(
             "Permanent Delete", 
-            "This will remove the lesson from the database and web dashboard forever. This cannot be undone.", 
+            "This will permanently delete the lesson. This action cannot be undone.", 
             [
                 { text: "Cancel", style: "cancel" },
                 { 
@@ -73,11 +85,17 @@ export default function ArchiveLessons({ navigation }) {
 
     return (
         <View style={{ flex: 1, backgroundColor: theme.bg }}>
+            <StatusBar barStyle="light-content" />
             <View style={[localStyles.header, { backgroundColor: '#153c2a' }]}>
-                <TouchableOpacity onPress={() => navigation.goBack()}>
-                    <Ionicons name="arrow-back" size={26} color="#fff" />
-                </TouchableOpacity>
-                <Text style={localStyles.headerTitle}>Archived Lessons</Text>
+                <View style={localStyles.headerRow}>
+                    <TouchableOpacity onPress={() => navigation.goBack()} style={{ marginRight: 15 }}>
+                        <Ionicons name="arrow-back" size={28} color="#fff" />
+                    </TouchableOpacity>
+                    <View style={{ flex: 1 }}>
+                        <Text style={localStyles.title}>Archived Lessons</Text>
+                        <Text style={localStyles.subtitle}>Restore or permanently delete lessons</Text>
+                    </View>
+                </View>
             </View>
 
             {loading ? (
@@ -128,20 +146,16 @@ export default function ArchiveLessons({ navigation }) {
 }
 
 const localStyles = StyleSheet.create({
-    header: {
-        paddingHorizontal: 20,
-        paddingTop: 60,
-        paddingBottom: 20,
-        flexDirection: 'row',
-        alignItems: 'center',
-        elevation: 4,
+    header: { 
+        paddingHorizontal: 20, 
+        paddingTop: Platform.OS === 'ios' ? 60 : 40, 
+        paddingBottom: 25, 
+        borderBottomLeftRadius: 30, 
+        borderBottomRightRadius: 30 
     },
-    headerTitle: {
-        fontSize: 20,
-        fontWeight: '900',
-        marginLeft: 15,
-        color: '#fff'
-    },
+    headerRow: { flexDirection: 'row', alignItems: 'center' },
+    title: { fontSize: 22, fontWeight: '900', color: '#fff', marginTop: 20 },
+    subtitle: { fontSize: 13, color: '#d1fae5', marginTop: 2 },
     centered: {
         flex: 1,
         justifyContent: 'center',
