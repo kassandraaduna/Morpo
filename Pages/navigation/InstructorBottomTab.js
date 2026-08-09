@@ -29,9 +29,9 @@ export default function InstructorBottomTab() {
       })}
     >
       <Tab.Screen 
-        name="Dashboard" 
+        name="Home" 
         component={InstructorHomepage} 
-        options={{ tabBarIcon: ({ color }) => <Ionicons name="grid" size={24} color={color} /> }}
+        options={{ tabBarIcon: ({ color }) => <Ionicons name="home" size={24} color={color} /> }}
       />
       <Tab.Screen 
         name="Learn" 
@@ -44,9 +44,9 @@ export default function InstructorBottomTab() {
         options={{ tabBarIcon: ({ color }) => <Ionicons name="camera" size={24} color={color} /> }}
       />
       <Tab.Screen 
-        name="Monitoring" 
+        name="Student Monitoring" 
         component={StudentMonitoring} 
-        options={{ tabBarIcon: ({ color }) => <Ionicons name="people" size={24} color={color} /> }}
+        options={{ tabBarIcon: ({ color }) => <Ionicons name="analytics" size={24} color={color} /> }}
       />
       <Tab.Screen 
         name="Profile" 

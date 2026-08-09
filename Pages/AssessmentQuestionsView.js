@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import api, { toAbsUrl } from './src/services/api';
 import { ThemeContext } from './src/context/ThemeContext';
 import { toastError } from './src/components/ToastMsg';
+import { WebView } from 'react-native-webview';
 
 const getInitials = (name) => {
   if (!name) return 'S';
@@ -134,10 +135,10 @@ export default function AssessmentQuestionsView({ route, navigation }) {
       
       <View style={localStyles.header}>
         <View style={localStyles.headerRow}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={{ marginRight: 15, marginTop: 2 }}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={{ justifyContent: 'center' }}>
             <Ionicons name="arrow-back" size={28} color="#fff" />
           </TouchableOpacity>
-          <View style={localStyles.headerTextContainer}>
+          <View style={[localStyles.headerTextContainer, {alignItems: 'center', justifyContent: 'center'}]}>
             <Text style={localStyles.headerTitle}>Assessment Details</Text>
             <Text style={localStyles.headerSubtitle}>
               Track assessment results and view assessment questions
@@ -177,29 +178,44 @@ export default function AssessmentQuestionsView({ route, navigation }) {
       )}
 
       {activeSubTab === 'questions' ? (
-        <ScrollView contentContainerStyle={{ paddingHorizontal: 22, paddingBottom: 30 }}>
-          {assessment.questions.map((q, idx) => (
-            <View key={idx} style={[localStyles.qCard, { backgroundColor: theme.card }]}>
-              <Text style={[localStyles.qText, { color: theme.text }]}>{idx + 1}. {q.text}</Text>
-              {q.options.map((opt, i) => (
-                <View key={i} style={localStyles.optRow}>
-                  <Ionicons 
-                    name={q.correctIndex === i ? "checkmark-circle" : "ellipse-outline"} 
-                    size={16} 
-                    color={q.correctIndex === i ? "#10B981" : "#ccc"} 
-                  />
-                  <Text style={[localStyles.optText, q.correctIndex === i && { color: '#10B981', fontWeight: 'bold' }]}>{opt}</Text>
+        assessment?.deliveryMode === 'external' && assessment?.externalUrl ? (
+          <View style={{ flex: 1, minHeight: 500, marginHorizontal: 22, marginBottom: 30, borderRadius: 20, overflow: 'hidden', borderWidth: 1, borderColor: '#f1f5f9' }}>
+            <WebView 
+              source={{ uri: assessment.externalUrl }} 
+              style={{ flex: 1 }} 
+              startInLoadingState={true}
+              renderLoading={() => (
+                <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                  <ActivityIndicator size="large" color="#153c2a" />
                 </View>
-              ))}
-            </View>
-          ))}
-        </ScrollView>
+              )}
+            />
+          </View>
+        ) : (
+          <ScrollView contentContainerStyle={{ paddingHorizontal: 22, paddingBottom: 30 }}>
+            {(assessment?.questions || []).map((q, idx) => (
+              <View key={idx} style={[localStyles.qCard, { backgroundColor: theme.card }]}>
+                <Text style={[localStyles.qText, { color: theme.text }]}>{idx + 1}. {q.text}</Text>
+                {(q.options || []).map((opt, i) => (
+                  <View key={i} style={localStyles.optRow}>
+                    <Ionicons 
+                      name={q.correctIndex === i ? "checkmark-circle" : "ellipse-outline"} 
+                      size={16} 
+                      color={q.correctIndex === i ? "#10B981" : "#ccc"} 
+                    />
+                    <Text style={[localStyles.optText, q.correctIndex === i && { color: '#10B981', fontWeight: 'bold' }]}>{opt}</Text>
+                  </View>
+                ))}
+              </View>
+            ))}
+          </ScrollView>
+        )
       ) : (
         <View style={{ flex: 1 }}>
           {loading ? <ActivityIndicator size="large" color="#153c2a" style={{ marginTop: 40 }} /> : (
             <FlatList 
               data={studentStatusList} 
-              keyExtractor={(item) => item._id} 
+              keyExtractor={(item) => String(item._id)} 
               renderItem={renderStudentItem} 
               contentContainerStyle={{ paddingHorizontal: 22, paddingBottom: 30 }} 
               ListEmptyComponent={<Text style={localStyles.emptyText}>No students found for this filter.</Text>}
@@ -217,8 +233,12 @@ header: {
     paddingHorizontal: 20, 
     paddingTop: Platform.OS === 'ios' ? 60 : 40, 
     paddingBottom: 25, 
-    borderBottomLeftRadius: 30, 
-    borderBottomRightRadius: 30 
+    borderBottomLeftRadius: 10, 
+    borderBottomRightRadius: 10,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 10, 
   },
   headerRow: { 
     flexDirection: 'row', 
@@ -231,7 +251,7 @@ header: {
     flexDirection: 'column',
   },
   headerTitle: { 
-    fontSize: 24, 
+    fontSize: 25, 
     fontWeight: '900', 
     color: '#fff',
   },

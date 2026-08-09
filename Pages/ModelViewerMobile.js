@@ -4,10 +4,16 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { WebView } from 'react-native-webview';
 import { Ionicons } from '@expo/vector-icons';
 import { ThemeContext } from './src/context/ThemeContext';
-import { toAbsUrl } from './src/services/api';
+import api, { toAbsUrl } from './src/services/api';
 
 export default function ModelViewerMobile({ route, navigation }) {
-    const { modelId, modelTitle, modelUrl, labels } = route.params;
+    const { modelId, model, url, title } = route.params || {};
+    const [modelData, setModelData] = useState(model || null);
+    const [modelUrl, setModelUrl] = useState(url || null);
+    
+    // Safely pull labels from modelData or route.params
+    const labels = route.params?.labels || modelData?.labels || [];
+    
     const { theme } = useContext(ThemeContext);
     const webviewRef = useRef(null);
     const [isBookmarked, setIsBookmarked] = useState(false);
@@ -32,10 +38,39 @@ export default function ModelViewerMobile({ route, navigation }) {
         checkBookmark();
     }, [modelId]);
 
+    useEffect(() => {
+        const fetchModelDetails = async () => {
+            if (!modelData && modelId) {
+                try {
+                    const res = await api.get(`/models3d`);
+                    const list = res.data?.data || res.data || [];
+                    const fetchedModel = list.find(m => String(m._id) === String(modelId) || String(m.id) === String(modelId));
+                    if (fetchedModel) {
+                        setModelData(fetchedModel);
+                    }
+                } catch (error) {
+                    console.error("Failed to fetch model details:", error);
+                }
+            }
+        };
+        fetchModelDetails();
+    }, [modelId, modelData]);
+
+    useEffect(() => {
+        if (modelData) {
+            const rawPath = url || modelData.fileUrl || modelData.modelUrl || modelData.file || modelData.url;
+            if (rawPath) {
+                const absoluteUrl = toAbsUrl(rawPath);
+                setModelUrl(absoluteUrl);
+            }
+        }
+    }, [modelData, url]);
+
     const toggleBookmark = async () => {
         if (!modelId) return;
         const stored = await AsyncStorage.getItem('studentBookmarks_v1');
-        let parsed = stored ? JSON.parse(stored) : { lessons: [], models: [] };
+        let parsed = stored ? JSON.parse(stored) : { lessons: [], models: [], scans: [] };
+        
         if (!parsed.models) parsed.models = [];
         
         if (parsed.models.includes(modelId)) {
@@ -70,6 +105,9 @@ export default function ModelViewerMobile({ route, navigation }) {
 
     const finalUrl = toAbsUrl(modelUrl);
     const bgColor = isDarkMode ? '#000000' : '#f0f4f2';
+    const textColor = isDarkMode ? '#ffffff' : '#153c2a';
+    const barBgColor = isDarkMode ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.1)';
+    const barFillColor = isDarkMode ? '#ffffff' : '#153c2a';
 
     const hotspotHtml = labels?.map((lbl, index) => `
         <button class="hotspot ${!labelsVisible ? 'hidden' : ''}" slot="hotspot-${index}" data-position="${lbl.position}" data-normal="${lbl.normal}" data-index="${index}">
@@ -77,6 +115,7 @@ export default function ModelViewerMobile({ route, navigation }) {
         </button>
     `).join('') || '';
 
+    // Advanced Loading Progress Bar Injection
     const htmlContent = `
         <!DOCTYPE html>
         <html>
@@ -106,7 +145,6 @@ export default function ModelViewerMobile({ route, navigation }) {
                 transform: translate(-50%, -50%);
                 cursor: pointer;
             }
-
             .annotation {
                 background: #153c2a;
                 color: white;
@@ -114,28 +152,67 @@ export default function ModelViewerMobile({ route, navigation }) {
                 border-radius: 5px;
             }
 
-            .hidden { display: none !important; }
+            /* Custom Progress Bar Styling */
+            .loader-container {
+                width: 100%; height: 100%; display: flex; flex-direction: column; 
+                justify-content: center; align-items: center; 
+                background-color: ${bgColor}; position: absolute; top: 0; left: 0;
+                transition: opacity 0.3s ease;
+                z-index: 10;
+            }
+            .progress-bar-bg {
+                width: 70%; height: 8px; background-color: ${barBgColor}; 
+                border-radius: 4px; margin-top: 12px; overflow: hidden;
+            }
+            .progress-bar-fill {
+                height: 100%; width: 0%; background-color: ${barFillColor}; 
+                transition: width 0.1s linear;
+            }
+            .progress-text {
+                font-family: sans-serif; font-size: 16px; font-weight: 700; color: ${textColor};
+            }
+            .hidden { opacity: 0; pointer-events: none; }
         </style>
         </head>
         <body>
         <model-viewer 
+            id="model"
             src="${finalUrl}" 
             camera-controls 
             auto-rotate 
             shadow-intensity="1" 
             touch-action="pan-y"
         >
+            <div slot="progress-bar" id="loader" class="loader-container">
+                <div class="progress-text" id="perc">Loading 0%</div>
+                <div class="progress-bar-bg">
+                    <div class="progress-bar-fill" id="fill"></div>
+                </div>
+            </div>
             ${hotspotHtml}
         </model-viewer>
 
         <script>
+            const model = document.querySelector('#model');
+            const perc = document.querySelector('#perc');
+            const fill = document.querySelector('#fill');
+            const loader = document.querySelector('#loader');
+
+            model.addEventListener('progress', (event) => {
+                const val = Math.round(event.detail.totalProgress * 100);
+                perc.innerText = 'Loading ' + val + '%';
+                fill.style.width = val + '%';
+                if (val >= 100) {
+                    setTimeout(() => loader.classList.add('hidden'), 250);
+                }
+            });
+
             document.querySelectorAll('.hotspot').forEach(btn => {
                 btn.addEventListener('click', (e) => {
                     const index = btn.getAttribute('data-index');
                     window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'hotspot_click', index }));
                 });
             });
-
             window.addEventListener('message', (event) => {
                 try {
                     const data = JSON.parse(event.data);
@@ -158,16 +235,11 @@ export default function ModelViewerMobile({ route, navigation }) {
             <WebView
                 ref={webviewRef}
                 originWhitelist={['*']}
+                javaScriptEnabled={true}
+                domStorageEnabled={true}
                 source={{ html: htmlContent }}
                 style={[localStyles.webview, { backgroundColor: bgColor }]}
                 scrollEnabled={false}
-                startInLoadingState={true}
-                onMessage={handleMessage}
-                renderLoading={() => (
-                <View style={[localStyles.loader, { backgroundColor: bgColor }]}>
-                    <ActivityIndicator size="large" color={isDarkMode ? "#fff" : "#153c2a"} />
-                </View>
-                )}
             />
 
             <View style={localStyles.topActionRow}>
@@ -208,9 +280,12 @@ export default function ModelViewerMobile({ route, navigation }) {
                 </View>
             )}
 
-            {!selectedLabel && (
+            {!selectedLabel && (title || modelData?.title || modelData?.name) && (
                 <View style={localStyles.titleOverlay}>
-                    <Text style={localStyles.titleText}>{modelTitle}</Text>
+                    <Text style={localStyles.titleText}>{title || modelData?.title || modelData?.name}</Text>
+                    {modelData?.description && (
+                         <Text style={localStyles.descText}>{modelData.description}</Text>
+                    )}
                 </View>
             )}
         </View>
@@ -220,7 +295,6 @@ export default function ModelViewerMobile({ route, navigation }) {
 const localStyles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#000' },
     webview: { flex: 1 },
-    loader: { ...StyleSheet.absoluteFillObject, justifyContent: 'center', alignItems: 'center' },
     
     topActionRow: {
         position: 'absolute',
@@ -295,5 +369,11 @@ const localStyles = StyleSheet.create({
         fontWeight: 'bold',
         fontSize: 16,
         textAlign: 'center',
+    },
+    descText: {
+        color: '#e2e8f0',
+        fontSize: 13,
+        textAlign: 'center',
+        marginTop: 4,
     }
 });

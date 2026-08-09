@@ -1,39 +1,229 @@
 import React, { useState, useContext, useEffect, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, Image, ScrollView, KeyboardAvoidingView, Platform, StyleSheet } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, ScrollView, KeyboardAvoidingView, Platform, StyleSheet, Dimensions} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import styles from './src/styles/Styles';
-import { toastError, toastSuccess } from './src/components/ToastMsg';
-import { ThemeContext } from './src/context/ThemeContext';
-import api from './src/services/api';
+import { ThemeContext } from '../Pages/src/context/ThemeContext';
+import { toastError, toastSuccess } from '../Pages/src/components/ToastMsg';
+import api from '../Pages/src/services/api';
+
+const { width } = Dimensions.get('window');
+const RESEND_SECONDS = 60;
 
 export default function ResetPasswordScreen({ navigation }) {
-  const RESEND_SECONDS = 60;
   const { theme } = useContext(ThemeContext);
 
+  // ─── Step: 'email' | 'otp' | 'password' ──────────────────────────
   const [step, setStep] = useState('email');
   const [loading, setLoading] = useState(false);
-  
-  // Timers & Resend
-  const [resendTimer, setResendTimer] = useState(0);
-  const [canResend, setCanResend] = useState(true);
 
-  // Data States
+  // ─── Step 1: Email / Username State ──────────────────────────────
   const [email, setEmail] = useState('');
+
+  // ─── Step 2: OTP State ───────────────────────────────────────────
   const [otpId, setOtpId] = useState('');
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [otpVerified, setOtpVerified] = useState(false);
+  const [resendTimer, setResendTimer] = useState(0);
+  const [canResend, setCanResend] = useState(true);
+  const otpRefs = useRef([]);
 
-  // Password States
+  // ─── Step 3: New Password State ──────────────────────────────────
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  const otpRefs = useRef([]);
-  const isOtpComplete = otp.every(d => d !== '');
+  // ─── Password Rules & Checks ─────────────────────────────────────
+  const passwordRules = {
+    length: (pass) => pass.length >= 8,
+    upper: (pass) => /[A-Z]/.test(pass),
+    number: (pass) => /\d/.test(pass),
+    special: (pass) => /[!@#$%^&*]/.test(pass),
+  };
 
-  /* ================= OTP HANDLERS ================= */
+  const passwordChecks = {
+    length: passwordRules.length(newPassword),
+    upper: passwordRules.upper(newPassword),
+    number: passwordRules.number(newPassword),
+    special: passwordRules.special(newPassword),
+  };
+
+  const passwordsMatch =
+    newPassword.length > 0 &&
+    confirmPassword.length > 0 &&
+    newPassword === confirmPassword;
+  const isPasswordValid = Object.values(passwordChecks).every(Boolean);
+
+  // ─── Resend Timer Effect ─────────────────────────────────────────
+  useEffect(() => {
+    if (!canResend && resendTimer > 0) {
+      const timer = setTimeout(() => setResendTimer((t) => t - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+    if (resendTimer === 0) setCanResend(true);
+  }, [resendTimer, canResend]);
+
+  // ─── Auto-focus First OTP Box ────────────────────────────────────
+  useEffect(() => {
+    if (step === 'otp') {
+      const timeout = setTimeout(() => otpRefs.current[0]?.focus(), 300);
+      return () => clearTimeout(timeout);
+    }
+  }, [step]);
+
+  // ─── STEP 1: REQUEST PASSWORD RESET OTP ──────────────────────────
+  const requestOtp = async () => {
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail) {
+      toastError('Please enter your username or email.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await api.post('/auth/request-password-reset-otp', {
+        email: normalizedEmail,
+      });
+
+      if (res.data?.otpId) {
+        setOtpId(res.data.otpId);
+      }
+      toastSuccess('A 6-digit verification code has been sent.');
+      setStep('otp');
+      setResendTimer(RESEND_SECONDS);
+      setCanResend(false);
+    } catch (error) {
+      console.error('Request OTP Error:', error?.response?.data || error.message);
+      const serverMsg = error?.response?.data?.message;
+      toastError(serverMsg || 'Could not find a registered account with that email.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ─── STEP 2: STRICT REAL OTP VERIFICATION ────────────────────────
+  const verifyOtp = async () => {
+    const codeStr = otp.join('').trim();
+    if (codeStr.length < 6) {
+      toastError('Please enter the full 6-digit OTP.');
+      return;
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    setLoading(true);
+
+    const VERIFY_ENDPOINTS = [
+      {
+        url: '/auth/verify-password-reset-otp',
+        payload: { email: normalizedEmail, code: codeStr, otp: codeStr, otpId },
+      },
+      {
+        url: '/auth/verify-reset-otp',
+        payload: { email: normalizedEmail, code: codeStr, otp: codeStr, otpId },
+      },
+      {
+        url: '/auth/verify-email-otp',
+        payload: { email: normalizedEmail, code: codeStr, otp: codeStr, purpose: 'reset-password', otpId },
+      },
+    ];
+
+    let isSuccess = false;
+    let serverErrorMessage = null;
+
+    for (const endpoint of VERIFY_ENDPOINTS) {
+      try {
+        const res = await api.post(endpoint.url, endpoint.payload);
+        if (res.status === 200 || res.status === 201) {
+          isSuccess = true;
+          break;
+        }
+      } catch (error) {
+        const status = error?.response?.status;
+        const msg = error?.response?.data?.message;
+        if (status && status !== 404) {
+          serverErrorMessage = msg || 'Invalid verification code.';
+          break;
+        }
+      }
+    }
+
+    setLoading(false);
+
+    if (isSuccess) {
+      setOtpVerified(true);
+      toastSuccess('OTP verified! Please create your new password.');
+      setStep('password');
+    } else {
+      toastError(
+        serverErrorMessage || 'Invalid verification code. Please check your email and try again.'
+      );
+    }
+  };
+
+  // ─── RESEND OTP HANDLER ──────────────────────────────────────────
+  const handleResend = async () => {
+    if (!canResend) return;
+    const normalizedEmail = email.trim().toLowerCase();
+    setLoading(true);
+    try {
+      const res = await api.post('/auth/resend-password-reset-otp', {
+        email: normalizedEmail,
+      });
+      if (res.data?.otpId) setOtpId(res.data.otpId);
+      toastSuccess('A new verification code has been sent.');
+      setResendTimer(RESEND_SECONDS);
+      setCanResend(false);
+      setOtp(['', '', '', '', '', '']);
+      setTimeout(() => otpRefs.current[0]?.focus(), 200);
+    } catch (error) {
+      toastError(error?.response?.data?.message || 'Failed to resend code.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ─── STEP 3: RESET PASSWORD ──────────────────────────────────────
+  const resetPassword = async () => {
+    if (!otpVerified) {
+      toastError('OTP has not been verified.');
+      return;
+    }
+    if (!isPasswordValid) {
+      toastError('Please ensure all password requirements are met.');
+      return;
+    }
+    if (!passwordsMatch) {
+      toastError('Passwords do not match.');
+      return;
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const codeStr = otp.join('').trim();
+    setLoading(true);
+
+    try {
+      await api.post('/auth/verify-password-reset-otp', {
+        email: normalizedEmail,
+        otpId,
+        code: codeStr,
+        otp: codeStr,
+        newPassword,
+        password: newPassword,
+      });
+
+      toastSuccess('Password reset successfully! Please sign in.');
+      navigation.replace('Login');
+    } catch (error) {
+      console.error('Reset Password Error:', error?.response?.data || error.message);
+      toastError(
+        error?.response?.data?.message ||
+          'Could not reset password. Please verify your OTP and try again.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ─── OTP Digit Handlers ──────────────────────────────────────────
   const handleOtpChange = (value, index) => {
     const copy = [...otp];
     copy[index] = value;
@@ -50,265 +240,260 @@ export default function ResetPasswordScreen({ navigation }) {
     }
   };
 
-  /* ================= API ACTIONS ================= */
-  const requestOtp = async () => {
-    if (!email) return toastError('Email is required');
-
-    try {
-      setLoading(true);
-      const res = await api.post('/auth/request-password-reset-otp', { email });
-
-      setOtpId(res.data.otpId);
+  const handleBackPress = () => {
+    if (step === 'password') {
       setStep('otp');
-      setResendTimer(RESEND_SECONDS);
-      setCanResend(false);
-
-    } catch (err) {
-      toastError(err.response?.data?.message || 'Failed to send OTP');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const verifyOtp = async () => {
-    if (!isOtpComplete) return;
-
-    try {
-      setLoading(true);
-      const res = await api.post('/auth/verify-password-reset-otp', {
-        otpId,
-        code: otp.join(''),
-      });
-
-      if (res.data?.message === 'OTP verified') {
-        setOtpVerified(true);
-        setStep('reset');
-      }
-    } catch (err) {
-      toastError(err.response?.data?.message || 'Invalid OTP');
-      setOtp(['', '', '', '', '', '']);
-      setTimeout(() => otpRefs.current[0]?.focus(), 150);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const resetPassword = async () => {
-    if (!otpVerified) return toastError('OTP not verified');
-    if (!isPasswordValid) return toastError('Password does not meet requirements');
-    if (!passwordsMatch) return toastError('Passwords do not match');
-
-    try {
-      setLoading(true);
-      await api.post('/auth/verify-password-reset-otp', {
-        otpId,
-        code: otp.join(''),
-        newPassword,
-      });
-
-      toastSuccess('Password updated successfully');
-      navigation.replace('Login');
-
-    } catch (err) {
-      toastError(err.response?.data?.message || 'Password reset failed');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  /* ================= VALIDATION LOGIC ================= */
-  const passwordRules = {
-    length: pass => pass.length >= 8,
-    upper: pass => /[A-Z]/.test(pass),
-    number: pass => /\d/.test(pass),
-    special: pass => /[!@#$%^&*]/.test(pass),
-  };
-
-  const passwordChecks = {
-    length: passwordRules.length(newPassword),
-    upper: passwordRules.upper(newPassword),
-    number: passwordRules.number(newPassword),
-    special: passwordRules.special(newPassword),
-  };
-
-  const passwordsMatch = newPassword.length > 0 && confirmPassword.length > 0 && newPassword === confirmPassword;
-  const isPasswordValid = Object.values(passwordChecks).every(Boolean);
-  const canSubmitPassword = isPasswordValid && passwordsMatch;
-
-  /* ================= EFFECTS ================= */
-  useEffect(() => {
-    return () => {
-      setOtp(['', '', '', '', '', '']);
-      setOtpId('');
-      setOtpVerified(false);
-      setNewPassword('');
+    } else if (step === 'otp') {
       setStep('email');
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!canResend && resendTimer > 0) {
-      const timer = setTimeout(() => setResendTimer(t => t - 1), 1000);
-      return () => clearTimeout(timer);
+    } else {
+      navigation.goBack();
     }
-    if (resendTimer === 0) setCanResend(true);
-  }, [resendTimer, canResend]);
-
-  useEffect(() => {
-    if (step === 'otp') {
-      setTimeout(() => otpRefs.current[0]?.focus(), 300);
-    }
-  }, [step]);
+  };
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1, backgroundColor: theme.bg }}>
-      <ScrollView contentContainerStyle={localStyles.scrollContainer} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-        <View style={localStyles.wrapper}>
-          <Image
-            source={require('../assets/mypholens_logo.png')}
-            style={styles.logo}
-          />
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={[localStyles.container, { backgroundColor: theme.bg || '#F8F9FA' }]}
+    >
+      {/* ─── STICKY HEADER BLOCK (Constrained Width for Responsiveness) ── */}
+      <View style={[localStyles.headerWrapper, { backgroundColor: theme.bg || '#F8F9FA' }]}>
+        <View style={localStyles.headerContainer}>
+          <TouchableOpacity
+            style={localStyles.backButton}
+            onPress={handleBackPress}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
+          </TouchableOpacity>
 
-          <View style={[styles.card, { backgroundColor: theme.card, borderRadius: 24, width: '100%', padding: 20 }]}>
+          <Text style={localStyles.heading}>
+            {step === 'email'
+              ? 'Reset Password'
+              : step === 'otp'
+              ? 'Verify OTP'
+              : 'Create New Password'}
+          </Text>
+          <Text style={localStyles.subHeading}>
+            {step === 'email'
+              ? 'Enter the email associated with your account and we will send you a 6-digit one-time pin to reset your password.'
+              : step === 'otp'
+              ? 'Enter the 6-digit one-time pin sent to your email to reset your password.'
+              : 'Enter your new password below. Make sure it meets all security requirements.'}
+          </Text>
+        </View>
+      </View>
 
-            {/* ── STEP 1: EMAIL ── */}
-            {step === 'email' && (
-              <View>
-                <Text style={[styles.title, { color: theme.text }]}>RESET PASSWORD</Text>
-                <Text style={[styles.subtitle, { color: theme.subText, marginBottom: 20 }]}>
-                  Enter the email associated with your account and we will send you a 6-digit one-time pin to reset your password.
-                </Text>
-
-                <Text style={[styles.label, { color: theme.text }]}>Email Address</Text>
+      <ScrollView
+        contentContainerStyle={localStyles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={localStyles.formContainer}>
+          {step === 'email' && (
+            /* ─── STEP 1: EMAIL / USERNAME SCREEN ───────────────────── */
+            <View style={{ width: '100%' }}>
+              <Text style={localStyles.label}>Email</Text>
+              <View style={localStyles.inputWrapper}>
                 <TextInput
-                  style={[styles.input, { color: theme.text, backgroundColor: theme.bg, borderColor: '#E0E0E0', borderWidth: 1 }]}
-                  placeholder="Enter your email"
-                  placeholderTextColor="#999"
-                  autoCapitalize="none"
+                  style={localStyles.input}
+                  placeholder="Enter your registered email"
+                  placeholderTextColor="#94A3B8"
                   keyboardType="email-address"
+                  autoCapitalize="none"
                   value={email}
                   onChangeText={setEmail}
                 />
-
-                <TouchableOpacity style={[styles.primaryBtn, { marginTop: 20 }, loading && styles.disabled]} onPress={requestOtp} disabled={loading}>
-                  {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Continue</Text>}
-                </TouchableOpacity>
-
-                <TouchableOpacity style={{ marginTop: 25, alignItems: 'center' }} onPress={() => navigation.goBack()}>
-                  <Text style={[styles.link, { color: theme.subText }]}>Back to login</Text>
-                </TouchableOpacity>
               </View>
-            )}
 
-            {/* ── STEP 2: OTP ── */}
-            {step === 'otp' && (
-              <View>
-                <Text style={[styles.title, { color: theme.text, textAlign: 'center' }]}>VERIFY OTP</Text>
-                <Text style={[styles.subtitle, { color: theme.subText, textAlign: 'center', marginBottom: 20 }]}>
-                  Enter the 6-digit code sent to <Text style={{ fontWeight: '700' }}>{email}</Text>
-                </Text>
-
-                <View style={localStyles.otpContainer}>
-                  {otp.map((digit, i) => (
-                    <TextInput
-                      key={i}
-                      ref={ref => (otpRefs.current[i] = ref)}
-                      style={[localStyles.otpBox, { backgroundColor: theme.bg, color: theme.text }]}
-                      value={digit}
-                      maxLength={1}
-                      keyboardType="numeric"
-                      textAlign="center"
-                      onChangeText={v => handleOtpChange(v, i)}
-                      onKeyPress={({ nativeEvent }) => handleOtpBackspace(nativeEvent.key, i)}
-                    />
-                  ))}
-                </View>
-
-                <TouchableOpacity style={[styles.primaryBtn, (!isOtpComplete || loading) && styles.disabled, { marginTop: 25 }]} disabled={!isOtpComplete || loading} onPress={verifyOtp}>
-                  {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Verify Code</Text>}
-                </TouchableOpacity>
-
-                <TouchableOpacity disabled={!canResend || loading} onPress={requestOtp} style={{ marginTop: 20, alignItems: 'center' }}>
-                  <Text style={[styles.link, { color: canResend ? theme.primary : '#999', fontWeight: 'bold' }]}>
-                    {canResend ? 'Resend Code' : `Resend available in ${resendTimer}s`}
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity style={{ marginTop: 25, alignItems: 'center' }} onPress={() => { setStep('email'); setOtp(['', '', '', '', '', '']); setResendTimer(0); }}>
-                  <Text style={[styles.link, { color: theme.subText }]}>Change Email</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-
-            {/* ── STEP 3: RESET PASSWORD ── */}
-            {step === 'reset' && (
-              <View>
-                <Text style={[styles.title, { color: theme.text }]}>ENTER NEW PASSWORD</Text>
-                <Text style={[styles.subtitle, { color: theme.subText, marginBottom: 20 }]}>
-                  Enter the new password for your account.
-                </Text>
-
-                <Text style={[styles.label, { color: theme.text }]}>Password</Text>
-                <View style={[styles.passwordWrapper, { borderColor: '#E0E0E0' }]}>
-                  <TextInput
-                    style={[styles.passwordInput, { color: theme.text, flex: 1, paddingLeft: 15 }]}
-                    placeholder="Enter new password"
-                    placeholderTextColor="#999"
-                    secureTextEntry={!showPassword}
-                    value={newPassword}
-                    onChangeText={setNewPassword}
-                  />
-                  <TouchableOpacity style={styles.eyeIcon} onPress={() => setShowPassword(p => !p)}>
-                    <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color="#777" />
-                  </TouchableOpacity>
-                </View>
-
-                <View style={localStyles.checklistContainer}>
-                  {[
-                    ['At least 8 characters', passwordChecks.length],
-                    ['One uppercase letter', passwordChecks.upper],
-                    ['One number', passwordChecks.number],
-                    ['Special character (!@#$%^&*)', passwordChecks.special],
-                  ].map(([label, ok], i) => (
-                    <View key={i} style={localStyles.checklistRow}>
-                      <Ionicons name={ok ? 'checkmark-circle' : 'close-circle'} size={14} color={ok ? '#2ecc71' : '#e74c3c'} style={{ marginTop: 1 }} />
-                      <Text style={[localStyles.checklistText, { color: ok ? '#2ecc71' : '#e74c3c' }]}>{label}</Text>
-                    </View>
-                  ))}
-                </View>
-
-                <Text style={[styles.label, { color: theme.text }]}>Confirm Password</Text>
-                <View style={[styles.passwordWrapper, { borderColor: '#E0E0E0' }]}>
-                  <TextInput
-                    style={[styles.passwordInput, { color: theme.text, flex: 1, paddingLeft: 15 }]}
-                    placeholder="Confirm new password"
-                    placeholderTextColor="#999"
-                    secureTextEntry={!showConfirmPassword}
-                    value={confirmPassword}
-                    onChangeText={setConfirmPassword}
-                  />
-                  <TouchableOpacity style={styles.eyeIcon} onPress={() => setShowConfirmPassword(p => !p)}>
-                    <Ionicons name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color="#777" />
-                  </TouchableOpacity>
-                </View>
-
-                {/* Match indicator */}
-                {confirmPassword.length > 0 && (
-                  <View style={[localStyles.checklistRow, { marginLeft: 5 }]}>
-                    <Ionicons name={passwordsMatch ? 'checkmark-circle' : 'close-circle'} size={14} color={passwordsMatch ? '#2ecc71' : '#e74c3c'} />
-                    <Text style={[localStyles.checklistText, { color: passwordsMatch ? '#2ecc71' : '#e74c3c' }]}>
-                      {passwordsMatch ? 'Passwords match' : 'Passwords do not match'}
-                    </Text>
-                  </View>
+              <TouchableOpacity
+                style={localStyles.primaryBtn}
+                onPress={requestOtp}
+                disabled={loading}
+                activeOpacity={0.85}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Text style={localStyles.primaryBtnText}>Continue</Text>
                 )}
+              </TouchableOpacity>
 
-                <TouchableOpacity style={[styles.primaryBtn, { marginTop: 30 }, (!canSubmitPassword || loading) && styles.disabled]} disabled={!canSubmitPassword || loading} onPress={resetPassword}>
-                  {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Reset Password</Text>}
+              <TouchableOpacity
+                style={localStyles.footerLinkWrapper}
+                onPress={() => navigation.replace('Login')}
+              >
+                <Text style={localStyles.footerLinkText}>Back to Login</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {step === 'otp' && (
+            /* ─── STEP 2: VERIFY OTP SCREEN ────────────────────────── */
+            <View style={{ width: '100%' }}>
+              {/* 6-Digit OTP Box Grid */}
+              <View style={localStyles.otpContainer}>
+                {otp.map((digit, idx) => (
+                  <TextInput
+                    key={idx}
+                    ref={(el) => (otpRefs.current[idx] = el)}
+                    style={[
+                      localStyles.otpBox,
+                      digit !== '' && localStyles.otpBoxActive,
+                    ]}
+                    keyboardType="number-pad"
+                    maxLength={1}
+                    value={digit}
+                    onChangeText={(val) => handleOtpChange(val, idx)}
+                    onKeyPress={({ nativeEvent }) =>
+                      handleOtpBackspace(nativeEvent.key, idx)
+                    }
+                  />
+                ))}
+              </View>
+
+              <TouchableOpacity
+                style={localStyles.primaryBtn}
+                onPress={verifyOtp}
+                disabled={loading}
+                activeOpacity={0.85}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Text style={localStyles.primaryBtnText}>Verify</Text>
+                )}
+              </TouchableOpacity>
+
+              {/* Resend Code Countdown */}
+              <View style={localStyles.resendWrapper}>
+                <Text style={localStyles.resendText}>Didn't get code? </Text>
+                {!canResend ? (
+                  <Text style={localStyles.resendDisabled}>
+                    Resend available in {resendTimer}s
+                  </Text>
+                ) : (
+                  <TouchableOpacity onPress={handleResend}>
+                    <Text style={localStyles.resendLink}>Resend now</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* Try Another Email Link */}
+              <TouchableOpacity
+                style={localStyles.tryAnotherBtn}
+                onPress={() => setStep('email')}
+              >
+                <Text style={localStyles.tryAnotherText}>Try another email</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {step === 'password' && (
+            /* ─── STEP 3: CREATE NEW PASSWORD SCREEN ───────────────── */
+            <View style={{ width: '100%' }}>
+              {/* New Password Input */}
+              <Text style={localStyles.label}>New Password</Text>
+              <View style={localStyles.inputWrapper}>
+                <TextInput
+                  style={[localStyles.input, { flex: 1 }]}
+                  placeholder="Enter your new password"
+                  placeholderTextColor="#94A3B8"
+                  secureTextEntry={!showPassword}
+                  value={newPassword}
+                  onChangeText={setNewPassword}
+                />
+                <TouchableOpacity
+                  onPress={() => setShowPassword(!showPassword)}
+                  style={localStyles.eyeIcon}
+                >
+                  <Ionicons
+                    name={showPassword ? 'eye-outline' : 'eye-off-outline'}
+                    size={20}
+                    color="#64748B"
+                  />
                 </TouchableOpacity>
               </View>
-            )}
 
-          </View>
+              {/* Confirm Password Input */}
+              <Text style={localStyles.label}>Confirm Password</Text>
+              <View style={localStyles.inputWrapper}>
+                <TextInput
+                  style={[localStyles.input, { flex: 1 }]}
+                  placeholder="Confirm your new password"
+                  placeholderTextColor="#94A3B8"
+                  secureTextEntry={!showConfirmPassword}
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                />
+                <TouchableOpacity
+                  onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                  style={localStyles.eyeIcon}
+                >
+                  <Ionicons
+                    name={showConfirmPassword ? 'eye-outline' : 'eye-off-outline'}
+                    size={20}
+                    color="#64748B"
+                  />
+                </TouchableOpacity>
+              </View>
+
+              {/* Password Rules Checklist */}
+              <View style={localStyles.checklistContainer}>
+                <View style={localStyles.checklistRow}>
+                  <Ionicons
+                    name={passwordChecks.length ? 'checkmark-circle' : 'ellipse-outline'}
+                    size={16}
+                    color={passwordChecks.length ? '#10B981' : '#94A3B8'}
+                  />
+                  <Text style={localStyles.checklistText}>At least 8 characters long</Text>
+                </View>
+                <View style={localStyles.checklistRow}>
+                  <Ionicons
+                    name={passwordChecks.upper ? 'checkmark-circle' : 'ellipse-outline'}
+                    size={16}
+                    color={passwordChecks.upper ? '#10B981' : '#94A3B8'}
+                  />
+                  <Text style={localStyles.checklistText}>One uppercase letter (A-Z)</Text>
+                </View>
+                <View style={localStyles.checklistRow}>
+                  <Ionicons
+                    name={passwordChecks.number ? 'checkmark-circle' : 'ellipse-outline'}
+                    size={16}
+                    color={passwordChecks.number ? '#10B981' : '#94A3B8'}
+                  />
+                  <Text style={localStyles.checklistText}>At least one number (0-9)</Text>
+                </View>
+                <View style={localStyles.checklistRow}>
+                  <Ionicons
+                    name={passwordChecks.special ? 'checkmark-circle' : 'ellipse-outline'}
+                    size={16}
+                    color={passwordChecks.special ? '#10B981' : '#94A3B8'}
+                  />
+                  <Text style={localStyles.checklistText}>One special character (!@#$%^&*)</Text>
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={localStyles.primaryBtn}
+                onPress={resetPassword}
+                disabled={loading}
+                activeOpacity={0.85}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Text style={localStyles.primaryBtnText}>Reset Password</Text>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={localStyles.footerLinkWrapper}
+                onPress={() => navigation.replace('Login')}
+              >
+                <Text style={localStyles.footerLinkText}>Back to Login</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -316,16 +501,173 @@ export default function ResetPasswordScreen({ navigation }) {
 }
 
 const localStyles = StyleSheet.create({
-  scrollContainer: { flexGrow: 1, backgroundColor: 'transparent' },
-  wrapper: { paddingHorizontal: 20, alignItems: 'center', width: '100%', paddingBottom: 40 },
-  logo: { width: 140, height: 140, resizeMode: 'contain', marginTop: 40, marginBottom: 10 },
-  
-  // OTP Layout Fix
-  otpContainer: { flexDirection: 'row', justifyContent: 'space-between', width: '100%' },
-  otpBox: { width: 45, height: 50, borderWidth: 1, borderColor: '#E0E0E0', borderRadius: 10, textAlign: 'center', fontSize: 20, fontWeight: 'bold' },
-
-  // Checklist layout
-  checklistContainer: { marginLeft: 10, marginBottom: 15, marginTop: -4 },
-  checklistRow: { flexDirection: 'row', alignItems: 'flex-start', marginTop: 4 },
-  checklistText: { fontSize: 11, marginLeft: 6, fontWeight: '600', flex: 1, marginTop: 1 }
+  container: {
+    flex: 1,
+  },
+  // ─── Responsive Sticky Header Wrapper ────────────────────────────
+  headerWrapper: {
+    width: '100%',
+    alignItems: 'center',
+    zIndex: 10,
+  },
+  headerContainer: {
+    width: '100%',
+    maxWidth: 520,
+    paddingHorizontal: 24,
+    paddingTop: Platform.OS === 'ios' ? 60 : 60,
+    paddingBottom: 16,
+  },
+  backButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#4E7D5B',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  heading: {
+    fontSize: 28,
+    fontWeight: '900',
+    color: '#153c2a',
+    marginBottom: 4,
+  },
+  subHeading: {
+    fontSize: 14,
+    color: '#1e293b',
+    lineHeight: 20,
+  },
+  // ─── Responsive Scroll Content Wrapper ───────────────────────────
+  scrollContent: {
+    flexGrow: 1,
+    alignItems: 'center', // Centers content on large screens
+    paddingHorizontal: 24,
+    paddingTop: 8,
+    paddingBottom: 40,
+  },
+  formContainer: {
+    width: '100%',
+    maxWidth: 520, // Constrains maximum width on wider viewports
+  },
+  label: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0f172a',
+    marginBottom: 6,
+  },
+  inputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 12,
+    height: 52,
+    paddingHorizontal: 14,
+    marginBottom: 16,
+  },
+  input: {
+    flex: 1,
+    fontSize: 14,
+    color: '#0F172A',
+  },
+  eyeIcon: {
+    padding: 6,
+  },
+  primaryBtn: {
+    backgroundColor: '#153c2a',
+    height: 54,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 8,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 3 },
+  },
+  primaryBtnText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  footerLinkWrapper: {
+    alignSelf: 'center',
+    marginTop: 28,
+  },
+  footerLinkText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  // ─── Step 2: OTP Screen Styles (Responsive Grid Spacing) ─────────
+  otpContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginVertical: 12,
+    marginBottom: 24,
+  },
+  otpBox: {
+    // Dynamic sizing based on screen width with a safe max boundary constraint
+    width: Math.min((Math.min(width, 520) - 48 - 40) / 6, 60),
+    height: 52,
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 10,
+    backgroundColor: '#F8FAFC',
+    textAlign: 'center',
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  otpBoxActive: {
+    borderColor: '#153c2a',
+    borderWidth: 1.5,
+  },
+  resendWrapper: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 20,
+  },
+  resendText: {
+    fontSize: 13,
+    color: '#64748B',
+  },
+  resendDisabled: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  resendLink: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#153c2a',
+  },
+  tryAnotherBtn: {
+    alignSelf: 'center',
+    marginTop: 18,
+  },
+  tryAnotherText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  // ─── Step 3: Password Checklist Styles ───────────────────────────
+  checklistContainer: {
+    marginBottom: 16,
+    paddingHorizontal: 4,
+  },
+  checklistRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 4,
+  },
+  checklistText: {
+    fontSize: 12,
+    color: '#475569',
+    fontWeight: '600',
+    marginLeft: 8,
+  },
 });

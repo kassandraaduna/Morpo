@@ -1,351 +1,1036 @@
-import React, { useEffect, useState, useContext, useCallback } from 'react';
-import { 
-  View, Text, FlatList, TouchableOpacity, ActivityIndicator, 
-  RefreshControl, StyleSheet, StatusBar, TextInput, Platform, Alert 
-} from 'react-native';
+import React, { useState, useEffect, useCallback, useContext } from 'react';
+import { useRoute, useFocusEffect } from '@react-navigation/native';
+import { View, Text, StyleSheet, FlatList, SectionList, Linking, TouchableOpacity, TextInput, RefreshControl, ActivityIndicator, Platform, Dimensions, Modal } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useFocusEffect } from '@react-navigation/native';
-import api, { toAbsUrl } from './src/services/api'; 
+import api, { toAbsUrl } from './src/services/api';
 import { ThemeContext } from './src/context/ThemeContext';
 import { toastError, toastSuccess } from './src/components/ToastMsg';
-import moment from 'moment';
+
+const { width } = Dimensions.get('window');
+
+const extractArray = (resData) => {
+    if (!resData) return [];
+    if (Array.isArray(resData)) return resData;
+    if (typeof resData === 'object') {
+        if (Array.isArray(resData.data) && resData.data.length > 0) return resData.data;
+        if (resData.data?.data && Array.isArray(resData.data.data) && resData.data.data.length > 0) return resData.data.data;
+        
+        let largest = [];
+        for (const key in resData) {
+            if (Array.isArray(resData[key]) && resData[key].length > largest.length) {
+                largest = resData[key];
+            }
+        }
+        return largest;
+    }
+    return [];
+};
+
+const getUserId = (field) => {
+    if (!field) return null;
+    if (typeof field === 'string') return field.trim();
+    if (typeof field === 'object') {
+        if (field._id) return String(field._id).trim();
+        if (field.id) return String(field.id).trim();
+    }
+    return null;
+};
 
 export default function Learn({ navigation, route }) {
-  const { theme } = useContext(ThemeContext);
-  
-  // 1. Initialize all arrays, including 'remedial'
-  const [data, setData] = useState({ lessons: [], models: [], assessments: [], remedial: [] });
-  const [filteredData, setFilteredData] = useState([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  
-  const [activeTab, setActiveTab] = useState(route.params?.initialTab?.toLowerCase() || 'lessons'); 
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [user, setUser] = useState(null);
-  const [bookmarks, setBookmarks] = useState({ lessons: [], models: [] });
 
-  const isInstructor = user?.role?.toLowerCase() === 'instructor';
-  const visibleTabs = isInstructor ? ['lessons', 'models', 'assessments'] : ['lessons', 'remedial', 'models'];
+    const { theme } = useContext(ThemeContext);
+    const [user, setUser] = useState(null);
+    const initialTabParam = route.params?.initialTab;
+    const [activeTab, setActiveTab] = useState(initialTabParam || 'Lessons');
+    const [searchQuery, setSearchQuery] = useState('');
+    
+    const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
+    const [showInstructorMenu, setShowInstructorMenu] = useState(false);
+    const [isArchiveModalVisible, setArchiveModalVisible] = useState(false);
+    const [lessonToArchive, setLessonToArchive] = useState(null);
 
-  // 2. Safe Fetch Logic
-  const fetchData = async () => {
-    try {
-      setLoading(true);
-      const rawUser = await AsyncStorage.getItem('user');
-      const currentUser = rawUser ? JSON.parse(rawUser) : null;
-      const isInst = currentUser?.role?.toLowerCase() === 'instructor';
-      setUser(currentUser);
+    const [lessons, setLessons] = useState([]);
+    const [remedialLessons, setRemedialLessons] = useState([]);
+    const [models, setModels] = useState([]);
+    const [assessments, setAssessments] = useState([]);
+    const [filteredData, setFilteredData] = useState([]);
+    const [bookmarks, setBookmarks] = useState({ lessons: [], models: [], scans: [] });
 
-      const [lessonRes, modelRes, assessRes] = await Promise.all([
-        api.get('/lessons'),
-        api.get('/models3d'),
-        api.get('/assessments')
-      ]);
+    const [showAssessmentMenu, setShowAssessmentMenu] = useState(false);
 
-      let remedialData = [];
-      if (!isInst && currentUser?._id) {
+    const fetchData = async () => {
         try {
-          const remedialRes = await api.get(`/ai/personalized-lessons/${currentUser._id}`);
-          remedialData = remedialRes.data?.data || [];
-        } catch (e) {
-          console.log("Remedial Fetch Error:", e);
-          toastError("Could not load remedial lessons.");
-        }
-      }
+            setLoading(true);
+            const rawUser = await AsyncStorage.getItem('user');
+            if (!rawUser) {
+                setLoading(false);
+                return;
+            }
+            const currentUser = JSON.parse(rawUser);
+            setUser(currentUser);
+            const currentUserId = getUserId(currentUser);
+            const userRole = String(currentUser.role || '').toLowerCase();
+            const isInstructor = userRole === 'instructor';
+            
+            if (isInstructor && activeTab === 'Remedial Lessons') {
+                setActiveTab('Lessons');
+            }
 
-      setData({
-        lessons: (lessonRes.data?.data || []).filter(l => !l.is_archived),
-        models: modelRes.data?.data || [],
-        assessments: assessRes.data?.data || [],
-        remedial: remedialData 
-      });
+            const savedBookmarksRaw = await AsyncStorage.getItem('studentBookmarks_v1');
+            const savedBookmarks = savedBookmarksRaw ? JSON.parse(savedBookmarksRaw) : { lessons: [], models: [], scans: [] };
+            setBookmarks(savedBookmarks);
 
-    } catch (err) {
-      toastError('Failed to load content');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
+            const [usersRes1, usersRes2, lessonsRes, remedialRes, modelsRes, models3dRes, quizRes, assessRes] = await Promise.all([
+                api.get('/meds').catch(() => ({ data: [] })),
+                api.get('/admin/users').catch(() => ({ data: [] })),
+                api.get('/lessons').catch(() => ({ data: [] })),
+                api.get(`/ai/personalized-lessons/${currentUserId}`).catch(() => ({ data: [] })),
+                api.get('/models').catch(() => ({ data: [] })), 
+                api.get('/models3d').catch(() => ({ data: [] })), 
+                api.get('/quizzes').catch(() => ({ data: [] })),
+                api.get('/assessments').catch(() => ({ data: [] })) 
+            ]);
 
-  const loadBookmarks = async () => {
-    const stored = await AsyncStorage.getItem('studentBookmarks_v1');
-    if (stored) setBookmarks(JSON.parse(stored));
-  };
+            const usersData = Array.from(new Map(
+                [...extractArray(usersRes1?.data), ...extractArray(usersRes2?.data)]
+                .filter(u => u && (u._id || u.id))
+                .map(u => [u._id || u.id, u])
+            ).values());
 
-  useFocusEffect(useCallback(() => { 
-    if (route.params?.initialTab) {
-        setActiveTab(route.params.initialTab.toLowerCase());
-    }
-    fetchData(); 
-    loadBookmarks();
-  }, [route.params?.initialTab]));
+            const rawLessons = extractArray(lessonsRes.data);
+            const rawRemedial = extractArray(remedialRes.data);
+            
+            const combinedModels = [...extractArray(modelsRes.data), ...extractArray(models3dRes.data)];
+            const uniqueModels = Array.from(new Map(combinedModels.map(item => [item._id || item.id, item])).values());
 
-  // 3. Safe Search Filter (checks for topic or title)
-  useEffect(() => {
-    const list = data[activeTab] || [];
-    if (!searchQuery.trim()) {
-      setFilteredData(list);
-    } else {
-      const query = searchQuery.toLowerCase();
-      const filtered = list.filter(item => {
-        const name = (item.title || item.topic || '').toLowerCase();
-        return name.includes(query);
-      });
-      setFilteredData(filtered);
-    }
-  }, [searchQuery, activeTab, data]);
+            const combinedQuizzes = [...extractArray(quizRes.data), ...extractArray(assessRes.data)];
+            const uniqueQuizzes = Array.from(new Map(combinedQuizzes.map(item => [item._id || item.id, item])).values());
 
-  const handleToggleBookmark = async (type, id) => {
-    let newBookmarks = { ...bookmarks };
-    if (!newBookmarks[type]) newBookmarks[type] = [];
-    
-    if (newBookmarks[type].includes(id)) {
-      newBookmarks[type] = newBookmarks[type].filter(itemId => itemId !== id);
-      toastSuccess("Removed from Bookmarks");
-    } else {
-      newBookmarks[type].push(id);
-      toastSuccess("Saved to Bookmarks");
-    }
-    
-    setBookmarks(newBookmarks);
-    await AsyncStorage.setItem('studentBookmarks_v1', JSON.stringify(newBookmarks));
-  };
+            let validLessons = [];
+            let validRemedial = [];
+            let validQuizzes = [];
 
-  const handleArchive = async (id) => {
-    Alert.alert("Archive Lesson", "Move this to your archive list?", [
-      { text: "Cancel", style: "cancel" },
-      { text: "Archive", onPress: async () => {
-          try {
-            await api.put(`/lessons/${id}`, { 
-              isArchived: true, 
-              modifiedBy: user?._id 
+            if (isInstructor) {
+                validLessons = rawLessons.filter(l => {
+                    if (l.isArchived) return false;
+                    const cId = getUserId(l.createdBy) || getUserId(l.instructor) || getUserId(l.author);
+                    if (!cId) return true; 
+                    return String(cId) === String(currentUserId);
+                });
+                validQuizzes = uniqueQuizzes.filter(q => {
+                    if (q.isArchived || q.type === 'remedial' || q.isRemedial) return false;
+                    const cId = getUserId(q.createdBy) || getUserId(q.instructor) || getUserId(q.author);
+                    if (!cId) return true;
+                    return String(cId) === String(currentUserId);
+                });
+            } else {
+                const studentSection = String(currentUser.section || '').trim().toLowerCase();
+
+                const assignedInstructorIds = usersData.filter(u => {
+                    if (String(u.role).toLowerCase() !== 'instructor') return false;
+                    const assignments = Array.isArray(u.instructorAssignments) ? u.instructorAssignments : [];
+                    return assignments.some(a =>
+                        String(a.section).trim().toLowerCase() === studentSection
+                    );
+                }).map(u => String(u._id || u.id));
+                
+                validLessons = rawLessons.filter(l => {
+                    if (l.isArchived) return false;
+                    const cId = getUserId(l.createdBy) || getUserId(l.instructor) || getUserId(l.author);
+                    if (!cId) return true;
+                    return assignedInstructorIds.includes(cId);
+                });
+                validRemedial = rawRemedial.map(l => ({ ...l, type: 'remedial', title: `Remedial: ${l.topic}`, pdfName: 'Personalized AI Content' }));
+            }
+
+            validQuizzes.sort((a, b) => {
+                if (!a.deadlineAt) return 1;
+                if (!b.deadlineAt) return -1;
+                return new Date(a.deadlineAt) - new Date(b.deadlineAt);
             });
-            toastSuccess("Moved to Archive");
+
+            // 2. Group items by their formatted date string (e.g., "Monday, October 12")
+            const grouped = validQuizzes.reduce((acc, current) => {
+                const dateStr = current.deadlineAt 
+                    ? new Date(current.deadlineAt).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
+                    : 'No Due Date';
+                
+                if (!acc[dateStr]) {
+                    acc[dateStr] = [];
+                }
+                acc[dateStr].push(current);
+                return acc;
+            }, {});
+
+            // 3. Convert to SectionList format: [{ title: '...', data: [...] }]
+            const sectionedQuizzes = Object.keys(grouped).map(key => ({
+                title: key,
+                data: grouped[key]
+            }));
+
+            setLessons(validLessons);
+            setRemedialLessons(validRemedial);
+            setModels(uniqueModels); 
+            setAssessments(sectionedQuizzes);
+            
+        } catch (error) {
+            console.error("Learn Fetch Error:", error);
+            toastError("Failed to load content.");
+        } finally {
+            setLoading(false);
+            setRefreshing(false);
+        }
+    };
+
+    useFocusEffect(
+        useCallback(() => {
             fetchData();
-          } catch (e) {
+        }, [])
+    );
+
+    useEffect(() => {
+        if (route.params?.initialTab) {
+        setActiveTab(route.params.initialTab);
+        }
+    }, [route.params?.initialTab]);
+
+    useEffect(() => {
+        let list = [];
+        if (activeTab === 'Lessons') list = lessons;
+        else if (activeTab === 'Remedial Lessons') list = remedialLessons;
+        else if (activeTab === '3D Models' || activeTab === 'Models') list = models; 
+        else if (activeTab === 'Assessments') list = assessments;
+
+        let filtered = [...list]; 
+
+        if (searchQuery.trim()) {
+            const query = searchQuery.toLowerCase();
+            filtered = filtered.filter(item => {
+                const title = (item.title || item.name || '').toLowerCase();
+                return title.includes(query);
+            });
+        }
+
+        filtered.sort((a, b) => {
+            const dateA = new Date(a?.createdAt || a?.updatedAt || 0).getTime() || 0;
+            const dateB = new Date(b?.createdAt || b?.updatedAt || 0).getTime() || 0;
+            return dateB - dateA;
+        });
+
+        setFilteredData(filtered);
+    }, [searchQuery, activeTab, lessons, remedialLessons, models, assessments]);
+
+    const handleToggleBookmark = async (itemId, type) => {
+        try {
+            let newBookmarks = { ...bookmarks };
+            if (!newBookmarks[type]) newBookmarks[type] = [];
+
+            if (newBookmarks[type].includes(itemId)) {
+                newBookmarks[type] = newBookmarks[type].filter(id => id !== itemId);
+                toastSuccess('Removed from Bookmarks');
+            } else {
+                newBookmarks[type].push(itemId);
+                toastSuccess('Saved to Bookmarks');
+            }
+
+            setBookmarks(newBookmarks);
+            await AsyncStorage.setItem('studentBookmarks_v1', JSON.stringify(newBookmarks));
+        } catch (error) {
+            console.error(`Failed to toggle ${type} bookmark:`, error);
+        }
+    };
+
+    const handleArchiveLesson = async (id) => {
+        Alert.alert("Archive Lesson", "Move this to your archive list?", [
+        { text: "Cancel", style: "cancel" },
+        { text: "Archive", onPress: async () => {
+            try {
+                await api.put(`/lessons/${id}`, { 
+                isArchived: true, 
+                modifiedBy: user?._id 
+                });
+                toastSuccess("Moved to Archive");
+                fetchData();
+            } catch (e) {
+                toastError("Archive failed");
+            }
+        }}
+        ]);
+    };
+
+    const handleArchivePress = (id) => {
+        setLessonToArchive(id);
+        setArchiveModalVisible(true);
+    };
+
+    const confirmArchive = async () => {
+        setArchiveModalVisible(false);
+        try {
+            const formData = new FormData();
+            formData.append('isArchived', 'true');
+            if (user?._id) formData.append('modifiedBy', String(user._id));
+
+            await api.put(`/lessons/${lessonToArchive}`, formData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+            });
+            
+            toastSuccess("Moved to Archive");
+            fetchData(); 
+        } catch (e) {
+            console.error("Archive error:", e.response?.data || e.message);
             toastError("Archive failed");
-          }
-      }}
-    ]);
-  };
+        }
+    };
 
-  const onLessonPress = async (lessonId) => {
-    try {
-      await api.post(`/lessons/${lessonId}/access`, { userId: user?._id });
-      navigation.navigate('LessonStudent', { lessonId });
-    } catch (e) {
-      navigation.navigate('LessonStudent', { lessonId });
-    }
-  };
+    const handleEditAssessment = (assessment) => {
+        toastError("Edit Assessment screen is under construction!");
+    };
 
-  const renderLessonItem = ({ item }) => {
-    const actor = item.modifiedBy ? `${item.modifiedBy.fname} ${item.modifiedBy.lname}` : 'System';
-    const time = moment(item.lastAccessedAt || item.updatedAt).format('MMM DD, YYYY | hh:mm A');
-    const isBookmarked = bookmarks.lessons?.includes(item._id);
+    const confirmArchiveAssessment = (assessment) => {
+        Alert.alert(
+        "Archive Assessment",
+        `Are you sure you want to move "${assessment.title}" to your archives?`,
+        [
+            { text: "Cancel", style: "cancel" },
+            {
+            text: "Archive",
+            style: "destructive",
+            onPress: async () => {
+                try {
+                await api.put(`/assessments/${assessment._id}/archive`);
+                toastSuccess("Assessment archived successfully.");
+                
+                fetchData();
+                } catch (e) {
+                toastError("Failed to archive assessment.");
+                }
+            },
+            },
+        ]
+        );
+    };
 
-    return (
-      <View style={[localStyles.card, { backgroundColor: theme.card }]}>
-        <TouchableOpacity style={{ flex: 1 }} onPress={() => onLessonPress(item._id)}>
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <View style={[localStyles.iconBox, { backgroundColor: '#E7F5EE' }]}>
-              <Ionicons name="document-text" size={22} color="#153c2a" />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[localStyles.cardTitle, { color: theme.text }]} numberOfLines={1}>{item.title}</Text>
-              <Text style={localStyles.metadataText}>Last modified by: {actor}</Text>
-              <Text style={localStyles.metadataText}>on: {time}</Text>
-            </View>
-          </View>
-        </TouchableOpacity>
+    const renderLessonItem = ({ item }) => {
+        const isRemedial = activeTab === 'Remedial Lessons';
+        const isBookmarked = bookmarks?.lessons?.includes(item._id || item.id);
+        const modifierName = item.modifiedBy ? `${item.modifiedBy.fname} ${item.modifiedBy.lname}` : 'Instructor';
+        const dateStr = new Date(item.updatedAt || item.createdAt).toLocaleDateString();
+        const isInstructor = String(user?.role).toLowerCase() === 'instructor';
+        
+        return (
+            <TouchableOpacity
+                style={[localStyles.listItemCard, { backgroundColor: theme?.card || '#FFF' }]}
+                onPress={() => navigation.navigate('LessonStudent', { 
+                    lessonId: isRemedial ? null : (item._id || item.id), 
+                    personalizedLesson: isRemedial ? item : null 
+                })}
+            >
+                <View style={[localStyles.iconBox, { backgroundColor: isRemedial ? '#FEF2F2' : '#F0F9F4' }]}>
+                    <Ionicons name={isRemedial ? "medical" : "book"} size={26} color={isRemedial ? "#EF4444" : "#153c2a"} />
+                </View>
+                <View style={localStyles.itemInfo}>
+                    <Text style={[localStyles.itemTitle, { color: theme?.text || '#000' }]} numberOfLines={1}>{item.title}</Text>
+                    <Text style={localStyles.itemSubtitle} numberOfLines={1}>Modified by {modifierName}</Text>
+                    <Text style={localStyles.itemMeta}>Last updated: {dateStr}</Text>
+                </View>
 
-        <View style={localStyles.actionGroup}>
-          {!isInstructor && (
-            <TouchableOpacity onPress={() => handleToggleBookmark('lessons', item._id)}>
-              <Ionicons name={isBookmarked ? "bookmark" : "bookmark-outline"} size={22} color={isBookmarked ? "#10b981" : "#94A3B8"} />
+                {isInstructor ? (
+                    <View style={localStyles.instructorActionRow}>
+                        <TouchableOpacity style={localStyles.actionIconBtn} onPress={() => navigation.navigate('UploadLesson', { lesson: item })}>
+                            <Ionicons name="pencil" size={20} color="#3B82F6" />
+                        </TouchableOpacity>
+                        <TouchableOpacity style={localStyles.actionIconBtn} onPress={() => handleArchivePress(item._id || item.id)}>
+                            <Ionicons name="archive" size={20} color="#ff8800" />
+                        </TouchableOpacity>
+                    </View>
+                ) : (
+                    <TouchableOpacity style={localStyles.bookmarkBtn} onPress={() => handleToggleBookmark(item._id || item.id, 'lessons')}>
+                        <Ionicons name={isBookmarked ? "bookmark" : "bookmark-outline"} size={24} color={isBookmarked ? "#153c2a" : "#94A3B8"} />
+                    </TouchableOpacity>
+                )}
             </TouchableOpacity>
-          )}
-          {isInstructor && (
-            <>
-              <TouchableOpacity onPress={() => navigation.navigate('UploadLesson', { lesson: item })}>
-                <Ionicons name="create" size={20} color="#153c2a" />
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => handleArchive(item._id)}>
-                <Ionicons name="archive" size={20} color="#d97706" />
-              </TouchableOpacity>
-            </>
-          )}
-        </View>
-      </View>
-    );
-  };
+        );
+    };
 
-  const renderRemedialItem = ({ item }) => {
-    return (
-      <TouchableOpacity 
-        style={[localStyles.card, { backgroundColor: theme.card }]}
-        onPress={() => navigation.navigate('LessonStudent', { personalizedLesson: item })}
-      >
-        <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-          <View style={[localStyles.iconBox, { backgroundColor: '#FEF2F2' }]}>
-            <Ionicons name="medical" size={22} color="#EF4444" />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={[localStyles.cardTitle, { color: theme.text }]} numberOfLines={2}>
-              Remedial: {item.topic}
-            </Text>
-            <Text style={localStyles.metadataText}>Personalized Remedial Lesson</Text>
-            <Text style={localStyles.metadataText}>Generated: {moment(item.createdAt).format('MMM DD, YYYY')}</Text>
-          </View>
-        </View>
-        <Ionicons name="chevron-forward" size={18} color="#ccc" />
-      </TouchableOpacity>
-    );
-  };
+    const renderAssessmentItem = ({ item }) => {
+        const dateStr = new Date(item.createdAt || Date.now()).toLocaleDateString();
+        const isInstructor = String(user?.role).toLowerCase() === 'instructor';
+        
+        return (
+            <TouchableOpacity
+                style={[localStyles.listItemCard, { backgroundColor: theme?.card || '#FFF' }]}
+                onPress={() => {
+                    // Send ALL instructor clicks to the main Assessment view
+                    if (isInstructor) {
+                        navigation.navigate('AssessmentQuestionsView', { 
+                            assessment: item, 
+                            quiz: item, 
+                            quizId: item._id || item.id 
+                        });
+                    }
+                }}
+            >
+                {/* Dynamically change icon based on delivery mode */}
+                <View style={[localStyles.iconBox, { backgroundColor: '#F8FAFC' }]}>
+                    <Ionicons 
+                        name={item.deliveryMode === 'external' ? "link" : "document-text"} 
+                        size={26} 
+                        color="#3B82F6" 
+                    />
+                </View>
+                
+                <View style={localStyles.itemInfo}>
+                    <Text style={[localStyles.itemTitle, { color: theme?.text || '#000' }]} numberOfLines={1}>
+                        {item.title || 'Assessment'}
+                    </Text>
+                    <Text style={localStyles.itemSubtitle} numberOfLines={1}>
+                        {item.deliveryMode === 'external' 
+                            ? 'External Link' 
+                            : `${item.questions?.length || 0} Items Available`
+                        }
+                    </Text>
+                    <Text style={localStyles.itemMeta}>Posted: {dateStr}</Text>
+                </View>
 
-  const renderModelItem = ({ item }) => {
-    const isBookmarked = bookmarks.models?.includes(item._id);
-    return (
-      <View style={[localStyles.modelCard, { backgroundColor: theme.card }]}>
-        <View style={localStyles.modelThumbContainer}>
-          <WebView scrollEnabled={false} source={{ html: `<html><body style="margin:0; background:#f0f4f2;"><script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.3.0/model-viewer.min.js"></script><model-viewer src="${toAbsUrl(item.fileUrl)}" auto-rotate interaction-prompt="none" style="width:100%; height:100%;"></model-viewer></body></html>` }} />
-          
-          <TouchableOpacity 
-            style={localStyles.bookmarkFloat}
-            onPress={() => handleToggleBookmark('models', item._id)}
-          >
-            <Ionicons name={isBookmarked ? "bookmark" : "bookmark-outline"} size={20} color={isBookmarked ? "#10b981" : "#153c2a"} />
-          </TouchableOpacity>
-        </View>
-        <View style={localStyles.modelInfo}>
-          <Text style={[localStyles.cardTitle, { color: theme.text }]}>{item.title}</Text>
-          <Text style={localStyles.metadataText} numberOfLines={2}>{item.description || "No description provided."}</Text>
-          <TouchableOpacity style={localStyles.viewBtn} onPress={() => navigation.navigate('ModelViewerMobile', { modelId: item._id, modelTitle: item.title, modelUrl: item.fileUrl, labels: item.labels })}>
-            <Text style={localStyles.viewBtnText}>VIEW 3D MODEL</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  };
+                {/* Show Edit/Archive for Instructors, Chevron for Students */}
+                {isInstructor ? (
+                    <View style={localStyles.actionRow}>
+                        <TouchableOpacity
+                            style={localStyles.actionBtn}
+                            onPress={() => handleEditAssessment(item)}
+                        >
+                            <Ionicons name="create-outline" size={18} color="#10B981" />
+                        </TouchableOpacity>
 
-  const renderAssessmentItem = ({ item }) => {
-    const qCount = item.questions?.length || 0;
-    const timerText = item.timer?.enabled ? `${item.timer.minutes}m Timer` : 'No Timer';
-    const deadline = item.deadlineAt ? moment(item.deadlineAt).format('MMM DD, hh:mm A') : 'No Deadline';
+                        <TouchableOpacity
+                            style={[localStyles.actionBtn, { backgroundColor: '#FEE2E2', marginLeft: 8 }]}
+                            onPress={() => confirmArchiveAssessment(item)}
+                        >
+                            <Ionicons name="archive-outline" size={18} color="#EF4444" />
+                        </TouchableOpacity>
+                    </View>
+                ) : (
+                    <Ionicons name="chevron-forward" size={20} color="#CBD5E1" />
+                )}
+            </TouchableOpacity>
+        );
+    };
 
-    return (
-      <TouchableOpacity 
-        style={[localStyles.card, { backgroundColor: theme.card }]}
-        onPress={() => isInstructor 
-          ? navigation.navigate('AssessmentQuestionsView', { assessment: item }) 
-          : navigation.navigate('TakeAssessment', { assessmentId: item._id })}
-      >
-        <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-          <View style={[localStyles.iconBox, { backgroundColor: '#EEF2FF' }]}>
-            <Ionicons name="clipboard" size={22} color="#4338ca" />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={[localStyles.cardTitle, { color: theme.text }]} numberOfLines={1}>{item.title}</Text>
-            <Text style={localStyles.metadataText}>{qCount} Questions • {timerText}</Text>
-            <Text style={localStyles.metadataText}>Deadline: {deadline}</Text>
-          </View>
-        </View>
-        <Ionicons name="chevron-forward" size={18} color="#ccc" />
-      </TouchableOpacity>
-    );
-  };
+    const renderModelItem = ({ item }) => {
+        const isBookmarked = bookmarks?.models?.includes(item._id || item.id);
+        const rawPath = item.fileUrl || item.modelUrl || item.file || item.url;
+        const finalUrl = toAbsUrl(rawPath);
+        
+        const htmlContent = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+            <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.3.0/model-viewer.min.js"></script>
+            <style>
+                body, html { margin: 0; padding: 0; width: 100vw; height: 100vh; background-color: #f1f5f9; overflow: hidden; }
+                model-viewer { width: 100%; height: 100%; outline: none; }
+                
+                .loader-container {
+                    width: 100%; height: 100%; display: flex; flex-direction: column; 
+                    justify-content: center; align-items: center; 
+                    background-color: #e2e8f0; position: absolute; top: 0; left: 0;
+                    transition: opacity 0.3s ease;
+                }
+                .progress-bar-bg {
+                    width: 60%; height: 6px; background-color: rgba(0,0,0,0.1); 
+                    border-radius: 4px; margin-top: 8px; overflow: hidden;
+                }
+                .progress-bar-fill {
+                    height: 100%; width: 0%; background-color: #153c2a; 
+                    transition: width 0.1s linear;
+                }
+                .progress-text {
+                    font-family: sans-serif; font-size: 11px; font-weight: 700; color: #153c2a;
+                }
+                .hidden { opacity: 0; pointer-events: none; }
+            </style>
+            </head>
+            <body>
+            <model-viewer id="model" src="${finalUrl}" auto-rotate camera-controls interaction-prompt="none" shadow-intensity="1">
+                <div slot="progress-bar" id="loader" class="loader-container">
+                    <div class="progress-text" id="perc">0%</div>
+                    <div class="progress-bar-bg">
+                        <div class="progress-bar-fill" id="fill"></div>
+                    </div>
+                </div>
+            </model-viewer>
+            <script>
+                const model = document.querySelector('#model');
+                const perc = document.querySelector('#perc');
+                const fill = document.querySelector('#fill');
+                const loader = document.querySelector('#loader');
 
-  // 4. Guaranteed Safe Rendering
-  const renderContentItem = ({ item }) => {
-    if (activeTab === 'remedial') return renderRemedialItem({ item });
-    if (activeTab === 'models') return renderModelItem({ item });
-    if (activeTab === 'assessments') return renderAssessmentItem({ item });
-    return renderLessonItem({ item });
-  };
+                model.addEventListener('progress', (event) => {
+                    const val = Math.round(event.detail.totalProgress * 100);
+                    perc.innerText = val + '%';
+                    fill.style.width = val + '%';
+                    if (val >= 100) {
+                        setTimeout(() => loader.classList.add('hidden'), 200);
+                    }
+                });
+            </script>
+            </body>
+            </html>
+        `;
 
-  return (
-    <View style={{ flex: 1, backgroundColor: theme.bg }}>
-      <StatusBar barStyle="light-content" />
-      <View style={localStyles.headerColored}>
-        <View style={localStyles.headerRow}>
-          <Text style={localStyles.headerTitle}>Learning Materials</Text>
-          {isInstructor && (
-            <View style={{ flexDirection: 'row', gap: 10 }}>
-              <TouchableOpacity style={localStyles.archiveHeaderBtn} onPress={() => navigation.navigate('UploadLesson')}>
-                <Ionicons name="add" size={20} color="#fff" />
-              </TouchableOpacity>
-              <TouchableOpacity style={localStyles.archiveHeaderBtn} onPress={() => navigation.navigate('ArchiveLessons')}>
-                <Ionicons name="archive" size={20} color="#fff" />
-              </TouchableOpacity>
+        return (
+            <View style={[localStyles.modelCard, { backgroundColor: theme?.card || '#FFF' }]}>
+                {/* 3D Model Thumbnail View with Progress Bar */}
+                <View style={localStyles.modelThumb}>
+                    {rawPath ? (
+                        <WebView
+                            originWhitelist={['*']}
+                            javaScriptEnabled={true}
+                            domStorageEnabled={true}
+                            source={{ html: htmlContent }}
+                            style={{ flex: 1, backgroundColor: 'transparent' }}
+                            scrollEnabled={false}
+                        />
+                    ) : (
+                        <View style={localStyles.thumbPlaceholder}>
+                            <Ionicons name="cube-outline" size={40} color="#94a3b8" />
+                        </View>
+                    )}
+                    <View style={StyleSheet.absoluteFillObject} pointerEvents="none" />
+                </View>
+               
+                {/* Card Information displaying the exact backend description */}
+                <View style={localStyles.modelCardInfo}>
+                    <View style={{ flex: 1, marginRight: 10 }}>
+                        <Text style={[localStyles.modelTitle, { color: theme?.text || '#1E293B' }]} numberOfLines={1}>
+                            {item.name || item.title || '3D Model'}
+                        </Text>
+                        <Text style={localStyles.modelSub} numberOfLines={2}>
+                            {item.description || 'No description provided.'}
+                        </Text>
+                    </View>
+                    
+                    {/* Explicit View 3D Model Button */}
+                    <TouchableOpacity 
+                        style={localStyles.viewButton} 
+                        onPress={() => navigation.navigate('ModelViewerMobile', { modelId: item._id || item.id })}
+                    >
+                        <Text style={localStyles.viewButtonText}>View 3D Model</Text>
+                        
+                    </TouchableOpacity>
+                </View>
+
+                {/* Bookmark Button */}
+                <TouchableOpacity style={localStyles.bookmarkFloat} onPress={() => handleToggleBookmark(item._id || item.id, 'models')}>
+                    <Ionicons name={isBookmarked ? "bookmark" : "bookmark-outline"} size={18} color={isBookmarked ? "#153c2a" : "#94A3B8"} />
+                </TouchableOpacity>
             </View>
-          )}
-        </View>
-        <View style={localStyles.searchContainer}>
-          <Ionicons name="search" size={18} color="#94A3B8" />
-          <TextInput 
-            placeholder={`Search ${activeTab}...`}
-            style={localStyles.searchInput}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            placeholderTextColor="#94A3B8"
-            clearButtonMode="while-editing"
-          />
-        </View>
-      </View>
+        );
+    };
 
-      <View style={localStyles.tabWrapper}>
-        {visibleTabs.map((tab) => (
-          <TouchableOpacity key={tab} style={[localStyles.tabItem, activeTab === tab && localStyles.activeTab]} onPress={() => setActiveTab(tab)}>
-            <Text style={[localStyles.tabLabel, { color: activeTab === tab ? '#153c2a' : '#64748B' }]}>
-              {tab === 'models' ? '3D MODELS' : tab === 'remedial' ? 'REMEDIAL' : tab.toUpperCase()}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+    const isInstructorUser = String(user?.role).toLowerCase() === 'instructor';
+    const tabs = isInstructorUser 
+        ? ['Lessons', '3D Models', 'Assessments'] 
+        : ['Lessons', 'Remedial Lessons', '3D Models'];
 
-      {loading ? (
-        <ActivityIndicator size="large" color="#153c2a" style={{ marginTop: 40 }} />
-      ) : (
-        <FlatList
-          data={filteredData}
-          keyExtractor={(item) => item._id}
-          renderItem={renderContentItem}
-          contentContainerStyle={{ padding: 20, paddingBottom: 100 }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={fetchData} tintColor="#153c2a" />}
-          ListEmptyComponent={
-            <View style={{ alignItems: 'center', marginTop: 50 }}>
-              <Ionicons name="folder-open-outline" size={60} color={theme.subText + '44'} style={{ marginBottom: 10 }} />
-              <Text style={{ color: theme.text, fontSize: 16, fontWeight: 'bold' }}>No {activeTab} found</Text>
+    return (
+        <View style={[localStyles.container, { backgroundColor: theme?.background || '#F8FAFC' }]}>
+            <View style={[localStyles.headerArea, { backgroundColor: '#153c2a' }]}>
+                <View style={[localStyles.headerTopRow, {alignItems: 'center', justifyContent: 'center'}]}>
+                    <Text style={[localStyles.headerTitle, { color: '#FFF' || theme?.text }]}>Learning Materials</Text>
+                </View>
+                
+                <View style={localStyles.searchContainer}>
+                    <Ionicons name="search" size={20} color="#94A3B8" style={localStyles.searchIcon} />
+                    <TextInput
+                        style={[localStyles.searchInput, { color: theme?.text || '#000' }]}
+                        placeholder={`Search ${activeTab.toLowerCase()}...`}
+                        placeholderTextColor="#94A3B8"
+                        value={searchQuery}
+                        onChangeText={setSearchQuery}
+                    />
+                </View>
             </View>
-          }
-        />
-      )}
-    </View>
-  );
+
+            <View style={[localStyles.tabContainer, { backgroundColor: '#F1F5F9', marginTop: 15, marginHorizontal: 20 }]}>
+                {tabs.map(tab => (
+                    <TouchableOpacity 
+                        key={tab} 
+                        style={[localStyles.tabButton, activeTab === tab && localStyles.activeTabButton]}
+                        onPress={() => { setActiveTab(tab); setSearchQuery(''); }}
+                    >
+                        <Text style={[localStyles.tabText, activeTab === tab && localStyles.activeTabText]} numberOfLines={1}>{tab}</Text>
+                    </TouchableOpacity>
+                ))}
+            </View>
+
+            {loading ? (
+                <View style={localStyles.centerContent}>
+                    <ActivityIndicator size="large" color="#153c2a" />
+                </View>
+            ) : activeTab === 'Assessments' ? (
+                /* --- NEW SECTION LIST JUST FOR ASSESSMENTS --- */
+                assessments.length === 0 ? (
+                    <View style={localStyles.centerContent}>
+                        <Ionicons name="folder-open-outline" size={60} color="#CBD5E1" />
+                        <Text style={[localStyles.emptyText, { color: theme?.subText || '#64748B' }]}>No assessments found.</Text>
+                    </View>
+                ) : (
+                    <SectionList
+                        sections={assessments}
+                        keyExtractor={(item, index) => item._id ? item._id.toString() : index.toString()}
+                        renderItem={renderAssessmentItem}
+                        renderSectionHeader={({ section: { title } }) => (
+                            <View style={localStyles.dateHeaderContainer}>
+                                <Text style={localStyles.dateHeaderText}>{title}</Text>
+                            </View>
+                        )}
+                        contentContainerStyle={localStyles.listContainer}
+                        showsVerticalScrollIndicator={false}
+                        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchData(); }} />}
+                    />
+                )
+            ) : filteredData.length === 0 ? (
+                /* --- EXISTING EMPTY STATE FOR LESSONS/MODELS --- */
+                <View style={localStyles.centerContent}>
+                    <Ionicons name="folder-open-outline" size={60} color="#CBD5E1" />
+                    <Text style={[localStyles.emptyText, { color: theme?.subText || '#64748B' }]}>No {activeTab.toLowerCase()} found.</Text>
+                </View>
+            ) : (
+                /* --- EXISTING FLATLIST FOR LESSONS/MODELS --- */
+                <FlatList
+                    data={filteredData}
+                    keyExtractor={item => String(item._id || item.id || Math.random())}
+                    contentContainerStyle={localStyles.listContainer}
+                    showsVerticalScrollIndicator={false}
+                    renderItem={
+                        activeTab === 'Lessons' || activeTab === 'Remedial Lessons' ? renderLessonItem :
+                        renderModelItem
+                    }
+                    refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchData(); }} />}
+                />
+            )}
+
+{/* Instructor Menu Modal */}
+            <Modal
+                animationType="fade"
+                transparent={true}
+                visible={showInstructorMenu}
+                onRequestClose={() => setShowInstructorMenu(false)}
+            >
+                <View style={localStyles.modalOverlay}>
+                    <View style={localStyles.modalContent}>
+                        <Text style={localStyles.modalTitle}>Instructor Menu</Text>
+
+                        {/* ARCHIVES */}
+                        <TouchableOpacity style={localStyles.modalOptionBtn} onPress={() => {
+                            setShowInstructorMenu(false);
+                            navigation.navigate('ArchiveLessons');
+                        }}>
+                            <Ionicons name="archive" size={24} color="#153c2a" />
+                            <Text style={[localStyles.modalOptionText, { marginLeft: 15 }]}>Archives</Text>
+                        </TouchableOpacity>
+
+                        {/* --- 1. LESSON OPTION --- */}
+                        <TouchableOpacity
+                            style={localStyles.modalOptionBtn}
+                            onPress={() => {
+                                setShowInstructorMenu(false);
+                                navigation.navigate('UploadLesson');
+                            }}
+                        >
+                            <Ionicons name="document-text" size={24} color="#153c2a" />
+                            <Text style={[localStyles.modalOptionText, { marginLeft: 15 }]}>Upload Lesson</Text>
+                        </TouchableOpacity>
+
+                        {/* --- 2. ASSESSMENT OPTIONS --- */}
+                        <TouchableOpacity
+                            style={localStyles.modalOptionBtn}
+                            onPress={() => {
+                                setShowInstructorMenu(false);
+                                navigation.navigate('CreateAssessmentManual');
+                            }}
+                        >
+                            <Ionicons name="create" size={24} color="#153c2a" />
+                            <Text style={[localStyles.modalOptionText, { marginLeft: 15 }]}>Create Manual Assessment</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={localStyles.modalOptionBtn}
+                            onPress={() => {
+                                setShowInstructorMenu(false);
+                                navigation.navigate('CreateAssessmentLink'); 
+                            }}
+                        >
+                            <Ionicons name="link" size={24} color="#153c2a" />
+                            <Text style={[localStyles.modalOptionText, { marginLeft: 15 }]}>Add Link Assessment</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={localStyles.modalOptionBtn}
+                            onPress={() => {
+                                setShowInstructorMenu(false);
+                                navigation.navigate('CreateAssessmentAI'); 
+                            }}
+                        >
+                            <Ionicons name="sparkles" size={24} color="#153c2a" />
+                            <Text style={[localStyles.modalOptionText, { marginLeft: 15 }]}>Auto Generate with MyphoAI</Text>
+                        </TouchableOpacity>
+
+                        {/* --- CANCEL BUTTON --- */}
+                        <TouchableOpacity
+                            style={localStyles.modalCloseBtn}
+                            onPress={() => setShowInstructorMenu(false)}
+                        >
+                            <Text style={localStyles.modalCloseText}>Cancel</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
+
+{/* Archive Modal */}
+            <Modal
+                animationType="fade"
+                transparent={true}
+                visible={isArchiveModalVisible}
+                onRequestClose={() => setArchiveModalVisible(false)}
+            >
+                <View style={localStyles.modalOverlay}>
+                    <View style={localStyles.modalContainer}>
+                        <Text style={localStyles.modalTitle}>Archive Lesson</Text>
+                        <Text style={localStyles.modalMessage}>
+                            Are you sure you want to move this to your archive list?
+                        </Text>
+                        
+                        <View style={localStyles.modalButtonGroup}>
+                            <TouchableOpacity 
+                                style={[localStyles.modalBtn, localStyles.cancelBtn]} 
+                                onPress={() => setArchiveModalVisible(false)}
+                            >
+                                <Text style={localStyles.cancelBtnText}>Cancel</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity 
+                                style={[localStyles.modalBtn, localStyles.confirmArchiveBtn]} 
+                                onPress={confirmArchive}
+                            >
+                                <Text style={localStyles.confirmArchiveBtnText}>Archive</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
+            {isInstructorUser && (
+                <TouchableOpacity 
+                    style={localStyles.floatingBtn} 
+                    onPress={() => setShowInstructorMenu(true)}
+                    activeOpacity={0.8}
+                >
+                    <Ionicons name="add" size={30} color="#FFF" />
+                </TouchableOpacity>
+            )}
+        </View>
+    );
 }
 
 const localStyles = StyleSheet.create({
-  headerColored: { backgroundColor: '#153c2a', paddingTop: 60, paddingBottom: 25, paddingHorizontal: 22, borderBottomLeftRadius: 30, borderBottomRightRadius: 30 },
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-  headerTitle: { fontSize: 24, fontWeight: '900', color: '#fff' },
-  archiveHeaderBtn: { backgroundColor: 'rgba(255,255,255,0.2)', padding: 10, borderRadius: 12 },
-  searchContainer: { flexDirection: 'row', backgroundColor: '#fff', borderRadius: 15, paddingHorizontal: 15, height: 45, alignItems: 'center' },
-  searchInput: { flex: 1, marginLeft: 10, fontSize: 14, fontWeight: '600' },
-  tabWrapper: { flexDirection: 'row', marginHorizontal: 22, marginTop: 20, marginBottom: 10, backgroundColor: '#F1F5F9', borderRadius: 12, padding: 4 },
-  tabItem: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 10 },
-  activeTab: { backgroundColor: '#fff', elevation: 2 },
-  tabLabel: { fontSize: 10, fontWeight: '800' },
-  card: { flexDirection: 'row', alignItems: 'center', padding: 15, borderRadius: 20, marginBottom: 12, elevation: 3 },
-  iconBox: { width: 45, height: 45, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginRight: 15 },
-  cardTitle: { fontSize: 15, fontWeight: '800' },
-  metadataText: { fontSize: 10, color: '#94A3B8', fontWeight: '600', marginTop: 2 },
-  actionGroup: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  modelCard: { borderRadius: 25, marginBottom: 20, overflow: 'hidden', elevation: 4 },
-  modelThumbContainer: { height: 180, position: 'relative' },
-  modelInfo: { padding: 20 },
-  viewBtn: { marginTop: 15, backgroundColor: '#153c2a', paddingVertical: 12, borderRadius: 15, alignItems: 'center' },
-  viewBtnText: { color: '#fff', fontWeight: '900', fontSize: 12 },
-  bookmarkFloat: { position: 'absolute', top: 12, right: 12, backgroundColor: 'rgba(255,255,255,0.9)', padding: 8, borderRadius: 20, zIndex: 10 },
+    container: { flex: 1 },
+    headerArea: { paddingTop: Platform.OS === 'ios' ? 60 : 40, paddingHorizontal: 20, paddingBottom: 20, borderBottomLeftRadius: 10, borderBottomRightRadius: 10 },
+    headerTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+    headerTitle: { fontSize: 28, fontWeight: '800' },
+    headerPlusBtn: { width: 50, height: 50, borderRadius: 30, backgroundColor: '#153c2a', justifyContent: 'center', alignItems: 'center', elevation: 2 },
+    floatingBtn: {
+    position: 'absolute',
+    bottom: 25,
+    right: 20,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#153c2a',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 999,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 5,
+    elevation: 6,
+    },
+    tabContainer: { flexDirection: 'row', backgroundColor: '#F1F5F9', borderRadius: 12, padding: 4, marginBottom: 16 },
+    tabButton: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 8, paddingHorizontal: 4 },
+    activeTabButton: { backgroundColor: '#FFF', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 3, elevation: 2 },
+    tabText: { fontSize: 15, fontWeight: '600', color: '#64748B', textAlign: 'center' },
+    activeTabText: { color: '#153c2a', fontWeight: '700' },
+    searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F1F5F9', borderRadius: 12, paddingHorizontal: 16, height: 48, },
+    searchIcon: { marginRight: 8 },
+    searchInput: { flex: 1, fontSize: 15, fontWeight: '500' },
+    listContainer: { padding: 20, paddingBottom: 100 },
+    centerContent: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+    emptyText: { marginTop: 12, fontSize: 16, fontWeight: '500' },
+    
+    listItemCard: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 16, marginBottom: 12, elevation: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4 },
+    iconBox: { width: 56, height: 56, borderRadius: 14, justifyContent: 'center', alignItems: 'center', marginRight: 16 },
+    itemInfo: { flex: 1 },
+    itemTitle: { fontSize: 16, fontWeight: '700', marginBottom: 4 },
+    itemSubtitle: { fontSize: 13, color: '#64748B', fontWeight: '500', marginBottom: 4 },
+    itemMeta: { fontSize: 11, color: '#94A3B8', fontWeight: '600' },
+    bookmarkBtn: { padding: 8 },
+    instructorActionRow: { flexDirection: 'row', alignItems: 'center' },
+    actionIconBtn: { padding: 8, marginLeft: 4 },
+
+    modelCard: { 
+        width: '100%', 
+        borderRadius: 16, 
+        overflow: 'hidden', 
+        elevation: 3, 
+        shadowColor: '#000', 
+        shadowOffset: { width: 0, height: 4 }, 
+        shadowOpacity: 0.08, 
+        shadowRadius: 8, 
+        marginBottom: 16, 
+        position: 'relative' 
+    },
+    modelThumb: { 
+        width: '100%', 
+        height: 160, 
+        backgroundColor: '#F1F5F9', 
+        overflow: 'hidden' 
+    },
+    thumbPlaceholder: { 
+        flex: 1, 
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        backgroundColor: '#e2e8f0' 
+    },
+    modelCardInfo: { 
+        padding: 14, 
+        flexDirection: 'row', 
+        alignItems: 'center', 
+        justifyContent: 'space-between' 
+    },
+    modelTitle: { 
+        fontSize: 16, 
+        fontWeight: '700', 
+        marginBottom: 4 
+    },
+    modelSub: { 
+        fontSize: 12, 
+        color: '#64748B', 
+        fontWeight: '500', 
+        lineHeight: 16 
+    },
+    viewButton: {
+        backgroundColor: '#153c2a',
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 8,
+        paddingHorizontal: 14,
+        borderRadius: 10,
+        elevation: 1,
+    },
+    viewButtonText: {
+        color: '#FFF',
+        fontSize: 13,
+        fontWeight: '700',
+    },
+    bookmarkFloat: { 
+        position: 'absolute', 
+        top: 12, 
+        right: 12, 
+        width: 32, 
+        height: 32,
+        borderRadius: 16,
+        backgroundColor: '#FFF',
+        justifyContent: 'center',
+        alignItems: 'center',
+        elevation: 4,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.15,
+        shadowRadius: 4,
+        zIndex: 10
+    },
+    
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.6)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 20,
+    },
+    modalContent: {
+        backgroundColor: '#FFF',
+        width: '90%',
+        borderRadius: 20,
+        padding: 25,
+        alignItems: 'center', 
+        elevation: 10,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 5,
+    },
+    modalTitle: {
+        fontSize: 20,
+        fontWeight: '800',
+        color: '#153c2a',
+        marginBottom: 20,
+    },
+    modalOptionBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 15,
+        paddingHorizontal: 20,
+        backgroundColor: '#F8FAFC',
+        borderRadius: 12,
+        marginBottom: 10,
+        borderWidth: 1,
+        borderColor: '#E2E8F0',
+        width: '100%',
+    },
+    modalOptionText: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: '#1E293B',
+        flex: 1,
+    },
+    modalCloseBtn: {
+        marginTop: 15,
+        paddingVertical: 10,
+        width: '100%',
+        alignItems: 'center',
+    },
+    modalCloseText: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: '#64748B',
+    },
+        modalMessage: {
+        fontSize: 15,
+        color: '#64748B',
+        textAlign: 'center',
+        marginBottom: 25,
+        lineHeight: 22,
+    },
+    modalContainer: {
+        backgroundColor: '#FFF',
+        width: '90%',
+        borderRadius: 20,
+        padding: 25,
+        alignItems: 'center',
+        elevation: 10,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 5,
+    },
+    modalButtonGroup: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        width: '100%',
+    },
+    modalBtn: {
+        flex: 1,
+        paddingVertical: 12,
+        borderRadius: 12,
+        alignItems: 'center',
+        marginHorizontal: 5,
+    },
+    modalOptionBtn: { 
+        flexDirection: 'row', 
+        alignItems: 'center', 
+        padding: 15, 
+        backgroundColor: '#F8FAFC', 
+        borderRadius: 12, 
+        marginBottom: 10, 
+        borderWidth: 1, 
+        borderColor: '#E2E8F0' 
+    },
+    cancelBtn: {
+        backgroundColor: '#F1F5F9',
+    },
+    cancelBtnText: {
+        color: '#64748B',
+        fontWeight: '700',
+        fontSize: 15,
+    },
+    confirmArchiveBtn: {
+        backgroundColor: '#153c2a',
+    },
+    confirmArchiveBtnText: {
+        color: '#FFF',
+        fontWeight: '700',
+        fontSize: 15,
+    },
+    actionRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        marginLeft: 10,
+    },
+    actionBtn: {
+        padding: 8,
+        backgroundColor: '#F1F5F9',
+        borderRadius: 8,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    dateHeaderContainer: {
+        paddingVertical: 8,
+        paddingHorizontal: 15,
+        marginBottom: 10,
+        alignSelf: 'flex-start',
+    },
+    dateHeaderText: {
+        fontSize: 20,
+        fontWeight: '900',
+        color: '#153c2a',
+    },
+    assessmentCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#FFFFFF', 
+        padding: 16,
+        borderRadius: 10,
+        marginBottom: 12,
+        marginHorizontal: 2,
+        elevation: 3, 
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 8,
+        borderWidth: 1,
+        borderColor: '#F1F5F9',
+    },
+    cardTextContent: {
+        flex: 1,
+        paddingRight: 10,
+    },
+    cardTitle: {
+        fontSize: 18,
+        fontWeight: '800',
+        color: '#1E293B',
+        marginBottom: 4,
+    },
+    cardMeta: {
+        fontSize: 13,
+        color: '#64748B',
+        fontWeight: '600',
+    },
+    actionRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    actionBtn: {
+        padding: 8,
+        borderRadius: 8,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
 });

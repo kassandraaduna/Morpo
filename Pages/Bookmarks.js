@@ -68,25 +68,65 @@ export default function Bookmarks({ navigation, route }) {
 
   useFocusEffect(useCallback(() => { fetchBookmarks(); }, []));
 
-  const fetchData = async () => {
-    try {
-      const [lessonRes, modelRes, scanRes] = await Promise.all([
-        api.get('/lessons'),
-        api.get('/models3d'),
-        api.get('/scan/history/' + user._id)
-      ]);
-      const fetched = {
-        lessons: (lessonRes.data?.data || []).filter(l => !l.is_archived),
-        models: modelRes.data?.data || [],
-        scans: scanRes.data?.data || []
-      };
-      setData(fetched);
-    } catch (err) {
-      toastError('Failed to load content');
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
+  const fetchData = async () => { 
+        try { 
+            // 1. Securely fetch User FIRST
+            const rawUser = await AsyncStorage.getItem('user');
+            if (!rawUser) {
+                setLoading(false);
+                setRefreshing(false);
+                return; // Exit if no user is found to prevent crashes
+            }
+            const currentUser = JSON.parse(rawUser);
+
+            // 2. Fetch Local Bookmarks
+            const savedBookmarksRaw = await AsyncStorage.getItem('studentBookmarks_v1');
+            const savedBookmarks = savedBookmarksRaw ? JSON.parse(savedBookmarksRaw) : { lessons: [], models: [], scans: [] };
+            const bookmarkedLessonIds = savedBookmarks.lessons || [];
+            const bookmarkedModelIds = savedBookmarks.models || [];
+
+            // 3. Fetch API Data (Notice we use currentUser._id here!)
+            const [lessonRes, modelRes, scanRes, remedialRes] = await Promise.all([ 
+                api.get('/lessons').catch(() => ({ data: { data: [] } })),
+                api.get('/models3d').catch(() => ({ data: { data: [] } })), 
+                api.get('/scan/history/' + currentUser._id).catch(() => ({ data: { data: [] } })),
+                api.get('/ai/personalized-lessons/' + currentUser._id).catch(() => ({ data: { data: [] } }))
+            ]);
+
+            // 4. Process Normal Lessons (Filter by saved IDs)
+            const rawNormal = (lessonRes.data?.data || []).filter(l => !l.isArchived);
+            const normalLessons = rawNormal
+                .map(l => ({ ...l, type: 'normal' }))
+                .filter(l => bookmarkedLessonIds.includes(l._id)); 
+
+            // 5. Process Remedial Lessons (Filter by saved IDs)
+            const rawRemedial = remedialRes.data?.data || [];
+            const remedialLessons = rawRemedial
+                .map(l => ({ ...l, type: 'remedial', title: `Remedial: ${l.topic}`, pdfName: 'Personalized AI Content' }))
+                .filter(l => bookmarkedLessonIds.includes(l._id)); 
+
+            // 6. Process Models (Filter by saved IDs)
+            const rawModels = modelRes.data?.data || [];
+            const filteredModels = rawModels.filter(m => bookmarkedModelIds.includes(m._id));
+
+            // 7. Process Scans 
+            const rawScans = scanRes.data?.data || [];
+            const bookmarkedScans = rawScans.filter(s => s.bookmarked === true);
+
+            // 8. Combine and Set Data
+            const fetched = {
+                lessons: [...normalLessons, ...remedialLessons], 
+                models: filteredModels, 
+                scans: bookmarkedScans 
+            }; 
+            
+            setData(fetched);
+        } catch (err) { 
+            console.error("Bookmark Fetch Error:", err);
+        } finally {
+            setLoading(false); 
+            setRefreshing(false); 
+        } 
   };
 
   useEffect(() => {
@@ -103,34 +143,59 @@ export default function Bookmarks({ navigation, route }) {
     }
   }, [searchQuery, activeTab, data]);
 
+  useEffect(() => {
+        fetchData(); // Initial fetch
+        
+        //Trigger fetchData every time the user opens this screen
+        const unsubscribe = navigation.addListener('focus', () => {
+            fetchData();
+        });
+
+        // Cleanup the listener when the component unmounts
+        return unsubscribe;
+  }, [navigation]);
+
   const onRefresh = () => {
     setRefreshing(true);
-    fetchBookmarks();
+    fetchData();
   };
 
-  const removeBookmarkLocal = async (type, id) => {
-    let newBookmarks = { ...bookmarksData };
-    if (newBookmarks[type]) {
-      newBookmarks[type] = newBookmarks[type].filter(item => item !== id);
-    }
-    setBookmarksData(newBookmarks);
-    await AsyncStorage.setItem('studentBookmarks_v1', JSON.stringify(newBookmarks));
+  const handleRemoveBookmark = async (itemId, type) => {
+        try {
+            if (type === 'scan') {
+                // Remove Scan from Backend
+                await api.put(`/scan-bookmark/${itemId}`);
+                toastSuccess('Removed from Bookmarks');
+            } else {
+                // Remove Lesson or Model from Local Storage
+                const savedBookmarksRaw = await AsyncStorage.getItem('studentBookmarks_v1');
+                let savedBookmarks = savedBookmarksRaw ? JSON.parse(savedBookmarksRaw) : { lessons: [], models: [], scans: [] };
+                
+                // Filter the ID out of the corresponding local array
+                if (savedBookmarks[type]) {
+                    savedBookmarks[type] = savedBookmarks[type].filter(id => id !== itemId);
+                }
+                await AsyncStorage.setItem('studentBookmarks_v1', JSON.stringify(savedBookmarks));
+                toastSuccess('Removed from Bookmarks');
+            }
 
-    if (type === 'lessons') {
-      setBookmarkedLessons(prev => prev.filter(l => l._id !== id));
-    } else if (type === 'models') {
-      setBookmarkedModels(prev => prev.filter(m => m._id !== id));
-    }
-  };
+            // INSTANT UI UPDATE: Remove the item from the active screen data
+            setData(prevData => {
+                const newData = { ...prevData };
+                if (type === 'scan') {
+                    newData.scans = newData.scans.filter(item => item._id !== itemId);
+                } else if (type === 'lessons') {
+                    newData.lessons = newData.lessons.filter(item => item._id !== itemId);
+                } else if (type === 'models') {
+                    newData.models = newData.models.filter(item => item._id !== itemId);
+                }
+                return newData;
+            });
 
-  const toggleScanBookmark = async (id) => {
-    try {
-      await api.put(`/scan-bookmark/${id}`);
-      setBookmarkedScans(prev => prev.filter(s => s._id !== id));
-      toastSuccess("Removed from Bookmarks");
-    } catch (e) {
-      toastError("Failed to update scan bookmark");
-    }
+        } catch (error) {
+            console.error(`Failed to remove ${type} bookmark:`, error);
+            toastError('Failed to remove bookmark.');
+        }
   };
 
   const deleteScanHistoryItem = (id) => {
@@ -156,23 +221,36 @@ export default function Bookmarks({ navigation, route }) {
     );
   };
 
-  const renderLessonItem = ({ item }) => (
-    <TouchableOpacity 
-      style={[localStyles.cardWrapper, { backgroundColor: theme.card }]}
-      onPress={() => navigation.navigate('LessonStudent', { lessonId: item._id })}
-    >
-      <View style={[localStyles.iconBox, { backgroundColor: '#2d6a4f' + '15' }]}>
-        <Ionicons name="document-text" size={24} color="#2d6a4f" />
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={[localStyles.cardTitle, { color: theme.text }]} numberOfLines={1}>{item.title}</Text>
-        <Text style={{ color: theme.subText, fontSize: 12 }}>{item.pdfName || "PDF Document"}</Text>
-      </View>
-      <TouchableOpacity style={{ padding: 8 }} onPress={() => removeBookmarkLocal('lessons', item._id)}>
-        <Ionicons name="bookmark" size={22} color="#10b981" />
-      </TouchableOpacity>
-    </TouchableOpacity>
-  );
+  const renderLessonItem = ({ item }) => {
+        const isRemedial = item.type === 'remedial';
+
+        return (
+            <TouchableOpacity
+                style={[localStyles.cardWrapper, { backgroundColor: theme.card }]}
+                onPress={() => navigation.navigate('LessonStudent', { 
+                    lessonId: isRemedial ? null : item._id,
+                    personalizedLesson: isRemedial ? item : null 
+                })}
+            >
+                <View style={[localStyles.iconBox, { backgroundColor: isRemedial ? '#FEF2F2' : '#2d6a4f15' }]}>
+                    <Ionicons name={isRemedial ? "medical" : "book"} size={22} color={isRemedial ? "#EF4444" : "#153c2a"} />
+                </View>
+
+                <View style={{ flex: 1 }}>
+                    <Text style={[localStyles.cardTitle, { color: theme.text }]} numberOfLines={1}>
+                        {item.title}
+                    </Text>
+                    <Text style={{ color: theme.subText, fontSize: 12 }}>
+                        {item.pdfName || "PDF Document"}
+                    </Text>
+                </View>
+
+                <TouchableOpacity style={{ padding: 8 }} onPress={() => handleRemoveBookmark(item._id, 'lessons')}>
+                    <Ionicons name="bookmark" size={24} color="#153c2a" />
+                </TouchableOpacity>
+            </TouchableOpacity>
+        );
+  };
 
   const renderScanItem = ({ item }) => {
     const d = new Date(item.createdAt);
@@ -213,7 +291,7 @@ export default function Bookmarks({ navigation, route }) {
       <View style={[localStyles.modelCard, { backgroundColor: theme.card }]}>
         <View style={localStyles.modelThumbContainer}>
           <WebView scrollEnabled={false} source={{ html: thumbHtml }} style={{ backgroundColor: '#f0f4f2' }} />
-          <TouchableOpacity style={localStyles.bookmarkFloat} onPress={() => removeBookmarkLocal('models', item._id)}>
+          <TouchableOpacity style={localStyles.bookmarkFloat} onPress={() => handleRemoveBookmark(item._id, 'models')}>
             <Ionicons name="bookmark" size={20} color="#10b981" />
           </TouchableOpacity>
         </View>

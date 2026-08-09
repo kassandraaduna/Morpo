@@ -11,13 +11,45 @@ import { toastError, toastSuccess } from './src/components/ToastMsg';
 export default function UploadLesson({ navigation, route }) {
   const { theme } = useContext(ThemeContext);
   const editingLesson = route.params?.lesson || null; 
-
+  const isEditing = !!editingLesson;
   const [title, setTitle] = useState(editingLesson?.title || '');
+  const [description, setDescription] = useState(editingLesson?.description || '');
   const [content, setContent] = useState(editingLesson?.content || '');
   const [isArchived, setIsArchived] = useState(editingLesson?.is_archived === true || editingLesson?.is_archived === 1);
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
   const [instructorId, setInstructorId] = useState(null);
+  const [hasActiveAssignment, setHasActiveAssignment] = useState(true);
+
+  useEffect(() => {
+      const verifyInstructorAssignment = async () => {
+          try {
+              const rawUser = await AsyncStorage.getItem('user');
+              if (!rawUser) return;
+              const currentUser = JSON.parse(rawUser);
+
+              // If user is not an instructor, let it pass through or handle accordingly
+              if (currentUser.role !== 'instructor') return;
+
+              const syRes = await api.get('/admin/academic-settings/school-years');
+              const syContext = syRes.data?.context || {};
+              const activeSyId = syContext.activeSchoolYearId;
+              const activeTermKey = syContext.activeTermKey;
+
+              const assignments = Array.isArray(currentUser.instructorAssignments) ? currentUser.instructorAssignments : [];
+              const isActive = assignments.some(a => 
+                  String(a.schoolYearId) === String(activeSyId) && 
+                  (a.termKey === 'all' || a.termKey === activeTermKey)
+              );
+
+              setHasActiveAssignment(isActive);
+          } catch (error) {
+              console.error("Assignment check failed", error);
+          }
+      };
+
+      verifyInstructorAssignment();
+  }, []);
 
   useEffect(() => {
     AsyncStorage.getItem('user').then(u => {
@@ -100,15 +132,15 @@ return (
       <StatusBar barStyle="light-content" />
         <View style={[localStyles.header, { backgroundColor: '#153c2a' }]}>
           <View style={localStyles.headerRow}>
-            <TouchableOpacity onPress={() => navigation.goBack()} style={{ marginRight: 15 }}>
+            <TouchableOpacity onPress={() => navigation.goBack()} style={{justifyContent: 'center' }}>
               <Ionicons name="arrow-back" size={28} color="#fff" />
             </TouchableOpacity>
-            <View style={{ flex: 1 }}>
+            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
               <Text style={localStyles.title}>
-                {editingLesson ? 'Edit Lesson' : 'Upload Lesson'}
+                {isEditing ? 'Edit Lesson' : 'Upload Lesson'}
               </Text>
               <Text style={localStyles.subtitle}>
-                {editingLesson ? 'Update your lesson details and PDF lesson file' : 'Publish a new learning module'}
+                {isEditing ? 'Update your lesson details and PDF lesson file' : 'Publish a new lesson by uploading a PDF lesson document'}
               </Text>
             </View>
           </View>
@@ -119,7 +151,7 @@ return (
             <Text style={[localStyles.label, { color: theme.subText }]}>LESSON TITLE</Text>
               <TextInput 
                 style={[localStyles.input, { backgroundColor: theme.card, color: theme.text }]} 
-                placeholder="e.g. Introduction to Mycology"
+                placeholder="Automatically set from PDF file name if left empty"
                 value={title}
                 onChangeText={setTitle}
               />
@@ -139,15 +171,6 @@ return (
                 </Text>
               </TouchableOpacity>
 
-              <View style={localStyles.switchRow}>
-                  <Text style={[localStyles.label, { color: theme.text, marginTop: 0 }]}>ARCHIVE LESSON</Text>
-                  <Switch 
-                      value={isArchived} 
-                      onValueChange={setIsArchived}
-                      trackColor={{ false: "#ccc", true: "#153c2a" }}
-                  />
-              </View>
-
               <TouchableOpacity 
                 style={[localStyles.uploadBtn, { opacity: loading ? 0.7 : 1 }]} 
                 onPress={handleSave}
@@ -155,7 +178,7 @@ return (
               >
                 {loading ? <ActivityIndicator color="#fff" /> : (
                   <Text style={localStyles.uploadBtnText}>
-                      {editingLesson ? 'UPDATE LESSON' : 'PUBLISH LESSON'}
+                      {isEditing ? 'Save Changes' : 'Publish Lesson'}
                   </Text>
                 )}
               </TouchableOpacity>

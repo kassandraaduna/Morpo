@@ -15,6 +15,7 @@ import Privacy from './Pages/Privacy';
 import ChangePassword from './Pages/ChangePassword';
 import FAQs from './Pages/FAQs';
 import About from './Pages/About';
+import Learn from './Pages/Learn';
 import LessonStudent from './Pages/LessonStudent';
 import TakeAssessment from './Pages/TakeAssessment';
 import ModelViewerMobile from './Pages/ModelViewerMobile';
@@ -27,6 +28,11 @@ import ArchiveLessons from './Pages/ArchiveLessons';
 import AssessmentQuestionsView from './Pages/AssessmentQuestionsView';
 import ScanHistory from './Pages/ScanHistory';
 import DatasetLibrary from './Pages/DatasetLibrary';
+import Notifications from './Pages/Notifications';
+import AssessmentWebViewer from './Pages/AssessmentWebViewer';
+import CreateAssessmentLink from './Pages/CreateAssessmentLink';
+import CreateAssessmentAI from './Pages/CreateAssessmentAI';
+import CreateAssessmentManual from './Pages/CreateAssessmentManual';
 
 const Stack = createStackNavigator();
 
@@ -84,6 +90,7 @@ export default function AppController() {
         <Stack.Screen name="FAQs" component={FAQs} options={{ headerShown: false }}/>
         <Stack.Screen name="About" component={About} options={{ headerShown: false }}/>
         <Stack.Screen name="InstructorBottomTab" component={InstructorBottomTab} />
+        <Stack.Screen name="Learn" component={Learn} options={{ headerShown: false }} />
         <Stack.Screen name="LessonStudent" component={LessonStudent} options={{ headerShown: false }}/>
         <Stack.Screen name="TakeAssessment" component={TakeAssessment} options={{ headerShown: false }}/>
         <Stack.Screen name="ModelViewerMobile" component={ModelViewerMobile} options={{ headerShown: false }}/>
@@ -96,7 +103,12 @@ export default function AppController() {
         <Stack.Screen name="AssessmentQuestionsView" component={AssessmentQuestionsView} options={{ headerShown: false }} />
         <Stack.Screen name="ScanHistory" component={ScanHistory} options={{ headerShown: false }} />
         <Stack.Screen name="DatasetLibrary" component={DatasetLibrary} options={{ headerShown: false }} />
-      </Stack.Navigator>
+        <Stack.Screen name="Notifications" component={Notifications} options={{ headerShown: false }} />
+        <Stack.Screen name="AssessmentWebViewer" component={AssessmentWebViewer} options={{ headerShown: false }} />
+        <Stack.Screen name="CreateAssessmentLink" component={CreateAssessmentLink} options={{ headerShown: true, title: "Add Link" }} />
+        <Stack.Screen name="CreateAssessmentManual" component={CreateAssessmentManual} options={{ headerShown: true, title: "Manual Entry" }} />
+        <Stack.Screen name="CreateAssessmentAI" component={CreateAssessmentAI} options={{ headerShown: true, title: "AI Generator" }} />
+        </Stack.Navigator>
     </NavigationContainer>
   );
 }
