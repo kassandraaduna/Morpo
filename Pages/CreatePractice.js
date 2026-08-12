@@ -165,7 +165,7 @@ export default function CreatePractice({ route, navigation }) {
             
             <View style={localStyles.header}>
                 <TouchableOpacity onPress={() => navigation.goBack()} style={localStyles.iconBtn}>
-                    <Ionicons name="close" size={24} color="#FFF" />
+                    <Ionicons name="close" size={25} color="#FFF" />
                 </TouchableOpacity>
                 
                 <View style={localStyles.headerTitleContainer}>
@@ -207,7 +207,7 @@ export default function CreatePractice({ route, navigation }) {
                                 </Text>
                             </View>
                             <TouchableOpacity onPress={() => removeItem(index)} style={localStyles.deleteBtn}>
-                                <Ionicons name="trash" size={16} color="#EF4444" />
+                                <Ionicons name="trash" size={20} color="#EF4444" />
                             </TouchableOpacity>
                         </View>
 
@@ -330,10 +330,10 @@ const localStyles = StyleSheet.create({
     header: { 
         backgroundColor: '#153c2a', 
         paddingTop: Platform.OS === 'ios' ? 60 : 40, 
-        paddingBottom: 20, 
+        paddingBottom: 30, 
         paddingHorizontal: 20, 
-        borderBottomLeftRadius: 25, 
-        borderBottomRightRadius: 25, 
+        borderBottomLeftRadius: 10, 
+        borderBottomRightRadius: 10, 
         flexDirection: 'row', 
         justifyContent: 'space-between', 
         alignItems: 'center', 
@@ -343,30 +343,30 @@ const localStyles = StyleSheet.create({
         shadowRadius: 8 
     },
     iconBtn: { padding: 5 },
-    headerTitleContainer: { flex: 1, alignItems: 'center', paddingHorizontal: 10 },
-    headerTitle: { fontSize: 15, fontWeight: '900', color: '#FFF', textAlign: 'center', letterSpacing: 0.5 },
-    saveBtn: { backgroundColor: '#E7F5EE', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 12 },
-    saveText: { color: '#153c2a', fontWeight: '900', fontSize: 13 },
-    label: { fontSize: 12, fontWeight: '900', color: '#94A3B8', marginBottom: 8, letterSpacing: 1, textTransform: 'uppercase', marginTop: 10 },
-    inputWrapper: { borderRadius: 16, elevation: 1, shadowColor: '#000', shadowOpacity: 0.03, shadowRadius: 5 },
-    input: { paddingHorizontal: 20, height: 55, fontSize: 16, fontWeight: '600' },
-    itemCard: { padding: 20, borderRadius: 20, marginBottom: 20, elevation: 2, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 8 },
+    headerTitleContainer: { flex: 1, alignItems: 'center', paddingHorizontal: 10, paddingTop:5 },
+    headerTitle: { fontSize: 22, fontWeight: '800', color: '#FFF', textAlign: 'center', },
+    saveBtn: { backgroundColor: '#E7F5EE', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 10 },
+    saveText: { color: '#153c2a', fontWeight: '900', fontSize: 15 },
+    label: { fontSize: 15, fontWeight: '900', color: '#7c899b', marginBottom: 8, textTransform: 'uppercase', marginTop: 10 },
+    inputWrapper: { borderRadius: 10, elevation: 1, shadowColor: '#000', shadowOpacity: 0.03, shadowRadius: 5 },
+    input: { paddingHorizontal: 20, height: 55, fontSize: 15, fontWeight: '600' },
+    itemCard: { padding: 20, borderRadius: 10, marginBottom: 20, elevation: 2, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 8 },
     itemHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
-    badge: { backgroundColor: '#F1F5F9', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },
-    badgeText: { fontSize: 10, fontWeight: '900', color: '#64748B', letterSpacing: 0.5 },
-    deleteBtn: { backgroundColor: '#FEE2E2', padding: 6, borderRadius: 8 },
-    subLabel: { fontSize: 11, fontWeight: '800', color: '#64748B', marginBottom: 6 },
-    fieldInput: { borderRadius: 12, paddingHorizontal: 15, paddingVertical: 12, fontSize: 14, fontWeight: '600', borderWidth: 1, borderColor: '#F1F5F9' },
+    badge: { backgroundColor: '#f1f9f4', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },
+    badgeText: { fontSize: 12, fontWeight: '900', color: '#153c2a', },
+    deleteBtn: { padding: 6,},
+    subLabel: { fontSize: 15, fontWeight: '800', color: '#64748B', marginBottom: 6 },
+    fieldInput: { borderRadius: 10, paddingHorizontal: 15, paddingVertical: 12, fontSize: 14, fontWeight: '600', borderWidth: 1, borderColor: '#F1F5F9' },
     optionRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
     radioBtn: { width: 28, height: 28, borderRadius: 8, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
     radioActive: { backgroundColor: '#10B981' },
-    optInput: { flex: 1, borderRadius: 12, paddingHorizontal: 15, height: 45, fontSize: 14, fontWeight: '500', borderWidth: 1 },
-    addBtn: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', padding: 18, borderRadius: 16, borderWidth: 1.5, borderColor: '#153c2a', borderStyle: 'dashed' },
+    optInput: { flex: 1, borderRadius: 10, paddingHorizontal: 15, height: 45, fontSize: 15, fontWeight: '500', borderWidth: 1 },
+    addBtn: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', padding: 18, borderRadius: 10, borderWidth: 1.5, borderColor: '#153c2a', borderStyle: 'dashed' },
     addBtnText: { marginLeft: 8, fontWeight: '900', color: '#153c2a', fontSize: 14 },
-    formatChip: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: '#F1F5F9', marginRight: 10, borderWidth: 1, borderColor: '#E2E8F0' },
+    formatChip: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 10, backgroundColor: '#F1F5F9', marginRight: 10, borderWidth: 1, borderColor: '#E2E8F0' },
     formatChipActive: { backgroundColor: '#153c2a', borderColor: '#153c2a' },
-    formatChipText: { fontSize: 12, fontWeight: '700', color: '#64748B' },
+    formatChipText: { fontSize: 13, fontWeight: '700', color: '#64748B' },
     formatChipTextActive: { color: '#FFF' },
-    tfBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, borderWidth: 1.5, borderColor: '#E2E8F0', alignItems: 'center', backgroundColor: '#F8FAFC' },
-    tfBtnText: { fontSize: 14, fontWeight: '800', color: '#64748B' }
+    tfBtn: { flex: 1, paddingVertical: 12, borderRadius: 10, borderWidth: 1.5, borderColor: '#E2E8F0', alignItems: 'center', backgroundColor: '#F8FAFC' },
+    tfBtnText: { fontSize: 15, fontWeight: '800', color: '#64748B' }
 });
