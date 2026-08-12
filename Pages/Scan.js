@@ -36,21 +36,28 @@ export default function Scan({ navigation }) {
   const fetchHistory = async (id) => {
     try {
       const res = await api.get(`/scan/history/${id}`);
-      setHistory(res.data.data.slice(0, 5)); 
+      setHistory(res.data.data.slice(0, 6)); 
     } catch (err) { 
       console.log("History fetch failed", err); 
     }
   };
 
   const pickImages = async (useCamera = false) => {
-    setResult(null);
-    setActiveScanItemIndex(0);
-    setCarouselIndex(0);
+    if (result) {
+      setResult(null);
+      setActiveScanItemIndex(0);
+      setCarouselIndex(0);
+    }
+
+    const remainingSlots = 6 - images.length;
+    if (remainingSlots <= 0) {
+      return toastError('You can only select up to 6 images.');
+    }
 
     const options = {
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsMultipleSelection: true, 
-      selectionLimit: 5, 
+      selectionLimit: remainingSlots, 
       quality: 0.8,
     };
 
@@ -66,8 +73,18 @@ export default function Scan({ navigation }) {
     }
 
     if (!res.canceled) {
-      const selectedAssets = res.assets.slice(0, 5);
-      setImages(selectedAssets);
+      const selectedAssets = res.assets.slice(0, remainingSlots);
+      // Append the new images to the existing ones
+      setImages(prev => [...prev, ...selectedAssets]);
+    }
+  };
+
+  const removeImage = (indexToRemove) => {
+    setImages(prev => prev.filter((_, idx) => idx !== indexToRemove));
+    if (result) {
+      setResult(null);
+      setActiveScanItemIndex(0);
+      setCarouselIndex(0);
     }
   };
 
@@ -148,7 +165,14 @@ export default function Scan({ navigation }) {
   };
 
   const hasResult = Array.isArray(result) && result.length > 0;
-  const currentScanItem = hasResult ? result[activeScanItemIndex] : null;
+  let currentScanItem = hasResult ? result[activeScanItemIndex] : null;
+
+  if (currentScanItem && history.length > 0) {
+    const historyMatch = history.find(h => h._id === currentScanItem._id);
+    if (historyMatch && historyMatch.recommendedLessons) {
+      currentScanItem = { ...currentScanItem, recommendedLessons: historyMatch.recommendedLessons };
+    }
+  }
   const currentSpeciesMatch = currentScanItem && currentScanItem.topSpecies ? currentScanItem.topSpecies[carouselIndex] : null;
 
   return (
@@ -193,8 +217,25 @@ export default function Scan({ navigation }) {
                   <View key={idx} style={styles.batchThumbWrapper}>
                     <Image source={{ uri: img.uri }} style={styles.batchPreviewThumb} />
                     <View style={styles.batchBadgeIndex}><Text style={styles.batchBadgeText}>{idx + 1}</Text></View>
+                    
+                    {/* NEW: Remove Image Button */}
+                    {!loading && !result && (
+                      <TouchableOpacity 
+                        style={styles.removeImgBtn} 
+                        onPress={() => removeImage(idx)}
+                      >
+                        <Ionicons name="close" size={16} color="#fff" />
+                      </TouchableOpacity>
+                    )}
                   </View>
                 ))}
+                
+                {/* NEW: Add More Images Button */}
+                {!loading && !result && images.length < 6 && (
+                  <TouchableOpacity style={styles.addMoreThumbBtn} onPress={() => pickImages(false)}>
+                    <Ionicons name="add" size={32} color="#153c2a" />
+                  </TouchableOpacity>
+                )}
               </ScrollView>
               
               {!result && (
@@ -203,7 +244,7 @@ export default function Scan({ navigation }) {
                     {loading ? <ActivityIndicator color="#fff" /> : (
                       <>
                         <Ionicons name="scan-outline" size={20} color="#fff" />
-                        <Text style={styles.scanBtnText}>Scan Batch Data ({images.length})</Text>
+                        <Text style={styles.scanBtnText}>Classify ({images.length})</Text>
                       </>
                     )}
                   </TouchableOpacity>
@@ -218,14 +259,15 @@ export default function Scan({ navigation }) {
 
         <View style={styles.statusBox}>
           <View style={styles.statusDot} />
-          <Text style={styles.statusTextPrimary}>AI ENGINE CORE ACTIVE</Text>
-          <Text style={styles.statusTextSecondary}> - System ready</Text>
+          <Text style={[styles.statusTextPrimary, { flex: 1, lineHeight: 18 }]}>
+            MyphoAI is an AI and can make mistakes with classifying images.
+          </Text>
         </View>
 
         {hasResult && currentScanItem && (
           <View style={[styles.resultCard, { backgroundColor: theme.card, borderColor: '#10b981' }]}>
             <View style={styles.resultHeader}>
-              <Text style={styles.resultEyebrow}>BATCH PROCESSING PIPELINE</Text>
+              <Text style={styles.resultEyebrow}>BATCH CLASSIFYING RESULT</Text>
               <TouchableOpacity onPress={() => handleToggleBookmark(currentScanItem)}>
                 <Ionicons 
                   name={currentScanItem.bookmarked ? "bookmark" : "bookmark-outline"} 
@@ -265,8 +307,6 @@ export default function Scan({ navigation }) {
               </View>
             </View>
 
-            <Text style={[styles.resultDesc, { color: theme.text }]}>{currentScanItem.description}</Text>
-
             {currentScanItem.explanation ? (
               <View style={styles.analysisContainer}>
                 <Text style={[styles.sectionHeading, { color: theme.text }]}><Ionicons name="analytics" color="#059669" size={14}/> AI Structural Analysis</Text>
@@ -285,8 +325,8 @@ export default function Scan({ navigation }) {
                   <Image source={{ uri: toAbsUrl(currentSpeciesMatch.imageUrl) }} style={styles.carouselCardImage} />
                   <View style={styles.carouselContent}>
                     <Text style={styles.speciesScientificName}>{currentSpeciesMatch.speciesName}</Text>
-                    <Text style={styles.speciesDetailText}><Text style={{ fontWeight: 'bold' }}>Match Logic:</Text> {currentSpeciesMatch.matchReason}</Text>
-                    <Text style={styles.speciesDetailText}><Text style={{ fontWeight: 'bold' }}>Clinical Profile:</Text> {currentSpeciesMatch.clinicalManifestation}</Text>
+                    <Text style={styles.speciesDetailText}><Text style={{ fontWeight: 'bold' }}>Why it matches:</Text> {currentSpeciesMatch.matchReason}</Text>
+                    <Text style={styles.speciesDetailText}><Text style={{ fontWeight: 'bold' }}>Clinical Manifestation:</Text> {currentSpeciesMatch.clinicalManifestation}</Text>
                   </View>
                 </View>
 
@@ -309,26 +349,50 @@ export default function Scan({ navigation }) {
               </View>
             )}
 
-            {currentScanItem.recommendedLessons && currentScanItem.recommendedLessons.length > 0 && (
+            {currentScanItem && (
               <View style={styles.lessonsContainer}>
-                <Text style={[styles.sectionHeading, { color: theme.text }]}>Recommended Review Modules</Text>
-                {currentScanItem.recommendedLessons.map((lesson) => (
-                  <TouchableOpacity 
-                    key={lesson._id} 
-                    style={styles.lessonRow}
-                    onPress={() => navigation.navigate('Educational', { learnTab: 'all' })}
-                  >
-                    <Ionicons name="document-text-outline" size={16} color="#153c2a" />
-                    <Text style={[styles.lessonRowTitle, { color: theme.text }]} numberOfLines={1}>{lesson.title || lesson.pdfName}</Text>
-                    <Ionicons name="chevron-forward" size={14} color={theme.subText} />
-                  </TouchableOpacity>
-                ))}
+                <Text style={[styles.sectionHeading, { color: theme.text, fontSize: 11, 
+                  letterSpacing: 0.5, textTransform: 'uppercase' }]}>
+                  Recommended Curriculum Reviewers
+                </Text>
+                
+                {Array.isArray(currentScanItem.recommendedLessons) && currentScanItem.recommendedLessons.length > 0 ? (
+
+                  currentScanItem.recommendedLessons.map((lesson, idx) => {
+                    const isObj = typeof lesson === 'object' && lesson !== null;
+                    const lessonId = isObj ? lesson._id : lesson;
+                    const lessonTitle = isObj ? (lesson.title || lesson.pdfName || 'Review Module') : 'Review Module';
+
+                    return (
+                      <TouchableOpacity 
+                        key={lessonId || idx} 
+                        style={[styles.lessonRow, { backgroundColor: theme.bg, borderColor: '#e2e8f0', borderWidth: 1 }]}
+                        onPress={() => navigation.navigate('Educational', { learnTab: 'all' })} 
+                      >
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1, paddingRight: 10 }}>
+                          <Ionicons name="document-text" size={20} color="#153c2a" />
+                          <Text style={[styles.lessonRowTitle, { color: theme.text, fontSize: 13 }]} numberOfLines={1}>
+                            {lessonTitle}
+                          </Text>
+                        </View>
+                        <View style={{ backgroundColor: '#153c2a', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 }}>
+                          <Text style={{ color: '#fff', fontSize: 11, fontWeight: 'bold' }}>Study Now</Text>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })
+                  
+                ) : (
+                  <Text style={{ fontSize: 12, opacity: 0.6, fontStyle: 'italic', color: theme.subText, marginTop: 4 }}>
+                    No recommended lessons available
+                  </Text>
+                )}
               </View>
             )}
             
             <TouchableOpacity style={styles.scanAgainBtn} onPress={clearScanner}>
               <Ionicons name="reload-outline" size={16} color="#153c2a" />
-              <Text style={styles.scanAgainText}>Classify Another Batch</Text>
+              <Text style={styles.scanAgainText}>Classify Another</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -382,76 +446,120 @@ const styles = StyleSheet.create({
   header: { 
     paddingHorizontal: 20, 
     paddingTop: Platform.OS === 'ios' ? 60 : 40,
-    paddingBottom: 25,
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30
+    paddingBottom: 30,
+    borderBottomLeftRadius: 10,   // Updated from 30 to 10
+    borderBottomRightRadius: 10,  // Updated from 30 to 10
+    width: '100%'                 // Ensures it stretches across any screen
   },
-  headerTop: { flexDirection: 'row', alignItems: 'center' },
-  headerTitle: { fontSize: 24, fontWeight: '900', color: '#fff', marginTop: 20 },
-  headerSubtitle: { fontSize: 13, color: '#d1fae5', marginTop: 2 },
-  mainCard: { borderRadius: 20, padding: 15, elevation: 2, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10, marginBottom: 15 },
-  dropZone: { width: '100%', minHeight: 200, borderRadius: 16, borderStyle: 'dashed', borderWidth: 2, justifyContent: 'center', alignItems: 'center', padding: 20 },
+  headerTop: { 
+    flexDirection: 'column',      // Changed from row to column so text stacks nicely
+    alignItems: 'center',         // Centers the content horizontally
+    justifyContent: 'center' 
+  },
+  headerTitle: { 
+    fontSize: 28, 
+    fontWeight: '800', 
+    color: '#fff', 
+    marginTop: 20,
+    textAlign: 'center'           // Ensures the text aligns center if it wraps
+  },
+  headerSubtitle: { 
+    fontSize: 13, 
+    color: '#d1fae5', 
+    marginTop: 6,                 // Slightly increased margin for better spacing
+    textAlign: 'center',          // Ensures the text aligns center if it wraps
+    paddingHorizontal: 10         // Adds breathing room on small screens
+  },
+  mainCard: { borderRadius: 10, padding: 15, elevation: 2, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10, marginBottom: 15 },
+  dropZone: { width: '100%', minHeight: 200, borderRadius: 10, borderStyle: 'dashed', borderWidth: 2, justifyContent: 'center', alignItems: 'center', padding: 20 },
   uploadIconCircle: { width: 60, height: 60, borderRadius: 30, backgroundColor: '#f1f5f9', justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
   dropText: { fontWeight: '900', fontSize: 16, marginBottom: 4 },
   pickerRow: { flexDirection: 'row', gap: 12, width: '100%', marginTop: 10 },
-  pickerBtn: { flex: 1, backgroundColor: '#153c2a', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: 14, borderRadius: 12, gap: 6 },
-  pickerBtnText: { color: '#fff', fontWeight: 'bold', fontSize: 14 },
+  pickerBtn: { flex: 1, backgroundColor: '#153c2a', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', paddingVertical: 14, borderRadius: 10, gap: 6 },
+  pickerBtnText: { color: '#fff', fontWeight: 'bold', fontSize: 15 },
   previewContainer: { width: '100%' },
   batchThumbScroll: { gap: 10, paddingVertical: 10 },
   batchThumbWrapper: { position: 'relative' },
-  batchPreviewThumb: { width: 110, height: 110, borderRadius: 12, resizeMode: 'cover', borderWidth: 1, borderColor: '#e2e8f0' },
-  batchBadgeIndex: { position: 'absolute', top: 6, left: 6, backgroundColor: '#153c2a', width: 22, height: 22, borderRadius: 11, justifyContent: 'center', alignItems: 'center' },
-  batchBadgeText: { color: '#fff', fontSize: 11, fontWeight: 'bold' },
+  batchPreviewThumb: { width: 110, height: 110, borderRadius: 10, resizeMode: 'cover', borderWidth: 1, borderColor: '#e2e8f0' },
+  batchBadgeIndex: { position: 'absolute', top: 6, left: 6, backgroundColor: '#153c2a', width: 22, height: 22, borderRadius: 10, justifyContent: 'center', alignItems: 'center' },
+  batchBadgeText: { color: '#fff', fontSize: 13, fontWeight: 'bold' },
   actionRow: { flexDirection: 'row', alignItems: 'center', marginTop: 15, gap: 15 },
-  scanBtn: { flex: 1, backgroundColor: '#153c2a', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', height: 50, borderRadius: 12, gap: 8 },
+  scanBtn: { flex: 1, backgroundColor: '#153c2a', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', height: 50, borderRadius: 10, gap: 8 },
   scanBtnText: { color: '#fff', fontWeight: '900', fontSize: 15 },
   cancelLink: { paddingHorizontal: 10 },
-  statusBox: { backgroundColor: '#ecfdf5', padding: 14, borderRadius: 12, flexDirection: 'row', alignItems: 'center', marginBottom: 20, borderWidth: 1, borderColor: '#d1fae5' },
-  statusDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#10b981', marginRight: 10 },
-  statusTextPrimary: { color: '#065f46', fontWeight: '900', fontSize: 12 },
-  statusTextSecondary: { color: '#065f46', fontSize: 12, opacity: 0.8 },
-  resultCard: { padding: 20, borderRadius: 16, borderWidth: 2, marginBottom: 20 },
+  statusBox: { backgroundColor: '#f7e9cb', padding: 14, borderRadius: 10, flexDirection: 'row', alignItems: 'center', marginBottom: 20, borderWidth: 1, borderColor: '#faefd1' },
+  statusDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#ffbb00', marginRight: 10 },
+  statusTextPrimary: { color: '#be710b', fontWeight: '900', fontSize: 12.5 },
+  statusTextSecondary: { color: '#065f46', fontSize: 13, opacity: 0.8 },
+  resultCard: { padding: 20, borderRadius: 10, borderWidth: 2, marginBottom: 20 },
   resultHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  resultEyebrow: { fontSize: 11, fontWeight: '900', color: '#059669', letterSpacing: 1 },
-  switchLabel: { fontSize: 12, fontWeight: '700', marginBottom: 8 },
+  resultEyebrow: { fontSize: 15, fontWeight: '900', color: '#059669', letterSpacing: 1 },
+  switchLabel: { fontSize: 15, fontWeight: '700', marginBottom: 8 },
   tabStrip: { gap: 8, paddingBottom: 10 },
   tabChip: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f1f5f9', padding: 8, borderRadius: 10, gap: 6, borderWidth: 1, borderColor: '#e2e8f0' },
   activeTabChip: { backgroundColor: '#153c2a', borderColor: '#153c2a' },
   tabChipImg: { width: 24, height: 24, borderRadius: 4 },
-  tabChipText: { fontSize: 12, fontWeight: '700', color: '#475569' },
+  tabChipText: { fontSize: 13, fontWeight: '700', color: '#475569' },
   divider: { height: 1, backgroundColor: '#e2e8f0', marginVertical: 12 },
   resultTitle: { fontSize: 24, fontWeight: '900', marginBottom: 8 },
   confidenceRow: { marginBottom: 12 },
-  confidenceText: { fontSize: 14, fontWeight: '900', color: '#10b981', marginBottom: 6 },
+  confidenceText: { fontSize: 15, fontWeight: '900', color: '#10b981', marginBottom: 6 },
   progressBarBg: { height: 8, backgroundColor: '#e2e8f0', borderRadius: 4, overflow: 'hidden' },
   progressBarFill: { height: '100%', backgroundColor: '#10b981', borderRadius: 4 },
-  resultDesc: { fontSize: 14, lineHeight: 22, opacity: 0.8, marginBottom: 15 },
+  resultDesc: { fontSize: 15, lineHeight: 22, opacity: 0.8, marginBottom: 15 },
   analysisContainer: { backgroundColor: '#f8fafc', padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#e2e8f0', marginBottom: 15 },
   sectionHeading: { fontSize: 13, fontWeight: '800', marginBottom: 6, flexDirection: 'row', alignItems: 'center', gap: 4 },
-  analysisBody: { fontSize: 12, lineHeight: 18 },
-  carouselContainer: { backgroundColor: '#fff', borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0', padding: 12, marginBottom: 15 },
+  analysisBody: { fontSize: 13, lineHeight: 18, textAlign: 'justify' },
+  carouselContainer: { backgroundColor: '#fff', borderRadius: 10, borderWidth: 1, borderColor: '#e2e8f0', padding: 12, marginBottom: 15 },
   carouselHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
-  carouselTitle: { fontSize: 13, fontWeight: '800' },
-  carouselCounter: { fontSize: 11, color: '#64748b', fontWeight: 'bold' },
+  carouselTitle: { fontSize: 15, fontWeight: '800' },
+  carouselCounter: { fontSize: 13, color: '#64748b', fontWeight: 'bold' },
   carouselCard: { backgroundColor: '#f8fafc', borderRadius: 10, overflow: 'hidden', borderWidth: 1, borderColor: '#f1f5f9' },
   carouselCardImage: { width: '100%', height: 130, resizeMode: 'cover' },
   carouselContent: { padding: 12 },
-  speciesScientificName: { fontSize: 14, fontWeight: 'bold', color: '#153c2a', fontStyle: 'italic', marginBottom: 6 },
-  speciesDetailText: { fontSize: 12, color: '#334155', lineHeight: 16, marginTop: 4 },
+  speciesScientificName: { fontSize: 15, fontWeight: 'bold', color: '#153c2a', fontStyle: 'italic', marginBottom: 6 },
+  speciesDetailText: { fontSize: 13, color: '#334155', lineHeight: 16, marginTop: 4, textAlign: 'justify' },
   carouselControlRow: { flexDirection: 'row', gap: 10, marginTop: 10 },
   carouselControlBtn: { flex: 1, backgroundColor: '#f1f5f9', paddingVertical: 8, alignItems: 'center', borderRadius: 8 },
-  controlBtnText: { fontSize: 12, fontWeight: '700', color: '#153c2a' },
+  controlBtnText: { fontSize: 15, fontWeight: '700', color: '#153c2a' },
   lessonsContainer: { marginBottom: 15 },
   lessonRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f0fdf4', padding: 12, borderRadius: 10, marginBottom: 6, gap: 8 },
-  lessonRowTitle: { flex: 1, fontSize: 12, fontWeight: '700' },
-  scanAgainBtn: { backgroundColor: '#f1f5f9', padding: 14, borderRadius: 12, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6 },
-  scanAgainText: { color: '#153c2a', fontWeight: '900', fontSize: 14 },
+  lessonRowTitle: { flex: 1, fontSize: 15, fontWeight: '700' },
+  scanAgainBtn: { backgroundColor: '#f1f5f9', padding: 14, borderRadius: 10, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6 },
+  scanAgainText: { color: '#153c2a', fontWeight: '900', fontSize: 15 },
   historySection: { marginTop: 10 },
   historyHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
-  historyTitle: { fontSize: 14, fontWeight: '900', color: '#153c2a', letterSpacing: 1.2, textTransform: 'uppercase' },
-  historyItem: { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 14, marginBottom: 10 },
+  historyTitle: { fontSize: 15, fontWeight: '900', color: '#153c2a', textTransform: 'uppercase' },
+  historyItem: { flexDirection: 'row', alignItems: 'center', padding: 12, borderRadius: 10, marginBottom: 10 },
   historyThumb: { width: 50, height: 50, borderRadius: 10, backgroundColor: '#f1f5f9' },
   historyInfo: { flex: 1, marginLeft: 12 },
   historyClass: { fontWeight: '900', fontSize: 15, marginBottom: 3 },
-  historyMeta: { fontSize: 12, color: '#64748b' }
+  historyMeta: { fontSize: 13, color: '#64748b' },
+  removeImgBtn: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    backgroundColor: '#EF4444',
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+  },
+  addMoreThumbBtn: {
+    width: 110,
+    height: 110,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#153c2a',
+    borderStyle: 'dashed',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 10,
+    backgroundColor: 'rgba(21, 60, 42, 0.05)',
+  },
 });

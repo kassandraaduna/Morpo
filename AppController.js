@@ -3,7 +3,6 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Splash from './Pages/Splash';
-import Onboarding from './Pages/Onboarding';
 import Login from './Pages/Login';
 import Register from './Pages/Register';
 import ResetPasswordScreen from './Pages/ResetPasswordScreen';
@@ -79,7 +78,6 @@ export default function AppController() {
         screenOptions={{ headerShown: false }}
       >
         <Stack.Screen name="Splash" component={Splash} options={{ headerShown: false }}/>
-        <Stack.Screen name="Onboarding" component={Onboarding} options={{ headerShown: false }}/>
         <Stack.Screen name="Login" component={Login} options={{ headerShown: false }}/>
         <Stack.Screen name="Register" component={Register} options={{ headerShown: false }}/>
         <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} options={{ headerShown: false }}/>

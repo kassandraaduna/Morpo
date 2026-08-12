@@ -461,7 +461,7 @@ const localStyles = StyleSheet.create({
   },
   logoContainer: {
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 25,
     marginTop: 0,
   },
   logo: {
@@ -488,7 +488,7 @@ const localStyles = StyleSheet.create({
     backgroundColor: '#F8FAFC',
     borderWidth: 1,
     borderColor: '#CBD5E1',
-    borderRadius: 12,
+    borderRadius: 10,
     height: 52,
     paddingHorizontal: 14,
     marginBottom: 16,
@@ -515,7 +515,7 @@ const localStyles = StyleSheet.create({
   primaryBtn: {
     backgroundColor: '#153c2a',
     height: 54,
-    borderRadius: 12,
+    borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 8,
@@ -544,7 +544,7 @@ const localStyles = StyleSheet.create({
   backButton: {
     width: 38,
     height: 38,
-    borderRadius: 19,
+    borderRadius: 10,
     backgroundColor: '#4E7D5B',
     justifyContent: 'center',
     alignItems: 'center',
@@ -604,7 +604,7 @@ const localStyles = StyleSheet.create({
   },
   disclaimerCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    borderRadius: 10,
     padding: 24,
     alignItems: 'center',
     elevation: 10,

@@ -1,236 +1,353 @@
 import React, { useState, useContext, useEffect } from 'react';
-import { View, Text, TextInput, ScrollView, TouchableOpacity, StyleSheet, Platform, ActivityIndicator, StatusBar } from 'react-native';
+import { 
+    View, Text, TextInput, ScrollView, TouchableOpacity, 
+    StyleSheet, Platform, StatusBar, KeyboardAvoidingView 
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import api from './src/services/api';
 import { ThemeContext } from './src/context/ThemeContext';
 import { toastError, toastSuccess } from './src/components/ToastMsg';
 
+// FORMAT MATCHES SCHEMA EXACTLY: 'written' instead of 'written_response'
+const QUESTION_FORMATS = [
+    { label: 'Multiple Choice', value: 'multiple_choice' },
+    { label: 'True / False', value: 'true_false' },
+    { label: 'Identification', value: 'identification' },
+    { label: 'Written Response', value: 'written' }
+];
+
 export default function CreatePractice({ route, navigation }) {
     const type = route?.params?.type || 'flashcard'; 
     const { theme } = useContext(ThemeContext);
     
+    const [user, setUser] = useState(null);
     const [title, setTitle] = useState('');
-    const [items, setItems] = useState(
-        type === 'flashcard' 
-            ? [{ front: '', back: '' }] 
-            : [{ text: '', options: ['', '', '', ''], correctIndex: 0, format: 'multiple_choice' }]
-    );
+    const [items, setItems] = useState([]);
     const [loading, setLoading] = useState(false);
-    const [userId, setUserId] = useState(null);
 
     useEffect(() => {
-        AsyncStorage.getItem('user').then(u => {
-            if(u) setUserId(JSON.parse(u)._id);
-        });
+        const loadUser = async () => {
+            const rawUser = await AsyncStorage.getItem('user');
+            if (rawUser) setUser(JSON.parse(rawUser));
+        };
+        loadUser();
+        addNewItem();
     }, []);
 
-    const addItem = () => {
+    const addNewItem = () => {
         if (type === 'flashcard') {
-            setItems([...items, { front: '', back: '' }]);
+            setItems([...items, { text: '', answer: '' }]); 
         } else {
-            setItems([...items, { text: '', options: ['', '', '', ''], correctIndex: 0, format: 'multiple_choice' }]);
+            setItems([...items, { 
+                format: 'multiple_choice', 
+                text: '', 
+                points: 1, 
+                options: ['', '', '', ''], 
+                correctIndex: 0,
+                correctAnswer: '' 
+            }]);
         }
+    };
+
+    const updateItem = (index, field, value) => {
+        const updated = [...items];
+        updated[index][field] = value;
+        setItems(updated);
+    };
+
+    const updateOption = (itemIndex, optionIndex, value) => {
+        const updated = [...items];
+        updated[itemIndex].options[optionIndex] = value;
+        setItems(updated);
     };
 
     const removeItem = (index) => {
-        if (items.length > 1) {
-            const newItems = [...items];
-            newItems.splice(index, 1);
-            setItems(newItems);
-        } else {
-            toastError("You must have at least one item.");
-        }
+        if (items.length === 1) return toastError('You must have at least one item.');
+        const updated = items.filter((_, i) => i !== index);
+        setItems(updated);
     };
 
-const handleSave = async () => {
+    const handleSave = async () => {
         if (!title.trim()) return toastError("Please enter a title.");
         
-        const isValid = items.every(item => 
-            type === 'flashcard' ? (item.front.trim() && item.back.trim()) : (item.text.trim() && item.options.every(o => o.trim()))
-        );
-        
-        if (!isValid) return toastError("Please fill in all fields for every item.");
-        if (!userId) return toastError("User not found. Please log in again.");
-
-        setLoading(true);
+        for (let i = 0; i < items.length; i++) {
+            if (!items[i].text.trim()) return toastError(`Item ${i + 1} is missing a question/term.`);
+            
+            if (type === 'flashcard') {
+                if (!items[i].answer.trim()) return toastError(`Flashcard ${i + 1} is missing a definition.`);
+            } else {
+                const fmt = items[i].format;
+                if (fmt === 'multiple_choice') {
+                    for (let j = 0; j < 4; j++) {
+                        if (!items[i].options[j].trim()) return toastError(`Question ${i + 1} is missing an option.`);
+                    }
+                } else if (fmt === 'true_false') {
+                    if (!items[i].correctAnswer) return toastError(`Question ${i + 1} is missing a True/False selection.`);
+                } else if (fmt === 'identification' || fmt === 'written') {
+                    if (!items[i].correctAnswer?.trim()) return toastError(`Question ${i + 1} is missing a correct answer.`);
+                }
+            }
+        }
 
         try {
-            // Setup immediate availability and a far-future deadline for practice
-            const now = new Date();
-            const futureDeadline = new Date();
-            futureDeadline.setFullYear(now.getFullYear() + 5);
-
-            // Build the payload exactly as the backend expects it
+            setLoading(true);
+            
             const payload = {
-                title: title.trim(),
-                quizType: type, // 'flashcard' or 'test'
-                deliveryMode: 'internal',
-                createdBy: userId, // Link it to the student so they own it
-                allowRetakes: true,
-                maxRetakes: 20, // Simulates unlimited practice retakes
-                availableAt: now.toISOString(),         // REQUIRED BY BACKEND
-                deadlineAt: futureDeadline.toISOString(), // REQUIRED BY BACKEND
-                closeOnDeadline: false,
+                title,
+                // THE ROOT FIX: Schema only allows 'test' or 'flashcard'
+                quizType: type === 'flashcard' ? 'flashcard' : 'test', 
+                
+                isPracticeOnly: true,
+                status: 'published',
+                deliveryMode: 'internal', 
+                createdBy: user?._id,
+                
+                availableAt: new Date().toISOString(),
+                deadlineAt: new Date(Date.now() + 31536000000).toISOString(), 
+                assignToAll: false,
+                targetSections: [],
+                excludedStudentIds: [], // matches schema
+                targetStudentIds: [],   // matches schema
+                closeOnDeadline: false, // matches schema
+                allowRetakes: true,     // matches schema
+                maxRetakes: 20,         // max allowed in schema
                 timer: { enabled: false, minutes: null },
-                questions: type === 'test' ? items.map(q => ({
-                    format: q.format || 'multiple_choice',
-                    text: q.text,
-                    points: 1,
-                    options: q.options,
-                    correctIndex: q.correctIndex
-                })) : [],
-                flashcards: type === 'flashcard' ? items.map(f => ({
-                    front: f.front,
-                    back: f.back
-                })) : []
+
+                questions: [],
+                flashcards: []
             };
 
+            if (type === 'flashcard') {
+                payload.flashcards = items.map(item => ({
+                    front: item.text,
+                    back: item.answer
+                }));
+            } else {
+                // EXACT SCHEMA MAPPING FOR QUESTIONS
+                payload.questions = items.map(item => {
+                    const baseQ = {
+                        format: item.format,
+                        text: item.text,             
+                        points: 1
+                    };
+
+                    if (item.format === 'multiple_choice') {
+                        baseQ.options = item.options;
+                        baseQ.correctIndex = item.correctIndex;
+                    } else if (item.format === 'true_false') {
+                        baseQ.options = ['True', 'False'];
+                        baseQ.correctIndex = item.correctAnswer === 'True' ? 0 : 1;
+                    } else if (item.format === 'identification' || item.format === 'written') {
+                        // Schema uses acceptedAnswers array, not a string!
+                        baseQ.acceptedAnswers = [item.correctAnswer.trim()];
+                    }
+
+                    return baseQ;
+                });
+            }
+
             await api.post('/assessments', payload);
-            
-            toastSuccess(`Practice ${type === 'flashcard' ? 'deck' : 'test'} successfully saved!`);
+            toastSuccess('Practice set created successfully!');
             navigation.goBack();
-        } catch (err) {
-            console.log("Save error:", err.response?.data || err.message);
-            toastError(err.response?.data?.message || "Failed to save to server.");
+
+        } catch (error) {
+            console.error('Create Practice API Error:', error?.response?.data || error.message);
+            toastError(error?.response?.data?.message || 'Failed to create practice test.');
         } finally {
             setLoading(false);
         }
     };
 
     return (
-        <View style={{ flex: 1, backgroundColor: theme.bg }}>
-            <StatusBar barStyle="dark-content" />
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1, backgroundColor: theme?.bg || '#F4F7F6' }}>
+            <StatusBar barStyle="light-content" />
             
-            <View style={[localStyles.header, { backgroundColor: theme.card }]}>
+            <View style={localStyles.header}>
                 <TouchableOpacity onPress={() => navigation.goBack()} style={localStyles.iconBtn}>
-                    <Ionicons name="close" size={24} color={theme.text} />
+                    <Ionicons name="close" size={24} color="#FFF" />
                 </TouchableOpacity>
-                <Text style={[localStyles.headerTitle, { color: theme.text }]}>New {type === 'flashcard' ? 'Flash Deck' : 'Practice Test'}</Text>
-                <TouchableOpacity onPress={handleSave} disabled={loading} style={localStyles.saveBtn}>
-                    {loading ? <ActivityIndicator color="#153c2a" size="small" /> : <Text style={localStyles.saveText}>Save</Text>}
+                
+                <View style={localStyles.headerTitleContainer}>
+                    <Text style={localStyles.headerTitle}>
+                        CREATE {type === 'flashcard' ? 'FLASHCARDS' : 'PRACTICE TEST'}
+                    </Text>
+                </View>
+
+                <TouchableOpacity 
+                    onPress={handleSave} 
+                    style={[localStyles.saveBtn, { minWidth: 75, alignItems: 'center' }]} 
+                    disabled={loading}
+                >
+                    <Text style={localStyles.saveText}>
+                        {loading ? 'Saving...' : 'Save'}
+                    </Text>
                 </TouchableOpacity>
             </View>
 
-            <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 100 }} keyboardShouldPersistTaps="handled">
-                <Text style={localStyles.label}>Title / Topic</Text>
-                <View style={[localStyles.inputWrapper, { backgroundColor: theme.card }]}>
-                    <TextInput 
-                        style={[localStyles.input, { color: theme.text }]} 
-                        placeholder={`e.g. Fungal Anatomy ${type === 'flashcard' ? 'Deck' : 'Quiz'}`}
+            <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
+                
+                <Text style={localStyles.label}>Practice Set Title</Text>
+                <View style={[localStyles.inputWrapper, { backgroundColor: theme?.card || '#FFF', marginBottom: 25 }]}>
+                    <TextInput
+                        placeholder={type === 'flashcard' ? "e.g., Biology Terms - Chapter 1" : "e.g., Midterm Review Quiz"}
                         placeholderTextColor="#94A3B8"
+                        style={[localStyles.input, { color: theme?.text || '#1E293B' }]}
                         value={title}
                         onChangeText={setTitle}
                     />
                 </View>
 
-                <View style={{ marginTop: 25 }}>
-                    {items.map((item, index) => (
-                        <View key={index} style={[localStyles.itemCard, { backgroundColor: theme.card }]}>
-                            <View style={localStyles.itemHeader}>
-                                <View style={localStyles.badge}>
-                                    <Text style={localStyles.badgeText}>{type === 'flashcard' ? 'CARD' : 'QUESTION'} {index + 1}</Text>
-                                </View>
-                                <TouchableOpacity onPress={() => removeItem(index)} style={localStyles.deleteBtn}>
-                                    <Ionicons name="trash-outline" size={18} color="#EF4444" />
-                                </TouchableOpacity>
+                {items.map((item, index) => (
+                    <View key={index} style={[localStyles.itemCard, { backgroundColor: theme?.card || '#FFF' }]}>
+                        <View style={localStyles.itemHeader}>
+                            <View style={localStyles.badge}>
+                                <Text style={localStyles.badgeText}>
+                                    {type === 'flashcard' ? `CARD ${index + 1}` : `QUESTION ${index + 1}`}
+                                </Text>
                             </View>
-
-                            {type === 'flashcard' ? (
-                                <>
-                                    <Text style={localStyles.subLabel}>Front (Term)</Text>
-                                    <TextInput 
-                                        style={[localStyles.fieldInput, { color: theme.text, backgroundColor: theme.bg }]} 
-                                        placeholder="Enter the term or question" 
-                                        placeholderTextColor="#94A3B8"
-                                        value={item.front}
-                                        onChangeText={(val) => {
-                                            const newItems = [...items];
-                                            newItems[index].front = val;
-                                            setItems(newItems);
-                                        }}
-                                    />
-                                    <Text style={[localStyles.subLabel, { marginTop: 15 }]}>Back (Definition)</Text>
-                                    <TextInput 
-                                        style={[localStyles.fieldInput, { color: theme.text, backgroundColor: theme.bg, minHeight: 80 }]} 
-                                        placeholder="Enter the definition or answer" 
-                                        placeholderTextColor="#94A3B8"
-                                        multiline
-                                        textAlignVertical="top"
-                                        value={item.back}
-                                        onChangeText={(val) => {
-                                            const newItems = [...items];
-                                            newItems[index].back = val;
-                                            setItems(newItems);
-                                        }}
-                                    />
-                                </>
-                            ) : (
-                                <>
-                                    <Text style={localStyles.subLabel}>Question</Text>
-                                    <TextInput 
-                                        style={[localStyles.fieldInput, { color: theme.text, backgroundColor: theme.bg, fontWeight: 'bold' }]} 
-                                        placeholder="Enter the question" 
-                                        placeholderTextColor="#94A3B8"
-                                        value={item.text}
-                                        onChangeText={(val) => {
-                                            const newItems = [...items];
-                                            newItems[index].text = val;
-                                            setItems(newItems);
-                                        }}
-                                    />
-                                    
-                                    <Text style={[localStyles.subLabel, { marginTop: 15, marginBottom: 10 }]}>Options & Correct Answer</Text>
-                                    {item.options.map((opt, optIdx) => (
-                                        <View key={optIdx} style={localStyles.optionRow}>
-                                            <TouchableOpacity 
-                                                style={[localStyles.radioBtn, item.correctIndex === optIdx && localStyles.radioActive]}
-                                                onPress={() => {
-                                                    const newItems = [...items];
-                                                    newItems[index].correctIndex = optIdx;
-                                                    setItems(newItems);
-                                                }}
-                                            >
-                                                <Ionicons 
-                                                    name={item.correctIndex === optIdx ? "checkmark" : "ellipse-outline"} 
-                                                    size={16} color={item.correctIndex === optIdx ? "#fff" : "#94A3B8"} 
-                                                />
-                                            </TouchableOpacity>
-                                            <TextInput 
-                                                style={[localStyles.optInput, { backgroundColor: theme.bg, color: theme.text, borderColor: item.correctIndex === optIdx ? '#10B981' : 'transparent' }]} 
-                                                placeholder={`Option ${String.fromCharCode(65 + optIdx)}`}
-                                                placeholderTextColor="#94A3B8"
-                                                value={opt}
-                                                onChangeText={(val) => {
-                                                    const newItems = [...items];
-                                                    newItems[index].options[optIdx] = val;
-                                                    setItems(newItems);
-                                                }}
-                                            />
-                                        </View>
-                                    ))}
-                                </>
-                            )}
+                            <TouchableOpacity onPress={() => removeItem(index)} style={localStyles.deleteBtn}>
+                                <Ionicons name="trash" size={16} color="#EF4444" />
+                            </TouchableOpacity>
                         </View>
-                    ))}
-                </View>
 
-                <TouchableOpacity style={[localStyles.addBtn, { backgroundColor: theme.card }]} onPress={addItem}>
-                    <Ionicons name="add" size={20} color="#153c2a" />
-                    <Text style={localStyles.addBtnText}>Add Another Item</Text>
+                        {/* Format Selector for Assessments */}
+                        {type !== 'flashcard' && (
+                            <>
+                                <Text style={localStyles.subLabel}>Question Format</Text>
+                                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 15 }}>
+                                    {QUESTION_FORMATS.map(fmt => {
+                                        const isSelected = item.format === fmt.value;
+                                        return (
+                                            <TouchableOpacity
+                                                key={fmt.value}
+                                                style={[localStyles.formatChip, isSelected && localStyles.formatChipActive]}
+                                                onPress={() => updateItem(index, 'format', fmt.value)}
+                                            >
+                                                <Text style={[localStyles.formatChipText, isSelected && localStyles.formatChipTextActive]}>
+                                                    {fmt.label}
+                                                </Text>
+                                            </TouchableOpacity>
+                                        );
+                                    })}
+                                </ScrollView>
+                            </>
+                        )}
+
+                        <Text style={localStyles.subLabel}>{type === 'flashcard' ? 'Term' : 'Question'}</Text>
+                        <TextInput
+                            placeholder={type === 'flashcard' ? "Enter term here..." : "Enter question here..."}
+                            placeholderTextColor="#CBD5E1"
+                            style={[localStyles.fieldInput, { color: theme?.text || '#1E293B', marginBottom: 15, backgroundColor: theme?.bg || '#F8FAFC' }]}
+                            value={item.text}
+                            onChangeText={(val) => updateItem(index, 'text', val)}
+                            multiline
+                        />
+
+                        {type === 'flashcard' ? (
+                            <>
+                                <Text style={localStyles.subLabel}>Definition</Text>
+                                <TextInput
+                                    placeholder="Enter definition here..."
+                                    placeholderTextColor="#CBD5E1"
+                                    style={[localStyles.fieldInput, { color: theme?.text || '#1E293B', backgroundColor: theme?.bg || '#F8FAFC', minHeight: 80, textAlignVertical: 'top' }]}
+                                    value={item.answer}
+                                    onChangeText={(val) => updateItem(index, 'answer', val)}
+                                    multiline
+                                />
+                            </>
+                        ) : item.format === 'multiple_choice' ? (
+                            <>
+                                <Text style={localStyles.subLabel}>Answer Options (Select the correct one)</Text>
+                                {item.options.map((opt, optIdx) => (
+                                    <View key={optIdx} style={localStyles.optionRow}>
+                                        <TouchableOpacity 
+                                            style={[localStyles.radioBtn, item.correctIndex === optIdx && localStyles.radioActive]}
+                                            onPress={() => updateItem(index, 'correctIndex', optIdx)}
+                                        >
+                                            {item.correctIndex === optIdx && <Ionicons name="checkmark" size={16} color="#FFF" />}
+                                        </TouchableOpacity>
+                                        <TextInput
+                                            placeholder={`Option ${optIdx + 1}`}
+                                            placeholderTextColor="#CBD5E1"
+                                            style={[localStyles.optInput, { color: theme?.text || '#1E293B', backgroundColor: theme?.bg || '#F8FAFC', borderColor: item.correctIndex === optIdx ? '#10B981' : '#F1F5F9' }]}
+                                            value={opt}
+                                            onChangeText={(val) => updateOption(index, optIdx, val)}
+                                        />
+                                    </View>
+                                ))}
+                            </>
+                        ) : item.format === 'true_false' ? (
+                            <>
+                                <Text style={localStyles.subLabel}>Select Correct Answer</Text>
+                                <View style={{ flexDirection: 'row', gap: 10, marginBottom: 5 }}>
+                                    {['True', 'False'].map(opt => {
+                                        const isSelected = item.correctAnswer === opt;
+                                        return (
+                                            <TouchableOpacity
+                                                key={opt}
+                                                style={[
+                                                    localStyles.tfBtn,
+                                                    isSelected && { backgroundColor: '#10B981', borderColor: '#10B981' }
+                                                ]}
+                                                onPress={() => updateItem(index, 'correctAnswer', opt)}
+                                            >
+                                                <Text style={[localStyles.tfBtnText, isSelected && { color: '#FFF' }]}>{opt}</Text>
+                                            </TouchableOpacity>
+                                        )
+                                    })}
+                                </View>
+                            </>
+                        ) : (
+                            <>
+                                <Text style={localStyles.subLabel}>Correct Answer</Text>
+                                <TextInput
+                                    placeholder={item.format === 'identification' ? "Enter exact answer..." : "Enter expected answer..."}
+                                    placeholderTextColor="#CBD5E1"
+                                    style={[localStyles.fieldInput, { color: theme?.text || '#1E293B', backgroundColor: theme?.bg || '#F8FAFC', minHeight: item.format === 'written' ? 80 : undefined, textAlignVertical: item.format === 'written' ? 'top' : 'center' }]}
+                                    value={item.correctAnswer || ''}
+                                    onChangeText={(val) => updateItem(index, 'correctAnswer', val)}
+                                    multiline={item.format === 'written'}
+                                />
+                            </>
+                        )}
+                    </View>
+                ))}
+
+                <TouchableOpacity onPress={addNewItem} style={localStyles.addBtn}>
+                    <Ionicons name="add-circle" size={24} color="#153c2a" />
+                    <Text style={localStyles.addBtnText}>
+                        {type === 'flashcard' ? 'Add New Card' : 'Add New Question'}
+                    </Text>
                 </TouchableOpacity>
+
             </ScrollView>
-        </View>
+        </KeyboardAvoidingView>
     );
 }
 
 const localStyles = StyleSheet.create({
-    header: { paddingHorizontal: 20, paddingTop: Platform.OS === 'ios' ? 60 : 40, paddingBottom: 15, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', elevation: 2, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 5 },
+    header: { 
+        backgroundColor: '#153c2a', 
+        paddingTop: Platform.OS === 'ios' ? 60 : 40, 
+        paddingBottom: 20, 
+        paddingHorizontal: 20, 
+        borderBottomLeftRadius: 25, 
+        borderBottomRightRadius: 25, 
+        flexDirection: 'row', 
+        justifyContent: 'space-between', 
+        alignItems: 'center', 
+        elevation: 4, 
+        shadowColor: '#000', 
+        shadowOpacity: 0.1, 
+        shadowRadius: 8 
+    },
     iconBtn: { padding: 5 },
-    headerTitle: { fontSize: 16, fontWeight: '900' },
+    headerTitleContainer: { flex: 1, alignItems: 'center', paddingHorizontal: 10 },
+    headerTitle: { fontSize: 15, fontWeight: '900', color: '#FFF', textAlign: 'center', letterSpacing: 0.5 },
     saveBtn: { backgroundColor: '#E7F5EE', paddingHorizontal: 15, paddingVertical: 8, borderRadius: 12 },
     saveText: { color: '#153c2a', fontWeight: '900', fontSize: 13 },
-    label: { fontSize: 12, fontWeight: '900', color: '#94A3B8', marginBottom: 8, letterSpacing: 1, textTransform: 'uppercase' },
+    label: { fontSize: 12, fontWeight: '900', color: '#94A3B8', marginBottom: 8, letterSpacing: 1, textTransform: 'uppercase', marginTop: 10 },
     inputWrapper: { borderRadius: 16, elevation: 1, shadowColor: '#000', shadowOpacity: 0.03, shadowRadius: 5 },
     input: { paddingHorizontal: 20, height: 55, fontSize: 16, fontWeight: '600' },
     itemCard: { padding: 20, borderRadius: 20, marginBottom: 20, elevation: 2, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 8 },
@@ -241,9 +358,15 @@ const localStyles = StyleSheet.create({
     subLabel: { fontSize: 11, fontWeight: '800', color: '#64748B', marginBottom: 6 },
     fieldInput: { borderRadius: 12, paddingHorizontal: 15, paddingVertical: 12, fontSize: 14, fontWeight: '600', borderWidth: 1, borderColor: '#F1F5F9' },
     optionRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
-    radioBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+    radioBtn: { width: 28, height: 28, borderRadius: 8, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
     radioActive: { backgroundColor: '#10B981' },
     optInput: { flex: 1, borderRadius: 12, paddingHorizontal: 15, height: 45, fontSize: 14, fontWeight: '500', borderWidth: 1 },
     addBtn: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', padding: 18, borderRadius: 16, borderWidth: 1.5, borderColor: '#153c2a', borderStyle: 'dashed' },
-    addBtnText: { marginLeft: 8, fontWeight: '900', color: '#153c2a', fontSize: 14 }
+    addBtnText: { marginLeft: 8, fontWeight: '900', color: '#153c2a', fontSize: 14 },
+    formatChip: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: '#F1F5F9', marginRight: 10, borderWidth: 1, borderColor: '#E2E8F0' },
+    formatChipActive: { backgroundColor: '#153c2a', borderColor: '#153c2a' },
+    formatChipText: { fontSize: 12, fontWeight: '700', color: '#64748B' },
+    formatChipTextActive: { color: '#FFF' },
+    tfBtn: { flex: 1, paddingVertical: 12, borderRadius: 12, borderWidth: 1.5, borderColor: '#E2E8F0', alignItems: 'center', backgroundColor: '#F8FAFC' },
+    tfBtnText: { fontSize: 14, fontWeight: '800', color: '#64748B' }
 });

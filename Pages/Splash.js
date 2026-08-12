@@ -28,15 +28,7 @@ export default function Splash({ navigation }) {
 
         const init = async () => {
             await new Promise(res => setTimeout(res, 1500));
-
-            const onboardingCompleted =
-                await AsyncStorage.getItem('onboardingCompleted');
-
-            if (onboardingCompleted === 'true') {
                 navigation.replace('Login');
-            } else {
-                navigation.replace('Onboarding');
-            }
         };
 
         init();
