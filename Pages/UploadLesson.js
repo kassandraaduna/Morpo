@@ -133,7 +133,7 @@ return (
         <View style={[localStyles.header, { backgroundColor: '#153c2a' }]}>
           <View style={localStyles.headerRow}>
             <TouchableOpacity onPress={() => navigation.goBack()} style={{justifyContent: 'center' }}>
-              <Ionicons name="arrow-back" size={28} color="#fff" />
+              <Ionicons name="arrow-back" size={25} color="#fff" />
             </TouchableOpacity>
             <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
               <Text style={localStyles.title}>
@@ -193,25 +193,25 @@ const localStyles = StyleSheet.create({
     paddingHorizontal: 20, 
     paddingTop: Platform.OS === 'ios' ? 60 : 40, 
     paddingBottom: 25, 
-    borderBottomLeftRadius: 30, 
-    borderBottomRightRadius: 30 
+    borderBottomLeftRadius: 10, 
+    borderBottomRightRadius: 10 
   },
   headerRow: { flexDirection: 'row', alignItems: 'center' },
-  title: { fontSize: 22, fontWeight: '900', color: '#fff', marginTop: 20 },
+  title: { fontSize: 25, fontWeight: '900', color: '#fff', marginTop: 20 },
   subtitle: { fontSize: 13, color: '#d1fae5', marginTop: 2 },
   card: { 
     padding: 25, 
-    borderRadius: 24, 
+    borderRadius: 10, 
     elevation: 4, 
     shadowColor: '#000', 
     shadowOpacity: 0.05, 
     shadowRadius: 10 
   },
-  label: { fontSize: 11, fontWeight: '800', marginBottom: 8, letterSpacing: 1, marginTop: 5 },
-  input: { padding: 15, borderRadius: 14, fontSize: 15, fontWeight: '600', elevation: 1, shadowColor: '#000', shadowOpacity: 0.02, shadowRadius: 5 },
-  dropZone: { width: '100%', height: 150, borderRadius: 20, borderStyle: 'dashed', borderWidth: 2, justifyContent: 'center', alignItems: 'center', marginTop: 10 },
+  label: { fontSize: 13, fontWeight: '800', marginBottom: 8, letterSpacing: 1, marginTop: 5 },
+  input: { padding: 15, borderRadius: 10, fontSize: 15, fontWeight: '600', elevation: 1, shadowColor: '#000', shadowOpacity: 0.02, shadowRadius: 5 },
+  dropZone: { width: '100%', height: 150, borderRadius: 10, borderStyle: 'dashed', borderWidth: 2, justifyContent: 'center', alignItems: 'center', marginTop: 10 },
   dropText: { fontWeight: 'bold', marginTop: 10, textAlign: 'center', paddingHorizontal: 20 },
   switchRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 30 },
-  uploadBtn: { backgroundColor: '#153c2a', height: 55, borderRadius: 15, marginTop: 40, justifyContent: 'center', alignItems: 'center', elevation: 4 },
+  uploadBtn: { backgroundColor: '#153c2a', height: 55, borderRadius: 10, marginTop: 40, justifyContent: 'center', alignItems: 'center', elevation: 4 },
   uploadBtnText: { color: '#fff', fontWeight: 'bold', letterSpacing: 1 }
 });

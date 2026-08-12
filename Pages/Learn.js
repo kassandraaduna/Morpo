@@ -61,6 +61,8 @@ export default function Learn({ navigation, route }) {
 
     const [showAssessmentMenu, setShowAssessmentMenu] = useState(false);
 
+    const [itemToArchive, setItemToArchive] = useState({ id: null, type: null });
+
     const fetchData = async () => {
         try {
             setLoading(true);
@@ -243,75 +245,34 @@ export default function Learn({ navigation, route }) {
         }
     };
 
-    const handleArchiveLesson = async (id) => {
-        Alert.alert("Archive Lesson", "Move this to your archive list?", [
-        { text: "Cancel", style: "cancel" },
-        { text: "Archive", onPress: async () => {
-            try {
-                await api.put(`/lessons/${id}`, { 
+ const triggerArchiveLesson = (id) => {
+    setItemToArchive({ id, type: 'lesson' });
+    setArchiveModalVisible(true);
+};
+
+const triggerArchiveAssessment = (id) => {
+    setItemToArchive({ id, type: 'assessment' });
+    setArchiveModalVisible(true);
+};
+
+const confirmArchive = async () => {
+    setArchiveModalVisible(false);
+    try {
+        if (itemToArchive.type === 'lesson') {
+            await api.put(`/lessons/${itemToArchive.id}`, { 
                 isArchived: true, 
                 modifiedBy: user?._id 
-                });
-                toastSuccess("Moved to Archive");
-                fetchData();
-            } catch (e) {
-                toastError("Archive failed");
-            }
-        }}
-        ]);
-    };
-
-    const handleArchivePress = (id) => {
-        setLessonToArchive(id);
-        setArchiveModalVisible(true);
-    };
-
-    const confirmArchive = async () => {
-        setArchiveModalVisible(false);
-        try {
-            const formData = new FormData();
-            formData.append('isArchived', 'true');
-            if (user?._id) formData.append('modifiedBy', String(user._id));
-
-            await api.put(`/lessons/${lessonToArchive}`, formData, {
-                headers: { 'Content-Type': 'multipart/form-data' }
             });
-            
-            toastSuccess("Moved to Archive");
-            fetchData(); 
-        } catch (e) {
-            console.error("Archive error:", e.response?.data || e.message);
-            toastError("Archive failed");
+            toastSuccess("Lesson moved to archive");
+        } else if (itemToArchive.type === 'assessment') {
+            await api.put(`/assessments/${itemToArchive.id}/archive`);
+            toastSuccess("Assessment moved to archive");
         }
-    };
-
-    const handleEditAssessment = (assessment) => {
-        toastError("Edit Assessment screen is under construction!");
-    };
-
-    const confirmArchiveAssessment = (assessment) => {
-        Alert.alert(
-        "Archive Assessment",
-        `Are you sure you want to move "${assessment.title}" to your archives?`,
-        [
-            { text: "Cancel", style: "cancel" },
-            {
-            text: "Archive",
-            style: "destructive",
-            onPress: async () => {
-                try {
-                await api.put(`/assessments/${assessment._id}/archive`);
-                toastSuccess("Assessment archived successfully.");
-                
-                fetchData();
-                } catch (e) {
-                toastError("Failed to archive assessment.");
-                }
-            },
-            },
-        ]
-        );
-    };
+        fetchData(); // Refreshes your list
+    } catch (e) {
+        toastError("Archive failed");
+    }
+};
 
     const renderLessonItem = ({ item }) => {
         const isRemedial = activeTab === 'Remedial Lessons';
@@ -342,7 +303,7 @@ export default function Learn({ navigation, route }) {
                         <TouchableOpacity style={localStyles.actionIconBtn} onPress={() => navigation.navigate('UploadLesson', { lesson: item })}>
                             <Ionicons name="pencil" size={20} color="#3B82F6" />
                         </TouchableOpacity>
-                        <TouchableOpacity style={localStyles.actionIconBtn} onPress={() => handleArchivePress(item._id || item.id)}>
+                        <TouchableOpacity style={localStyles.actionIconBtn} onPress={() => triggerArchiveLesson(item._id || item.id)}>
                             <Ionicons name="archive" size={20} color="#ff8800" />
                         </TouchableOpacity>
                     </View>
@@ -402,14 +363,14 @@ export default function Learn({ navigation, route }) {
                             style={localStyles.actionBtn}
                             onPress={() => handleEditAssessment(item)}
                         >
-                            <Ionicons name="create-outline" size={18} color="#10B981" />
+                            <Ionicons name="pencil" size={20} color="#3B82F6" />
                         </TouchableOpacity>
 
                         <TouchableOpacity
-                            style={[localStyles.actionBtn, { backgroundColor: '#FEE2E2', marginLeft: 8 }]}
-                            onPress={() => confirmArchiveAssessment(item)}
+                            style={[localStyles.actionBtn, {marginLeft: 8 }]}
+                            onPress={() => triggerArchiveAssessment(item)}
                         >
-                            <Ionicons name="archive-outline" size={18} color="#EF4444" />
+                            <Ionicons name="archive" size={20} color="#ff8800" />
                         </TouchableOpacity>
                     </View>
                 ) : (
@@ -636,6 +597,17 @@ export default function Learn({ navigation, route }) {
                             <Text style={[localStyles.modalOptionText, { marginLeft: 15 }]}>Archives</Text>
                         </TouchableOpacity>
 
+                        {/* Assessment Drafts Menu Button */}
+                        <TouchableOpacity
+                        style={localStyles.modalOptionBtn}
+                        onPress={() => {
+                            setShowInstructorMenu(false);
+                            navigation.navigate('DraftAssessments');
+                        }}>
+                            <Ionicons name="document-text" size={24} color="#153c2a" />
+                            <Text style={[localStyles.modalOptionText, { marginLeft: 15 }]}>Assessment Drafts</Text>
+                        </TouchableOpacity>
+
                         {/* --- 1. LESSON OPTION --- */}
                         <TouchableOpacity
                             style={localStyles.modalOptionBtn}
@@ -644,8 +616,8 @@ export default function Learn({ navigation, route }) {
                                 navigation.navigate('UploadLesson');
                             }}
                         >
-                            <Ionicons name="document-text" size={24} color="#153c2a" />
-                            <Text style={[localStyles.modalOptionText, { marginLeft: 15 }]}>Upload Lesson</Text>
+                            <Ionicons name="book" size={24} color="#153c2a" />
+                            <Text style={[localStyles.modalOptionText, { marginLeft: 15 }]}>Upload New Lesson File</Text>
                         </TouchableOpacity>
 
                         {/* --- 2. ASSESSMENT OPTIONS --- */}
@@ -657,7 +629,7 @@ export default function Learn({ navigation, route }) {
                             }}
                         >
                             <Ionicons name="create" size={24} color="#153c2a" />
-                            <Text style={[localStyles.modalOptionText, { marginLeft: 15 }]}>Create Manual Assessment</Text>
+                            <Text style={[localStyles.modalOptionText, { marginLeft: 15 }]}>Create Assessment Manually</Text>
                         </TouchableOpacity>
 
                         <TouchableOpacity
@@ -668,7 +640,7 @@ export default function Learn({ navigation, route }) {
                             }}
                         >
                             <Ionicons name="link" size={24} color="#153c2a" />
-                            <Text style={[localStyles.modalOptionText, { marginLeft: 15 }]}>Add Link Assessment</Text>
+                            <Text style={[localStyles.modalOptionText, { marginLeft: 15 }]}>Add Link to Assessment</Text>
                         </TouchableOpacity>
 
                         <TouchableOpacity
@@ -679,7 +651,7 @@ export default function Learn({ navigation, route }) {
                             }}
                         >
                             <Ionicons name="sparkles" size={24} color="#153c2a" />
-                            <Text style={[localStyles.modalOptionText, { marginLeft: 15 }]}>Auto Generate with MyphoAI</Text>
+                            <Text style={[localStyles.modalOptionText, { marginLeft: 15 }]}>Auto Generate Assessment with MyphoAI</Text>
                         </TouchableOpacity>
 
                         {/* --- CANCEL BUTTON --- */}

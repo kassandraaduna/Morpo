@@ -1,95 +1,467 @@
-import React, { useState, useContext } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
-import api from './src/services/api';
-import { ThemeContext } from './src/context/ThemeContext';
-import { toastSuccess, toastError } from './src/components/ToastMsg';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import React, { useState, useContext, useEffect } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  ScrollView,
+  ActivityIndicator,
+  Modal,
+  KeyboardAvoidingView,
+  Platform,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import api from '../Pages/src/services/api';
+import { ThemeContext } from '../Pages/src/context/ThemeContext';
+import { toastSuccess, toastError } from '../Pages/src/components/ToastMsg';
+import AssessmentSettings from './AssessmentSettings';
+import StudentViewModal from './StudentViewModal';
 
-export default function CreateAssessmentManual({ navigation }) {
-    const { theme } = useContext(ThemeContext);
-    const [title, setTitle] = useState('');
-    const [deadline, setDeadline] = useState('');
-    const [questions, setQuestions] = useState([{ text: '', options: ['', '', '', ''], correctIndex: 0 }]);
-    const [loading, setLoading] = useState(false);
+export default function CreateAssessmentManual({ navigation, route }) {
+  const { theme } = useContext(ThemeContext);
+  const [title, setTitle] = useState('');
+  const [timer, setTimer] = useState('');
+  const [questions, setQuestions] = useState([
+    {
+      format: 'multiple_choice',
+      text: '',
+      points: 1,
+      options: ['', '', '', ''],
+      correctIndex: 0,
+    },
+  ]);
+  const [loading, setLoading] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showStudentView, setShowStudentView] = useState(false);
 
-    const updateQuestion = (qIndex, field, value) => {
-        const updated = [...questions];
-        if (field === 'text') updated[qIndex].text = value;
-        if (field === 'correctIndex') updated[qIndex].correctIndex = value;
-        setQuestions(updated);
-    };
+  const [settings, setSettings] = useState({
+    timer: { enabled: false, minutes: 30 },
+    availableAt: null,
+    deadlineAt: null,
+    closeOnDeadline: false,
+    allowRetakes: true,
+    maxRetakes: 3,
+    targetYears: [],
+    targetSections: [],
+    excludedStudentIds: [],
+    isPracticeOnly: false,
+  });
 
-    const updateOption = (qIndex, optIndex, value) => {
-        const updated = [...questions];
-        updated[qIndex].options[optIndex] = value;
-        setQuestions(updated);
-    };
+  useEffect(() => {
+    if (route.params?.aiQuestions && route.params.aiQuestions.length > 0) {
+      const mappedQuestions = route.params.aiQuestions.map((q) => {
+        const text = q.question || q.text || '';
+        const options =
+          q.options && q.options.length > 0
+            ? q.options
+            : ['', '', '', ''];
 
-    const handleSave = async () => {
-        if (!title) return toastError("Title is required.");
-        try {
-            setLoading(true);
-            const userRaw = await AsyncStorage.getItem('user');
-            const user = JSON.parse(userRaw);
-
-            const payload = {
-                title,
-                deliveryMode: 'internal',
-                deadlineAt: deadline ? new Date(deadline).toISOString() : null,
-                instructorId: user._id || user.id,
-                questions
-            };
-
-            await api.post('/assessments', payload);
-            toastSuccess("Manual assessment created!");
-            navigation.goBack();
-        } catch (error) {
-            toastError("Failed to save assessment.");
-        } finally {
-            setLoading(false);
+        let correctIndex = 0;
+        if (q.answer) {
+          const found = options.findIndex((opt) => opt === q.answer);
+          if (found !== -1) correctIndex = found;
+        } else if (q.correctIndex !== undefined) {
+          correctIndex = q.correctIndex;
         }
-    };
 
-    return (
-        <ScrollView style={[styles.container, { backgroundColor: theme.bg }]} contentContainerStyle={{ padding: 20 }}>
-            <TextInput style={styles.input} placeholder="Assessment Title" value={title} onChangeText={setTitle} />
-            <TextInput style={styles.input} placeholder="Deadline (YYYY-MM-DD)" value={deadline} onChangeText={setDeadline} />
+        return {
+          format: 'multiple_choice',
+          text: text,
+          points: 1,
+          options: options,
+          correctIndex: correctIndex,
+        };
+      });
 
-            {questions.map((q, qIndex) => (
-                <View key={qIndex} style={styles.qCard}>
-                    <Text style={styles.qTitle}>Question {qIndex + 1}</Text>
-                    <TextInput style={styles.input} placeholder="Question Text" value={q.text} onChangeText={(val) => updateQuestion(qIndex, 'text', val)} />
-                    
-                    {q.options.map((opt, optIndex) => (
-                        <View key={optIndex} style={styles.optRow}>
-                            <TouchableOpacity onPress={() => updateQuestion(qIndex, 'correctIndex', optIndex)}>
-                                <Ionicons name={q.correctIndex === optIndex ? "radio-button-on" : "radio-button-off"} size={24} color={q.correctIndex === optIndex ? "#10B981" : "#94A3B8"} />
-                            </TouchableOpacity>
-                            <TextInput style={[styles.input, { flex: 1, marginLeft: 10, marginBottom: 0 }]} placeholder={`Option ${optIndex + 1}`} value={opt} onChangeText={(val) => updateOption(qIndex, optIndex, val)} />
-                        </View>
-                    ))}
-                </View>
+      setQuestions(mappedQuestions);
+      if (route.params?.aiTitle) setTitle(route.params.aiTitle);
+    }
+  }, [route.params?.aiQuestions]);
+
+  const addQuestion = () => {
+    setQuestions([
+      ...questions,
+      {
+        format: 'multiple_choice',
+        text: '',
+        points: 1,
+        options: ['', '', '', ''],
+        correctIndex: 0,
+      },
+    ]);
+  };
+
+  const updateQuestion = (index, field, value) => {
+    const updated = [...questions];
+    updated[index][field] = value;
+    setQuestions(updated);
+  };
+
+  // FIXED: Declared as handleSubmitAssessment and aliased to handleSave
+  const handleSubmitAssessment = async (status = 'published') => {
+    if (!title.trim()) {
+      return toastError('Please enter an assessment title.');
+    }
+    if (questions.length === 0) {
+      return toastError('Please add at least one question.');
+    }
+
+    // Strict validation before publishing
+    if (status === 'published') {
+      if (!settings.targetSections || settings.targetSections.length === 0) {
+        return toastError(
+          'Please assign at least one target section in Settings before publishing.'
+        );
+      }
+      if (!settings.availableAt) {
+        return toastError(
+          'Please set an available access date & time in Settings before publishing.'
+        );
+      }
+      if (!settings.deadlineAt) {
+        return toastError(
+          'Please set a submission due date & time in Settings before publishing.'
+        );
+      }
+    }
+
+    try {
+      setLoading(true);
+      const rawUser = await AsyncStorage.getItem('user');
+      const user = rawUser ? JSON.parse(rawUser) : null;
+
+      const payload = {
+        title: title.trim(),
+        deliveryMode: 'internal',
+        quizType: 'test',
+        status: status,
+        createdBy: user?._id || null, // Syncs with Instructor Web
+        timer: {
+          enabled: !!settings.timer?.enabled,
+          minutes: settings.timer?.enabled
+            ? Number(settings.timer?.minutes || 30)
+            : null,
+        },
+        questions: questions.map((q) => ({
+          format: q.format || 'multiple_choice',
+          text: String(q.text || '').trim(),
+          points: Number(q.points || 1),
+          options: (q.options || []).map((opt) => String(opt).trim()),
+          correctIndex: Number(q.correctIndex || 0),
+        })),
+        ...settings,
+        availableAt: settings.availableAt
+          ? new Date(settings.availableAt).toISOString()
+          : null,
+        deadlineAt: settings.deadlineAt
+          ? new Date(settings.deadlineAt).toISOString()
+          : null,
+      };
+
+      await api.post('/assessments', payload);
+      toastSuccess(
+        `Assessment ${status === 'draft' ? 'saved as draft' : 'published successfully'}!`
+      );
+      navigation.goBack();
+    } catch (error) {
+      toastError(
+        error?.response?.data?.message || 'Failed to save assessment.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSave = handleSubmitAssessment; // Alias to prevent ReferenceError
+
+  return (
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={styles.container}
+    >
+      {/* 1. HEADER WITH SETTINGS & STUDENT VIEW PILL */}
+      <View style={styles.header}>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={styles.backBtn}
+        >
+          <Ionicons name="arrow-back" size={24} color="#153c2a" />
+        </TouchableOpacity>
+
+        <Text style={styles.headerTitle}>Create Assessment</Text>
+
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <TouchableOpacity
+            style={styles.studentViewBtn}
+            onPress={() => setShowStudentView(true)}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="eye-outline" size={16} color="#153c2a" />
+            <Text style={styles.studentViewText}>Student View</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.settingsBtn}
+            onPress={() => setShowSettings(true)}
+          >
+            <Ionicons name="settings-sharp" size={20} color="#153c2a" />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <ScrollView
+        contentContainerStyle={{ flexGrow: 1, padding: 20, paddingBottom: 80 }}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.card}>
+          <Text style={styles.label}>Assessment Title</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="e.g. Midterm Quiz"
+            placeholderTextColor="#94A3B8"
+            value={title}
+            onChangeText={setTitle}
+          />
+        </View>
+
+        {questions.map((q, qIndex) => (
+          <View key={qIndex} style={styles.qCard}>
+            <View style={styles.qHeaderRow}>
+              <Text style={styles.qHeader}>Question {qIndex + 1}</Text>
+              {questions.length > 1 && (
+                <TouchableOpacity
+                  onPress={() =>
+                    setQuestions(questions.filter((_, i) => i !== qIndex))
+                  }
+                >
+                  <Ionicons name="trash-outline" size={20} color="#EF4444" />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            <TextInput
+              style={[styles.input, { marginBottom: 15, minHeight: 60 }]}
+              placeholder="Enter your question here..."
+              value={q.text}
+              onChangeText={(t) => updateQuestion(qIndex, 'text', t)}
+              multiline
+              placeholderTextColor="#94A3B8"
+            />
+
+            {q.options.map((opt, oIndex) => (
+              <View key={oIndex} style={styles.optRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.radio,
+                    q.correctIndex === oIndex && styles.radioActive,
+                  ]}
+                  onPress={() =>
+                    updateQuestion(qIndex, 'correctIndex', oIndex)
+                  }
+                >
+                  {q.correctIndex === oIndex && (
+                    <View style={styles.radioInner} />
+                  )}
+                </TouchableOpacity>
+                <TextInput
+                  style={[
+                    styles.input,
+                    { flex: 1, marginBottom: 0, marginLeft: 10, height: 48 },
+                  ]}
+                  placeholder={`Option ${oIndex + 1}`}
+                  value={opt}
+                  onChangeText={(t) => {
+                    const newOpts = [...q.options];
+                    newOpts[oIndex] = t;
+                    updateQuestion(qIndex, 'options', newOpts);
+                  }}
+                  placeholderTextColor="#94A3B8"
+                />
+              </View>
             ))}
+          </View>
+        ))}
 
-            <TouchableOpacity style={styles.addBtn} onPress={() => setQuestions([...questions, { text: '', options: ['', '', '', ''], correctIndex: 0 }])}>
-                <Text style={{ color: '#3B82F6', fontWeight: 'bold' }}>+ Add Question</Text>
-            </TouchableOpacity>
+        <TouchableOpacity style={styles.addBtn} onPress={addQuestion}>
+          <Ionicons
+            name="add-circle-outline"
+            size={20}
+            color="#153c2a"
+            style={{ marginRight: 8 }}
+          />
+          <Text style={styles.addBtnText}>Add Another Question</Text>
+        </TouchableOpacity>
 
-            <TouchableOpacity style={styles.saveBtn} onPress={handleSave} disabled={loading}>
-                {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Save Assessment</Text>}
-            </TouchableOpacity>
-        </ScrollView>
-    );
+        <TouchableOpacity
+          style={styles.publishBtn}
+          onPress={() => handleSubmitAssessment('published')}
+          disabled={loading}
+        >
+          {loading ? (
+            <ActivityIndicator color="#FFF" />
+          ) : (
+            <Text style={styles.btnText}>PUBLISH ASSESSMENT</Text>
+          )}
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.draftBtn}
+          onPress={() => handleSubmitAssessment('draft')}
+          disabled={loading}
+        >
+          <Text style={styles.draftBtnText}>Save as Draft</Text>
+        </TouchableOpacity>
+      </ScrollView>
+
+      <AssessmentSettings
+        isExternal={false}
+        visible={showSettings}
+        onClose={() => setShowSettings(false)}
+        settings={settings}
+        setSettings={setSettings}
+      />
+
+      <StudentViewModal
+        visible={showStudentView}
+        onClose={() => setShowStudentView(false)}
+        title={title}
+        questions={questions}
+        timer={settings.timer}
+      />
+    </KeyboardAvoidingView>
+  );
 }
 
 const styles = StyleSheet.create({
-    container: { flex: 1 },
-    input: { padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#E2E8F0', marginBottom: 10, backgroundColor: '#fff' },
-    qCard: { padding: 15, backgroundColor: '#F8FAFC', borderRadius: 12, marginBottom: 15, borderWidth: 1, borderColor: '#E2E8F0' },
-    qTitle: { fontWeight: 'bold', marginBottom: 10 },
-    optRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
-    addBtn: { padding: 15, alignItems: 'center', backgroundColor: '#EFF6FF', borderRadius: 10, marginBottom: 20 },
-    saveBtn: { backgroundColor: '#153c2a', padding: 15, borderRadius: 12, alignItems: 'center', marginBottom: 40 },
-    btnText: { color: '#fff', fontSize: 16, fontWeight: 'bold' }
+  container: { flex: 1 },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'ios' ? 60 : 40,
+    paddingBottom: 15,
+    backgroundColor: '#FFF',
+    elevation: 4,
+  },
+  backBtn: { padding: 5 },
+  settingsBtn: { padding: 5, backgroundColor: '#E7F5EE', borderRadius: 10 },
+  studentViewBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E7F5EE',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    gap: 4,
+  },
+  studentViewText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#153c2a',
+  },
+  headerTitle: { fontSize: 18, fontWeight: '900', color: '#153c2a' },
+  card: {
+    backgroundColor: '#FFF',
+    padding: 20,
+    borderRadius: 20,
+    elevation: 2,
+    marginBottom: 20,
+  },
+  label: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#64748B',
+    marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  input: {
+    padding: 15,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    fontSize: 15,
+    backgroundColor: '#F8FAFC',
+    color: '#000',
+    fontWeight: '600',
+  },
+  qCard: {
+    backgroundColor: '#FFF',
+    padding: 20,
+    borderRadius: 20,
+    marginBottom: 20,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+  },
+  qHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  qHeader: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#153c2a',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  optRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  radio: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#CBD5E1',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  radioActive: { borderColor: '#10B981' },
+  radioInner: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#10B981',
+  },
+  addBtn: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 18,
+    backgroundColor: '#E7F5EE',
+    borderRadius: 15,
+    marginBottom: 30,
+    borderWidth: 1,
+    borderColor: '#153c2a',
+    borderStyle: 'dashed',
+  },
+  addBtnText: { color: '#153c2a', fontWeight: '900', fontSize: 15 },
+  publishBtn: {
+    backgroundColor: '#153c2a',
+    padding: 16,
+    borderRadius: 15,
+    alignItems: 'center',
+    elevation: 4,
+  },
+  draftBtn: {
+    backgroundColor: '#F1F5F9',
+    padding: 16,
+    borderRadius: 15,
+    alignItems: 'center',
+    marginTop: 15,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  btnText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: 'bold',
+    letterSpacing: 1,
+  },
+  draftBtnText: { color: '#64748B', fontSize: 15, fontWeight: 'bold' },
 });

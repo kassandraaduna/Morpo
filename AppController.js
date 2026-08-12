@@ -33,6 +33,7 @@ import AssessmentWebViewer from './Pages/AssessmentWebViewer';
 import CreateAssessmentLink from './Pages/CreateAssessmentLink';
 import CreateAssessmentAI from './Pages/CreateAssessmentAI';
 import CreateAssessmentManual from './Pages/CreateAssessmentManual';
+import DraftAssessments from './Pages/DraftAssessments';
 
 const Stack = createStackNavigator();
 
@@ -105,10 +106,11 @@ export default function AppController() {
         <Stack.Screen name="DatasetLibrary" component={DatasetLibrary} options={{ headerShown: false }} />
         <Stack.Screen name="Notifications" component={Notifications} options={{ headerShown: false }} />
         <Stack.Screen name="AssessmentWebViewer" component={AssessmentWebViewer} options={{ headerShown: false }} />
-        <Stack.Screen name="CreateAssessmentLink" component={CreateAssessmentLink} options={{ headerShown: true, title: "Add Link" }} />
-        <Stack.Screen name="CreateAssessmentManual" component={CreateAssessmentManual} options={{ headerShown: true, title: "Manual Entry" }} />
-        <Stack.Screen name="CreateAssessmentAI" component={CreateAssessmentAI} options={{ headerShown: true, title: "AI Generator" }} />
-        </Stack.Navigator>
+        <Stack.Screen name="CreateAssessmentLink" component={CreateAssessmentLink} options={{ headerShown: false }} />
+        <Stack.Screen name="CreateAssessmentManual" component={CreateAssessmentManual} options={{ headerShown: false }} />
+        <Stack.Screen name="CreateAssessmentAI" component={CreateAssessmentAI} options={{ headerShown: false }} />
+        <Stack.Screen name="DraftAssessments" component={DraftAssessments} options={{ headerShown: false }} />
+      </Stack.Navigator>
     </NavigationContainer>
   );
 }
