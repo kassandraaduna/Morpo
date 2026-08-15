@@ -150,14 +150,14 @@ const fetchData = async () => {
                         <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
                             <Text style={localStyles.scoreLabel}>Latest Score</Text>
                             <Text style={[localStyles.scoreValue, { color: item.isCompleted ? (isPassing ? '#10B981' : '#EF4444') : theme.text }]}>
-                                {item.isCompleted ? `${lastScore}%` : 'Pending'}
+                                {item.isCompleted ? `${item.latestAttempt?.score || 0} / ${item.latestAttempt?.total || item.questions?.length || 0}` : 'Pending'}
                             </Text>
                         </View>
                         <View style={localStyles.progressBg}>
                             <View style={[localStyles.progressFill, { width: `${lastScore}%`, backgroundColor: isPassing ? '#10B981' : '#F59E0B' }]} />
                         </View>
                         <Text style={localStyles.scoreSub}>
-                            {item.isCompleted ? `${item.latestAttempt?.score || 0} / ${item.latestAttempt?.total || 0} correct answers` : 'Complete the assessment to view your score.'}
+                            {item.isCompleted ? `Grade: ${lastScore}%` : 'Complete the assessment to view your score.'}
                         </Text>
                     </View>
                 )}
@@ -197,8 +197,7 @@ const fetchData = async () => {
         );
     };
     
-const renderPracticeCard = ({ item }) => {
-        // Pull directly from the backend document metadata (synced with web attempts)
+    const renderPracticeCard = ({ item }) => {
         const latest = item.latestAttempt || null;
         const attemptsCount = item.attemptCount || 0;
         const typeLabel = item.quizType === 'flashcard' ? 'FLASH CARD' : 'PRACTICE TEST';
@@ -234,7 +233,7 @@ const renderPracticeCard = ({ item }) => {
                         </View>
                         <Text style={localStyles.scoreSub}>
                             {attemptsCount > 0 
-                                ? `${attemptsCount} Attempt${attemptsCount > 1 ? 's' : ''} Completed` 
+                                ? `${attemptsCount} Attempt${attemptsCount > 1 ? 's' : ''} Completed (${latest?.percent || 0}%)` 
                                 : 'Complete the practice test to view your score.'}
                         </Text>
                     </View>
@@ -261,7 +260,6 @@ const renderPracticeCard = ({ item }) => {
         );
     };
 
-    // FIX: New Sorting & Grouping function mapping to SectionList
     const getInstructorSections = () => {
         const now = new Date().getTime();
 

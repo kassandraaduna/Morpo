@@ -68,7 +68,9 @@ export default function AssessmentQuestionsView({ route, navigation }) {
           section: item.section,
           avatar: item.avatar,
           hasTaken: !!quizRecord,
-          score: quizRecord ? quizRecord.lastPercent : null,
+          percent: quizRecord ? quizRecord.lastPercent : null,
+          rawScore: quizRecord ? quizRecord.lastScore : 0,
+          totalItems: quizRecord ? quizRecord.lastTotal : (assessment.questions?.length || 0),
           attempts: quizRecord ? quizRecord.takeCount : 0, 
         };
       });
@@ -82,7 +84,7 @@ export default function AssessmentQuestionsView({ route, navigation }) {
   };
 
   const renderStudentItem = ({ item }) => {
-    const isPassing = item.score >= (assessment.passingScore || 70);
+    const isPassing = item.percent >= (assessment.passingScore || 70);
 
     return (
       <View style={[localStyles.studentCard, { backgroundColor: theme.card }]}>
@@ -109,12 +111,14 @@ export default function AssessmentQuestionsView({ route, navigation }) {
               <View style={localStyles.statusBadgeSuccess}>
                 <Text style={localStyles.statusTextSuccess}>COMPLETED</Text>
               </View>
+
               <Text style={[localStyles.scoreText, { color: isPassing ? '#10B981' : '#EF4444' }]}>
-                {item.score}%
+                {item.rawScore} / {item.totalItems}
               </Text>
               <Text style={localStyles.attemptMeta}>
-                {item.attempts} {item.attempts === 1 ? 'attempt' : 'attempts'}
+                {item.percent}% Grade • {item.attempts} {item.attempts === 1 ? 'attempt' : 'attempts'}
               </Text>
+
             </View>
           ) : (
             <View style={{ alignItems: 'flex-end' }}>
@@ -179,7 +183,7 @@ export default function AssessmentQuestionsView({ route, navigation }) {
 
       {activeSubTab === 'questions' ? (
         assessment?.deliveryMode === 'external' && assessment?.externalUrl ? (
-          <View style={{ flex: 1, minHeight: 500, marginHorizontal: 22, marginBottom: 30, borderRadius: 20, overflow: 'hidden', borderWidth: 1, borderColor: '#f1f5f9' }}>
+          <View style={{ flex: 1, minHeight: 500, marginHorizontal: 22, marginBottom: 30, borderRadius: 10, overflow: 'hidden', borderWidth: 1, borderColor: '#f1f5f9' }}>
             <WebView 
               source={{ uri: assessment.externalUrl }} 
               style={{ flex: 1 }} 
@@ -232,7 +236,7 @@ header: {
     backgroundColor: '#153c2a', 
     paddingHorizontal: 20, 
     paddingTop: Platform.OS === 'ios' ? 60 : 40, 
-    paddingBottom: 25, 
+    paddingBottom: 20, 
     borderBottomLeftRadius: 10, 
     borderBottomRightRadius: 10,
     elevation: 4,
@@ -260,35 +264,35 @@ header: {
     color: '#d1fae5', 
     marginTop: 2 
   },
-  tabBar: { flexDirection: 'row', backgroundColor: '#F1F5F9', marginHorizontal: 22, marginTop: 20, marginBottom: 10, borderRadius: 12, padding: 4 },
+  tabBar: { flexDirection: 'row', backgroundColor: '#F1F5F9', marginHorizontal: 22, marginTop: 20, marginBottom: 10, borderRadius: 10, padding: 4 },
   tab: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 10 },
   activeTab: { backgroundColor: '#fff', elevation: 2 },
-  tabLabel: { fontSize: 10, fontWeight: '900' },
+  tabLabel: { fontSize: 13, fontWeight: '800' },
   titleSection: { paddingHorizontal: 22, paddingBottom: 15, paddingTop: 5 },
-  titleLabel: { fontSize: 9, fontWeight: '900', color: '#94A3B8', letterSpacing: 1, marginBottom: 2 },
+  titleLabel: { fontSize: 13, fontWeight: '900', color: '#94A3B8', letterSpacing: 1, marginBottom: 2 },
   assessmentTitle: { fontSize: 20, fontWeight: '900', color: '#153c2a' },
 
   filterContainer: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 22, marginBottom: 15 },
-  filterPrefix: { fontSize: 11, fontWeight: '900', color: '#94A3B8', marginRight: 10, textTransform: 'uppercase' },
-  filterBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, backgroundColor: '#F1F5F9', marginRight: 8 },
+  filterPrefix: { fontSize: 13, fontWeight: '600', color: '#94A3B8', marginRight: 10, textTransform: 'uppercase' },
+  filterBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10, backgroundColor: '#F1F5F9', marginRight: 8 },
   filterBtnActive: { backgroundColor: '#153c2a' },
-  filterBtnText: { fontSize: 9, fontWeight: '800' },
+  filterBtnText: { fontSize: 13, fontWeight: '700' },
 
-  studentCard: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 22, marginBottom: 14, elevation: 4, shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 12 },
+  studentCard: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 10, marginBottom: 14, elevation: 4, shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 12 },
   rowLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },
-  avatar: { width: 48, height: 48, borderRadius: 16, marginRight: 12 },
-  initialsCircle: { width: 48, height: 48, borderRadius: 16, backgroundColor: '#E7F5EE', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
-  initialsText: { color: '#153c2a', fontSize: 18, fontWeight: '900' },
-  studentName: { fontSize: 14, fontWeight: '800' },
-  studentMeta: { fontSize: 10, color: '#94A3B8', fontWeight: '700', marginTop: 2 },
+  avatar: { width: 50, height: 50, borderRadius: 25, marginRight: 12 },
+  initialsCircle: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#E7F5EE', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  initialsText: { color: '#153c2a', fontSize: 20, fontWeight: '900' },
+  studentName: { fontSize: 13.5, fontWeight: '900' },
+  studentMeta: { fontSize: 13, color: '#94A3B8', fontWeight: '600', marginTop: 2 },
   rowRight: { justifyContent: 'center' },
-  scoreText: { fontSize: 18, fontWeight: '900' },
-  attemptMeta: { fontSize: 9, color: '#94A3B8', fontWeight: '700' },
+  scoreText: { fontSize: 20, fontWeight: '900' },
+  attemptMeta: { fontSize: 12, color: '#94A3B8', fontWeight: '700' },
   statusBadgeSuccess: { backgroundColor: '#E1F8F0', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 8, marginBottom: 4 },
-  statusTextSuccess: { fontSize: 9, fontWeight: '900', color: '#10B981' },
+  statusTextSuccess: { fontSize: 12, fontWeight: '900', color: '#10B981' },
   statusBadgePending: { backgroundColor: '#F1F5F9', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 8, marginBottom: 4 },
-  statusTextPending: { fontSize: 9, fontWeight: '900', color: '#64748B' },
-  qCard: { padding: 18, borderRadius: 20, marginBottom: 15, elevation: 2, borderWidth: 1, borderColor: '#f1f5f9' },
+  statusTextPending: { fontSize: 12, fontWeight: '900', color: '#64748B' },
+  qCard: { padding: 18, borderRadius: 10, marginBottom: 15, elevation: 2, borderWidth: 1, borderColor: '#f1f5f9' },
   qText: { fontSize: 15, fontWeight: '800', marginBottom: 12 },
   optRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
   optText: { marginLeft: 10, fontSize: 14, color: '#475569' },

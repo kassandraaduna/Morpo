@@ -1,6 +1,10 @@
 import React, { useEffect, useState, useContext } from 'react';
-import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, StyleSheet, TextInput, RefreshControl, Image, Platform, StatusBar } from 'react-native';
+import { 
+    View, Text, FlatList, TouchableOpacity, ActivityIndicator, 
+    StyleSheet, TextInput, RefreshControl, Image, Platform, StatusBar, ScrollView 
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import api, { toAbsUrl } from './src/services/api';
 import { ThemeContext } from './src/context/ThemeContext';
 
@@ -18,10 +22,26 @@ export default function StudentMonitoring({ navigation }) {
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
 
+    // NEW: States for Section Filtering
+    const [availableSections, setAvailableSections] = useState([]);
+    const [activeSectionTab, setActiveSectionTab] = useState('ALL');
+
     const fetchMonitoring = async () => {
         try {
-            const res = await api.get('/instructor/assessment-monitoring');
-            setStudents(res.data.data || []);
+            // Get logged-in user to pass their ID for scoped filtering[cite: 9]
+            const userRaw = await AsyncStorage.getItem('user');
+            const userObj = userRaw ? JSON.parse(userRaw) : null;
+            const instructorParam = userObj?._id ? `?instructorId=${userObj._id}` : '';
+
+            // The backend automatically filters by assignments if instructorId is provided[cite: 9]
+            const res = await api.get(`/instructor/assessment-monitoring${instructorParam}`);
+            const data = res.data.data || [];
+            setStudents(data);
+
+            // Dynamically extract unique sections from the assigned students
+            const sections = [...new Set(data.map(s => String(s.section || '').toUpperCase()).filter(Boolean))].sort();
+            setAvailableSections(sections);
+
         } catch (err) {
             console.error("Monitoring Error:", err);
         } finally {
@@ -32,10 +52,15 @@ export default function StudentMonitoring({ navigation }) {
 
     useEffect(() => { fetchMonitoring(); }, []);
 
+    // Apply Search AND Section Filters
     const filteredStudents = students.filter(s => {
-        const nameMatch = (s.studentName || '').toLowerCase().includes(search.toLowerCase());
-        const sectionMatch = (s.section || '').toLowerCase().includes(search.toLowerCase());
-        return nameMatch || sectionMatch;
+        const studentSection = String(s.section || '').toUpperCase();
+        
+        const matchesSection = activeSectionTab === 'ALL' || studentSection === activeSectionTab;
+        const matchesSearch = (s.studentName || '').toLowerCase().includes(search.toLowerCase()) ||
+                              (s.section || '').toLowerCase().includes(search.toLowerCase());
+                              
+        return matchesSection && matchesSearch;
     });
 
     const renderStudent = ({ item }) => (
@@ -71,12 +96,12 @@ export default function StudentMonitoring({ navigation }) {
 
             <View style={[localStyles.header, { backgroundColor: '#153c2a' }]}>
                 <View style={localStyles.headerRow}>
-                    <TouchableOpacity onPress={() => navigation.goBack()} style={{ marginRight: 15 }}>
+                    <TouchableOpacity onPress={() => navigation.goBack()} style={localStyles.backBtn}>
                         <Ionicons name="arrow-back" size={28} color="#fff" />
                     </TouchableOpacity>
-                    <View>
+                    <View style={localStyles.headerTextContainer}>
                         <Text style={localStyles.title}>Student Monitoring</Text>
-                        <Text style={localStyles.subtitle}>Track progress and assessment scores</Text>
+                        <Text style={localStyles.subtitle}>Track student progress and assessment scores</Text>
                     </View>
                 </View>
                 
@@ -93,6 +118,23 @@ export default function StudentMonitoring({ navigation }) {
                 </View>
             </View>
 
+            <View style={localStyles.filterWrapper}>
+                <Text style={localStyles.filterPrefix}>Filter section:</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={localStyles.filterScroll}>
+                    {['ALL', ...availableSections].map((sec) => (
+                        <TouchableOpacity
+                            key={sec}
+                            onPress={() => setActiveSectionTab(sec)}
+                            style={[localStyles.filterBtn, activeSectionTab === sec && localStyles.filterBtnActive]}
+                        >
+                            <Text style={[localStyles.filterBtnText, { color: activeSectionTab === sec ? '#fff' : '#64748B' }]}>
+                                {sec === 'ALL' ? 'ALL' : `${sec}`}
+                            </Text>
+                        </TouchableOpacity>
+                    ))}
+                </ScrollView>
+            </View>
+
             {loading ? (
                 <View style={{ flex: 1, justifyContent: 'center' }}><ActivityIndicator size="large" color="#153c2a" /></View>
             ) : (
@@ -106,7 +148,7 @@ export default function StudentMonitoring({ navigation }) {
                         <View style={localStyles.emptyState}>
                             <Ionicons name="people-outline" size={60} color={theme.subText + '44'} style={{ marginBottom: 10 }} />
                             <Text style={{ color: theme.text, fontSize: 16, fontWeight: 'bold' }}>
-                                {search ? "No matching students found." : "No students enrolled."}
+                                {search || activeSectionTab !== 'ALL' ? "No matching students found." : "No students enrolled."}
                             </Text>
                         </View>
                     }
@@ -117,16 +159,26 @@ export default function StudentMonitoring({ navigation }) {
 }
 
 const localStyles = StyleSheet.create({
-    header: { paddingHorizontal: 20, paddingTop: Platform.OS === 'ios' ? 60 : 40, paddingBottom: 25, borderBottomLeftRadius: 30, borderBottomRightRadius: 30 },
-    headerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
-    title: { fontSize: 22, fontWeight: '900', color: '#fff', marginTop: 20  },
-    subtitle: { fontSize: 13, color: '#d1fae5', marginTop: 2 },
-    searchBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', paddingHorizontal: 15, height: 45, borderRadius: 15 },
+    header: { paddingHorizontal: 20, paddingTop: Platform.OS === 'ios' ? 60 : 40, paddingBottom: 25, borderBottomLeftRadius: 10, borderBottomRightRadius: 10 },
+    headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 20, position: 'relative' },
+    backBtn: { position: 'absolute', left: 0, zIndex: 10 },
+    headerTextContainer: { alignItems: 'center', paddingHorizontal: 35 },
+    title: { fontSize: 22, fontWeight: '900', color: '#fff', textAlign: 'center' },
+    subtitle: { fontSize: 13, color: '#d1fae5', marginTop: 2, textAlign: 'center' },
+    searchBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', paddingHorizontal: 15, height: 45, borderRadius: 10 },
     searchInput: { flex: 1, marginLeft: 10, fontSize: 14, fontWeight: '600', color: '#334155' },
-    studentCard: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 20, marginBottom: 14, elevation: 3, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8 },
+
+    filterWrapper: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 18, paddingBottom: 5 },
+    filterPrefix: { fontSize: 12, fontWeight: '800', color: '#94A3B8', marginRight: 10, textTransform: 'uppercase' },
+    filterScroll: { paddingRight: 20 },
+    filterBtn: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10, backgroundColor: '#F1F5F9', marginRight: 8, borderWidth: 1, borderColor: '#E2E8F0' },
+    filterBtnActive: { backgroundColor: '#153c2a', borderColor: '#153c2a' },
+    filterBtnText: { fontSize: 12, fontWeight: '800' },
+
+    studentCard: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 10, marginBottom: 14, elevation: 3, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8 },
     avatarCircle: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#E7F5EE', justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
     avatarImage: { width: '100%', height: '100%', resizeMode: 'cover' },
-    avatarText: { color: '#153c2a', fontWeight: '900', fontSize: 18, letterSpacing: 1 },
+    avatarText: { color: '#153c2a', fontWeight: '900', fontSize: 20, letterSpacing: 1 },
     name: { fontSize: 15, fontWeight: '800' },
     badge: { backgroundColor: '#F1F5F9', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, marginRight: 10 },
     badgeText: { fontSize: 10, fontWeight: 'bold', color: '#64748B' },

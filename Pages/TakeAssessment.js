@@ -408,10 +408,11 @@ export default function TakeAssessment({ route, navigation }) {
                     <Text style={[styles.resultTitle, { color: theme?.text || '#1E293B', textAlign: 'center' }]}>
                         {passing ? 'Great Job!' : 'Assessment Completed'}
                     </Text>
-                    <Text style={styles.resultScoreText}>{resultData.percent}%</Text>
-                    
+                    <Text style={[styles.resultScoreText, { color: passing ? '#10B981' : '#EF4444' }]}>
+                        {resultData.score} / {resultData.total}
+                    </Text>
                     <Text style={[styles.resultSubText, { marginBottom: resultData.currentFails > 0 ? 15 : 25 }]}>
-                        You got {resultData.score} out of {resultData.total} correct.
+                        You achieved a score of {resultData.percent}%.
                     </Text>
 
                     {!assessment?.isPracticeOnly && resultData.currentFails > 0 && (

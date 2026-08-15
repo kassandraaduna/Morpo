@@ -197,7 +197,7 @@ export default function Scan({ navigation }) {
                 <Ionicons name="cloud-upload-outline" size={32} color="#153c2a" />
               </View>
               <Text style={[styles.dropText, { color: theme.text }]}>Upload Specimen Batches</Text>
-              <Text style={{ color: theme.subText, fontSize: 12, marginBottom: 20 }}>Select up to 5 images (Max 10MB per item)</Text>
+              <Text style={{ color: theme.subText, fontSize: 13, marginBottom: 20 }}>Select up to 5 images (Max 10MB per item)</Text>
               
               <View style={styles.pickerRow}>
                 <TouchableOpacity style={[styles.pickerBtn, { backgroundColor: '#334155' }]} onPress={() => pickImages(false)}>
@@ -351,7 +351,7 @@ export default function Scan({ navigation }) {
 
             {currentScanItem && (
               <View style={styles.lessonsContainer}>
-                <Text style={[styles.sectionHeading, { color: theme.text, fontSize: 11, 
+                <Text style={[styles.sectionHeading, { color: theme.text, fontSize: 15, 
                   letterSpacing: 0.5, textTransform: 'uppercase' }]}>
                   Recommended Curriculum Reviewers
                 </Text>
@@ -367,7 +367,7 @@ export default function Scan({ navigation }) {
                       <TouchableOpacity 
                         key={lessonId || idx} 
                         style={[styles.lessonRow, { backgroundColor: theme.bg, borderColor: '#e2e8f0', borderWidth: 1 }]}
-                        onPress={() => navigation.navigate('Educational', { learnTab: 'all' })} 
+                        onPress={() => navigation.navigate('Learn', { learnTab: 'Lessons' })} 
                       >
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1, paddingRight: 10 }}>
                           <Ionicons name="document-text" size={20} color="#153c2a" />
@@ -376,7 +376,7 @@ export default function Scan({ navigation }) {
                           </Text>
                         </View>
                         <View style={{ backgroundColor: '#153c2a', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 }}>
-                          <Text style={{ color: '#fff', fontSize: 11, fontWeight: 'bold' }}>Study Now</Text>
+                          <Text style={{ color: '#fff', fontSize: 12, fontWeight: 'bold' }}>Study Now</Text>
                         </View>
                       </TouchableOpacity>
                     );
@@ -447,13 +447,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20, 
     paddingTop: Platform.OS === 'ios' ? 60 : 40,
     paddingBottom: 30,
-    borderBottomLeftRadius: 10,   // Updated from 30 to 10
-    borderBottomRightRadius: 10,  // Updated from 30 to 10
-    width: '100%'                 // Ensures it stretches across any screen
+    borderBottomLeftRadius: 10, 
+    borderBottomRightRadius: 10, 
+    width: '100%'  
   },
   headerTop: { 
-    flexDirection: 'column',      // Changed from row to column so text stacks nicely
-    alignItems: 'center',         // Centers the content horizontally
+    flexDirection: 'column', 
+    alignItems: 'center',    
     justifyContent: 'center' 
   },
   headerTitle: { 
@@ -461,14 +461,14 @@ const styles = StyleSheet.create({
     fontWeight: '800', 
     color: '#fff', 
     marginTop: 20,
-    textAlign: 'center'           // Ensures the text aligns center if it wraps
+    textAlign: 'center'
   },
   headerSubtitle: { 
     fontSize: 13, 
     color: '#d1fae5', 
-    marginTop: 6,                 // Slightly increased margin for better spacing
-    textAlign: 'center',          // Ensures the text aligns center if it wraps
-    paddingHorizontal: 10         // Adds breathing room on small screens
+    marginTop: 6,
+    textAlign: 'center',
+    paddingHorizontal: 10  
   },
   mainCard: { borderRadius: 10, padding: 15, elevation: 2, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10, marginBottom: 15 },
   dropZone: { width: '100%', minHeight: 200, borderRadius: 10, borderStyle: 'dashed', borderWidth: 2, justifyContent: 'center', alignItems: 'center', padding: 20 },

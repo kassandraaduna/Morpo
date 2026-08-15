@@ -207,7 +207,7 @@ const localStyles = StyleSheet.create({
     shadowOpacity: 0.05, 
     shadowRadius: 10 
   },
-  label: { fontSize: 13, fontWeight: '800', marginBottom: 8, letterSpacing: 1, marginTop: 5 },
+  label: { fontSize: 15, fontWeight: '800', marginBottom: 8, marginTop: 5 },
   input: { padding: 15, borderRadius: 10, fontSize: 15, fontWeight: '600', elevation: 1, shadowColor: '#000', shadowOpacity: 0.02, shadowRadius: 5 },
   dropZone: { width: '100%', height: 150, borderRadius: 10, borderStyle: 'dashed', borderWidth: 2, justifyContent: 'center', alignItems: 'center', marginTop: 10 },
   dropText: { fontWeight: 'bold', marginTop: 10, textAlign: 'center', paddingHorizontal: 20 },

@@ -27,9 +27,9 @@ export default function StudentProgressDetail({ route, navigation }) {
                 </View>
                 <View style={localStyles.scoreColumn}>
                     <Text style={[localStyles.scoreValue, { color: isPassing ? '#10B981' : '#EF4444' }]}>
-                        {item.lastPercent}%
+                        {item.lastScore || 0} / {item.lastTotal || 0}
                     </Text>
-                    <Text style={localStyles.scoreLabel}>{item.lastScore} / {item.lastTotal} pts</Text>
+                    <Text style={localStyles.scoreLabel}>{item.lastPercent || 0}% Grade</Text>
                 </View>
             </View>
         );
@@ -84,20 +84,20 @@ export default function StudentProgressDetail({ route, navigation }) {
 }
 
 const localStyles = StyleSheet.create({
-    header: { paddingHorizontal: 20, paddingTop: Platform.OS === 'ios' ? 60 : 40, paddingBottom: 35, borderBottomLeftRadius: 30, borderBottomRightRadius: 30 },
+    header: { paddingHorizontal: 20, paddingTop: Platform.OS === 'ios' ? 60 : 40, paddingBottom: 25, borderBottomLeftRadius: 10, borderBottomRightRadius: 10 },
     headerTopRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 25 },
-    headerTopTitle: { fontSize: 20, fontWeight: '900', color: '#fff' },
+    headerTopTitle: { fontSize: 22, fontWeight: '900', color: '#fff' },
     profileSection: { alignItems: 'center' },
-    largeAvatar: { width: 86, height: 86, borderRadius: 43, backgroundColor: '#E7F5EE', justifyContent: 'center', alignItems: 'center', marginBottom: 15, borderWidth: 3, borderColor: '#fff', overflow: 'hidden' },
+    largeAvatar: { width: 100, height: 100, borderRadius: 50, backgroundColor: '#E7F5EE', justifyContent: 'center', alignItems: 'center', marginBottom: 10, borderWidth: 3, borderColor: '#fff', overflow: 'hidden' },
     largeAvatarImage: { width: '100%', height: '100%', resizeMode: 'cover' },
     largeAvatarText: { color: '#153c2a', fontSize: 32, fontWeight: '900', letterSpacing: 2 },
     headerName: { color: '#fff', fontSize: 22, fontWeight: '900', textAlign: 'center' },
     headerSub: { color: '#d1fae5', fontSize: 13, marginTop: 4, fontWeight: '600' },
-    sectionTitle: { fontSize: 13, fontWeight: '900', marginBottom: 15, letterSpacing: 1, color: '#153c2a' },
-    quizCard: { flexDirection: 'row', alignItems: 'center', padding: 18, borderRadius: 20, marginBottom: 12, elevation: 2, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 5 },
-    quizTitle: { fontSize: 14, fontWeight: '800', marginBottom: 6 },
-    quizMeta: { fontSize: 12, color: '#94A3B8', marginTop: 2, fontWeight: '600' },
+    sectionTitle: { fontSize: 15, fontWeight: '900', marginBottom: 15, color: '#153c2a' },
+    quizCard: { flexDirection: 'row', alignItems: 'center', padding: 18, borderRadius: 10, marginBottom: 12, elevation: 2, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 5 },
+    quizTitle: { fontSize: 15, fontWeight: '800', marginBottom: 6 },
+    quizMeta: { fontSize: 13, color: '#94A3B8', marginTop: 2, fontWeight: '600' },
     scoreColumn: { alignItems: 'flex-end', marginLeft: 15 },
     scoreValue: { fontSize: 22, fontWeight: '900' },
-    scoreLabel: { fontSize: 12, color: '#94A3B8', fontWeight: '800', marginTop: 2 }
+    scoreLabel: { fontSize: 13, color: '#94A3B8', fontWeight: '800', marginTop: 2 }
 });
