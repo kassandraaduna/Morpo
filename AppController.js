@@ -33,6 +33,7 @@ import CreateAssessmentLink from './Pages/CreateAssessmentLink';
 import CreateAssessmentAI from './Pages/CreateAssessmentAI';
 import CreateAssessmentManual from './Pages/CreateAssessmentManual';
 import DraftAssessments from './Pages/DraftAssessments';
+import EditAssessment from './Pages/EditAssessment';
 
 const Stack = createStackNavigator();
 
@@ -108,6 +109,7 @@ export default function AppController() {
         <Stack.Screen name="CreateAssessmentManual" component={CreateAssessmentManual} options={{ headerShown: false }} />
         <Stack.Screen name="CreateAssessmentAI" component={CreateAssessmentAI} options={{ headerShown: false }} />
         <Stack.Screen name="DraftAssessments" component={DraftAssessments} options={{ headerShown: false }} />
+        <Stack.Screen name="EditAssessment" component={EditAssessment} options={{ headerShown: false}} />
       </Stack.Navigator>
     </NavigationContainer>
   );

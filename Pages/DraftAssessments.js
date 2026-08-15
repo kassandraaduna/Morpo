@@ -18,7 +18,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ThemeContext } from './src/context/ThemeContext';
 import api from './src/services/api';
 import { toastSuccess, toastError } from './src/components/ToastMsg';
-import AssessmentSettings from './AssessmentSettings';
 
 export default function DraftAssessments({ navigation }) {
   const { theme } = useContext(ThemeContext);
@@ -26,22 +25,6 @@ export default function DraftAssessments({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [drafts, setDrafts] = useState([]);
-
-  // Settings Modal State for Editing Draft Configuration
-  const [selectedDraft, setSelectedDraft] = useState(null);
-  const [showSettings, setShowSettings] = useState(false);
-  const [settings, setSettings] = useState({
-    timer: { enabled: false, minutes: 30 },
-    availableAt: null,
-    deadlineAt: null,
-    closeOnDeadline: false,
-    allowRetakes: true,
-    maxRetakes: 3,
-    targetYears: [],
-    targetSections: [],
-    excludedStudentIds: [],
-    isPracticeOnly: false,
-  });
 
   // Unified Custom Modal State (replaces native Alert.alert) 
   const [modalConfig, setModalConfig] = useState({
@@ -62,7 +45,6 @@ export default function DraftAssessments({ navigation }) {
     });
   };
 
-  // 1. Load User Session & Fetch Drafts [cite: 1481, 1482]
   const loadDrafts = useCallback(async () => {
     try {
       setLoading(true);
@@ -92,7 +74,6 @@ export default function DraftAssessments({ navigation }) {
     setRefreshing(false);
   };
 
-  // 2. Fetch Draft Assessments Scoped to Instructor
   const fetchDraftAssessments = async (currentUser) => {
     try {
       const instructorParam =
@@ -121,64 +102,22 @@ export default function DraftAssessments({ navigation }) {
     }
   };
 
-  // 3. Open Settings Modal for a Draft
-  const openDraftSettings = (draft) => {
-    setSelectedDraft(draft);
-    setSettings({
-      timer: draft.timer || { enabled: false, minutes: 30 },
-      availableAt: draft.availableAt || null,
-      deadlineAt: draft.deadlineAt || null,
-      closeOnDeadline: !!draft.closeOnDeadline,
-      allowRetakes: draft.allowRetakes ?? true,
-      maxRetakes: draft.maxRetakes || 3,
-      targetYears: Array.isArray(draft.targetYears) ? draft.targetYears : [],
-      targetSections: Array.isArray(draft.targetSections) ? draft.targetSections : [],
-      excludedStudentIds: draft.excludedStudentIds || [],
-      isPracticeOnly: !!draft.isPracticeOnly,
-    });
-    setShowSettings(true);
-  };
-
-  // 4. Save Updated Settings to Draft
-  const handleSaveSettings = async () => {
-    if (!selectedDraft) return;
-    try {
-      setLoading(true);
-      await api.put(`/assessments/${selectedDraft._id}`, {
-        ...selectedDraft,
-        ...settings,
-        availableAt: settings.availableAt
-          ? new Date(settings.availableAt).toISOString()
-          : null,
-        deadlineAt: settings.deadlineAt
-          ? new Date(settings.deadlineAt).toISOString()
-          : null,
-      });
-      setShowSettings(false);
-      toastSuccess('Draft settings updated.');
-      await fetchDraftAssessments(user);
-    } catch (err) {
-      toastError('Failed to update draft settings.');
-      setLoading(false);
-    }
-  };
-
-  // 5. Trigger Publish Confirmation Modal (With Pre-Publish Validation)
+  // Trigger Publish Confirmation Modal (With Pre-Publish Validation)
   const triggerPublishModal = (draft) => {
     const activeSections = draft.targetSections || [];
     if (activeSections.length === 0) {
       return toastError(
-        'Please assign at least one target section in Settings before publishing.'
+        'Please assign at least one target section via Edit before publishing.'
       );
     }
     if (!draft.availableAt) {
       return toastError(
-        'Please set an available access date & time in Settings before publishing.'
+        'Please set an access date via Edit before publishing.'
       );
     }
     if (!draft.deadlineAt) {
       return toastError(
-        'Please set a submission due date & time in Settings before publishing.'
+        'Please set a due date via Edit before publishing.'
       );
     }
 
@@ -191,7 +130,7 @@ export default function DraftAssessments({ navigation }) {
     });
   };
 
-  // 6. Trigger Delete Confirmation Modal
+  // Trigger Delete Confirmation Modal
   const triggerDeleteModal = (draft) => {
     setModalConfig({
       visible: true,
@@ -202,7 +141,7 @@ export default function DraftAssessments({ navigation }) {
     });
   };
 
-  // 7. Execute Confirmed Action from Custom Modal [cite: 1496, 1497]
+  // Execute Confirmed Action from Custom Modal
   const handleConfirmAction = async () => {
     const { targetDraft, action } = modalConfig;
     closeActionModal();
@@ -303,13 +242,14 @@ export default function DraftAssessments({ navigation }) {
 
         {/* Card Actions */}
         <View style={localStyles.cardFooter}>
+          {/* ROUTES TO THE NEW EDIT SCREEN */}
           <TouchableOpacity
             style={localStyles.settingsBtn}
-            onPress={() => openDraftSettings(item)}
+            onPress={() => navigation.navigate('EditAssessment', { assessment: item })}
             activeOpacity={0.8}
           >
-            <Ionicons name="settings-sharp" size={16} color="#153c2a" />
-            <Text style={localStyles.settingsBtnText}>Settings & Dates</Text>
+            <Ionicons name="pencil" size={16} color="#153c2a" />
+            <Text style={localStyles.settingsBtnText}>Edit Draft</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -329,7 +269,7 @@ export default function DraftAssessments({ navigation }) {
     <View style={{ flex: 1, backgroundColor: theme?.bg || '#F8FAFC' }}>
       <StatusBar barStyle="light-content" backgroundColor="#153c2a" />
 
-      {/* Standard Header matching Learn and ArchiveLessons [cite: 1506, 1508] */}
+      {/* Standard Header */}
       <View style={[localStyles.header, { backgroundColor: '#153c2a' }]}>
         <View style={localStyles.headerRow}>
           <TouchableOpacity
@@ -381,7 +321,7 @@ export default function DraftAssessments({ navigation }) {
         />
       )}
 
-      {/* Custom Confirmation Modal (Publish & Delete) [cite: 1528] */}
+      {/* Custom Confirmation Modal (Publish & Delete) */}
       <Modal
         animationType="fade"
         transparent={true}
@@ -416,18 +356,6 @@ export default function DraftAssessments({ navigation }) {
           </View>
         </View>
       </Modal>
-
-      {/* Assessment Settings Modal for Configuring Sections / Dates */}
-      <AssessmentSettings
-        visible={showSettings}
-        onClose={() => {
-          setShowSettings(false);
-          handleSaveSettings();
-        }}
-        settings={settings}
-        setSettings={setSettings}
-        isExternal={selectedDraft?.deliveryMode === 'external'}
-      />
     </View>
   );
 }
@@ -549,7 +477,6 @@ const localStyles = StyleSheet.create({
     fontWeight: '800',
     color: '#FFF',
   },
-  // Custom Confirmation Modal Styles [cite: 1537, 1538]
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.6)',

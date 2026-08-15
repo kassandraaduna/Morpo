@@ -60,8 +60,11 @@ export default function Learn({ navigation, route }) {
     const [bookmarks, setBookmarks] = useState({ lessons: [], models: [], scans: [] });
 
     const [showAssessmentMenu, setShowAssessmentMenu] = useState(false);
-
     const [itemToArchive, setItemToArchive] = useState({ id: null, type: null });
+
+    const handleEditAssessment = (assessmentItem) => {
+        navigation.navigate('EditAssessment', { assessment: assessmentItem });
+    };
 
     const fetchData = async () => {
         try {
