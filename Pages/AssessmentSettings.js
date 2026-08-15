@@ -364,7 +364,6 @@ export default function AssessmentSettings({
                 )}
               </View>
 
-              {/* Retakes Config (Hidden for External mode) */}
               {!isExternal && (
                 <View style={styles.settingCard}>
                   <View style={styles.toggleRow}>
@@ -405,6 +404,18 @@ export default function AssessmentSettings({
                       />
                     </View>
                   )}
+
+                  <View style={styles.subToggleRow}>
+                    <Text style={styles.subToggleText}>
+                      Shuffle Question Order
+                    </Text>
+                    <Switch
+                      value={!!settings.shuffleQuestions}
+                      onValueChange={(val) => updateSetting('shuffleQuestions', val)}
+                      trackColor={{ false: '#CBD5E1', true: '#10B981' }}
+                      thumbColor="#FFF"
+                    />
+                  </View>
                 </View>
               )}
 
@@ -571,8 +582,8 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     height: '88%',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    borderTopLeftRadius: 10,
+    borderTopRightRadius: 10,
     overflow: 'hidden',
   },
   header: {
@@ -586,26 +597,25 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  title: { fontSize: 20, fontWeight: '900', color: '#fff' },
-  subtitle: { fontSize: 12, color: '#d1fae5', marginTop: 4 },
+  title: { fontSize: 22, fontWeight: '900', color: '#fff' },
+  subtitle: { fontSize: 13, color: '#d1fae5', marginTop: 4 },
   closeBtn: {
     backgroundColor: 'rgba(255,255,255,0.2)',
     padding: 6,
-    borderRadius: 12,
+    borderRadius: 10,
   },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   scrollContent: { padding: 20, paddingBottom: 60 },
   sectionHeading: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '900',
     color: '#153c2a',
     marginBottom: 10,
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
   },
   settingCard: {
     backgroundColor: '#F8FAFC',
-    borderRadius: 16,
+    borderRadius: 10,
     padding: 16,
     marginBottom: 14,
     borderWidth: 1,
@@ -619,7 +629,7 @@ const styles = StyleSheet.create({
   },
   settingTitle: { fontSize: 15, fontWeight: '800', color: '#1E293B' },
   settingSub: {
-    fontSize: 12,
+    fontSize: 13,
     color: '#64748B',
     marginTop: 2,
     fontWeight: '500',
@@ -635,7 +645,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF',
     borderWidth: 1,
     borderColor: '#CBD5E1',
-    borderRadius: 12,
+    borderRadius: 10,
     paddingHorizontal: 14,
     height: 48,
   },
@@ -655,7 +665,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#E2E8F0',
   },
-  subToggleText: { fontSize: 12, fontWeight: '700', color: '#475569' },
+  subToggleText: { fontSize: 13, fontWeight: '700', color: '#475569' },
   toggleRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -688,7 +698,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 10,
-    borderRadius: 20,
+    borderRadius: 10,
     backgroundColor: '#F1F5F9',
     borderWidth: 1,
     borderColor: '#E2E8F0',

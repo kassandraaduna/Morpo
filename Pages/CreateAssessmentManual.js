@@ -47,6 +47,7 @@ export default function CreateAssessmentManual({ navigation, route }) {
     targetSections: [],
     excludedStudentIds: [],
     isPracticeOnly: false,
+    shuffleQuestions: false,
   });
 
   useEffect(() => {
@@ -99,7 +100,6 @@ export default function CreateAssessmentManual({ navigation, route }) {
     setQuestions(updated);
   };
 
-  // FIXED: Declared as handleSubmitAssessment and aliased to handleSave
   const handleSubmitAssessment = async (status = 'published') => {
     if (!title.trim()) {
       return toastError('Please enter an assessment title.');
@@ -108,7 +108,6 @@ export default function CreateAssessmentManual({ navigation, route }) {
       return toastError('Please add at least one question.');
     }
 
-    // Strict validation before publishing
     if (status === 'published') {
       if (!settings.targetSections || settings.targetSections.length === 0) {
         return toastError(
@@ -137,13 +136,16 @@ export default function CreateAssessmentManual({ navigation, route }) {
         deliveryMode: 'internal',
         quizType: 'test',
         status: status,
-        createdBy: user?._id || null, // Syncs with Instructor Web
+        createdBy: user?._id || null,
         timer: {
           enabled: !!settings.timer?.enabled,
           minutes: settings.timer?.enabled
             ? Number(settings.timer?.minutes || 30)
             : null,
         },
+        excludedStudentIds: settings.excludedStudentIds || [],
+        isPracticeOnly: !!settings.isPracticeOnly,
+        shuffleQuestions: !!settings.shuffleQuestions,
         questions: questions.map((q) => ({
           format: q.format || 'multiple_choice',
           text: String(q.text || '').trim(),
@@ -174,41 +176,34 @@ export default function CreateAssessmentManual({ navigation, route }) {
     }
   };
 
-  const handleSave = handleSubmitAssessment; // Alias to prevent ReferenceError
+  const handleSave = handleSubmitAssessment;
 
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={styles.container}
     >
-      {/* 1. HEADER WITH SETTINGS & STUDENT VIEW PILL */}
+      {/* 1. HEADER */}
       <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          style={styles.backBtn}
-        >
-          <Ionicons name="arrow-back" size={24} color="#153c2a" />
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <Ionicons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
 
-        <Text style={styles.headerTitle}>Create Assessment</Text>
-
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <View style={styles.headerCenter}>
+          <Text style={styles.headerTitle}>Create Assessment</Text>
           <TouchableOpacity
             style={styles.studentViewBtn}
             onPress={() => setShowStudentView(true)}
             activeOpacity={0.8}
           >
-            <Ionicons name="eye-outline" size={16} color="#153c2a" />
+            <Ionicons name="eye-outline" size={14} color="#FFF" />
             <Text style={styles.studentViewText}>Student View</Text>
           </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.settingsBtn}
-            onPress={() => setShowSettings(true)}
-          >
-            <Ionicons name="settings-sharp" size={20} color="#153c2a" />
-          </TouchableOpacity>
         </View>
+
+        <TouchableOpacity style={styles.settingsBtn} onPress={() => setShowSettings(true)}>
+          <Ionicons name="settings-sharp" size={20} color="#FFF" />
+        </TouchableOpacity>
       </View>
 
       <ScrollView
@@ -263,7 +258,7 @@ export default function CreateAssessmentManual({ navigation, route }) {
                   }
                 >
                   {q.correctIndex === oIndex && (
-                    <View style={styles.radioInner} />
+                    <Ionicons name="checkmark" size={16} color="#10B981" />
                   )}
                 </TouchableOpacity>
                 <TextInput
@@ -343,27 +338,43 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 20,
     paddingTop: Platform.OS === 'ios' ? 60 : 40,
-    paddingBottom: 15,
-    backgroundColor: '#FFF',
+    paddingBottom: 25,
+    borderBottomLeftRadius: 10,
+    borderBottomRightRadius: 10,
+    backgroundColor: '#153c2a',
     elevation: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 8
+  },
+  headerCenter: {
+    flex: 1,
+    alignItems: 'center',
+    paddingHorizontal: 10,
   },
   backBtn: { padding: 5 },
-  settingsBtn: { padding: 5, backgroundColor: '#E7F5EE', borderRadius: 10 },
+  settingsBtn: { padding: 8, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 10 },
   studentViewBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#E7F5EE',
-    paddingHorizontal: 10,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 10,
+    borderRadius: 8,
     gap: 4,
   },
   studentViewText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '800',
-    color: '#153c2a',
+    color: '#FFF',
   },
-  headerTitle: { fontSize: 18, fontWeight: '900', color: '#153c2a' },
+  headerTitle: { 
+    fontSize: 18, 
+    fontWeight: '900', 
+    color: '#FFF',
+    marginBottom: 6, // Adds breathing room between title and button
+    textAlign: 'center' 
+  },
   card: {
     backgroundColor: '#FFF',
     padding: 20,
@@ -415,19 +426,13 @@ const styles = StyleSheet.create({
   radio: {
     width: 24,
     height: 24,
-    borderRadius: 12,
+    borderRadius: 8,
     borderWidth: 2,
     borderColor: '#CBD5E1',
     justifyContent: 'center',
     alignItems: 'center',
   },
   radioActive: { borderColor: '#10B981' },
-  radioInner: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#10B981',
-  },
   addBtn: {
     flexDirection: 'row',
     justifyContent: 'center',

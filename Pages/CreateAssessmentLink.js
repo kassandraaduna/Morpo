@@ -97,7 +97,7 @@ export default function CreateAssessmentLink({ navigation }) {
     }
   };
 
-  const handleSave = handleSubmitAssessment; // Alias to prevent ReferenceError
+  const handleSave = handleSubmitAssessment;
 
   return (
     <KeyboardAvoidingView
@@ -106,18 +106,16 @@ export default function CreateAssessmentLink({ navigation }) {
     >
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          style={styles.backBtn}
-        >
-          <Ionicons name="arrow-back" size={24} color="#153c2a" />
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <Ionicons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Attach External Assessment</Text>
-        <TouchableOpacity
-          style={styles.settingsBtn}
-          onPress={() => setShowSettings(true)}
-        >
-          <Ionicons name="settings-sharp" size={20} color="#153c2a" />
+
+        <View style={styles.headerCenter}>
+          <Text style={styles.headerTitle}>Attach External Assessment</Text>
+        </View>
+
+        <TouchableOpacity style={styles.settingsBtn} onPress={() => setShowSettings(true)}>
+          <Ionicons name="settings-sharp" size={20} color="#FFF" />
         </TouchableOpacity>
       </View>
 
@@ -189,35 +187,49 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 20,
     paddingTop: Platform.OS === 'ios' ? 60 : 40,
-    paddingBottom: 15,
-    backgroundColor: '#FFF',
+    paddingBottom: 25,
+    borderBottomLeftRadius: 10,
+    borderBottomRightRadius: 10,
+    backgroundColor: '#153c2a',
     elevation: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 8
+  },
+  headerCenter: {
+    flex: 1,
+    alignItems: 'center',
+    paddingHorizontal: 10,
   },
   backBtn: { padding: 5 },
-  settingsBtn: { padding: 5, backgroundColor: '#E7F5EE', borderRadius: 10 },
-  headerTitle: { fontSize: 18, fontWeight: '900', color: '#153c2a' },
+  settingsBtn: { padding: 8, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 10 },
+  headerTitle: { 
+    fontSize: 22, 
+    fontWeight: '900', 
+    color: '#FFF',
+    textAlign: 'center' 
+  },
   card: {
     backgroundColor: '#FFF',
     padding: 20,
-    borderRadius: 20,
+    borderRadius: 10,
     elevation: 2,
     marginBottom: 30,
   },
   label: {
-    fontSize: 12,
+    fontSize: 15,
     fontWeight: '800',
     color: '#64748B',
-    marginBottom: 8,
-    marginTop: 15,
+    marginBottom: 10,
+    marginTop: 8,
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
   },
   input: {
     padding: 15,
-    borderRadius: 12,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    fontSize: 15,
+    fontSize: 14,
     backgroundColor: '#F8FAFC',
     color: '#000',
     fontWeight: '600',
@@ -225,14 +237,14 @@ const styles = StyleSheet.create({
   publishBtn: {
     backgroundColor: '#153c2a',
     padding: 16,
-    borderRadius: 15,
+    borderRadius: 10,
     alignItems: 'center',
     elevation: 4,
   },
   draftBtn: {
     backgroundColor: '#F1F5F9',
     padding: 16,
-    borderRadius: 15,
+    borderRadius: 10,
     alignItems: 'center',
     marginTop: 15,
     borderWidth: 1,

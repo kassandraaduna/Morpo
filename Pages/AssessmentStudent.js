@@ -99,8 +99,7 @@ const fetchData = async () => {
                         <Text style={[localStyles.cardTitle, { color: theme.text }]} numberOfLines={2}>
                             {item.title.toUpperCase()}
                         </Text>
-                        
-                        {/* CRASH FIXED: Safely rendered Icon and Text inside a View */}
+
                         <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, flexWrap: 'wrap' }}>
                             {isExternalLink ? (
                                 <>
@@ -166,8 +165,7 @@ const fetchData = async () => {
                 {isClosed ? (
                     <Text style={localStyles.closedText}>This assessment is no longer accepting submissions.</Text>
                 ) : isExternalLink && (item.isCompleted || localCompletedExt.includes(item._id)) ? (
-                    
-                    /* FIXED: NO RETAKE BUTTON FOR EXTERNAL LINKS */
+
                     <View style={[localStyles.actionBtn, { backgroundColor: '#F1F5F9', borderColor: '#E2E8F0', borderWidth: 1.5 }]}>
                         <Text style={[localStyles.actionBtnText, { color: '#64748B' }]}>
                             Submitted (Under Review)
@@ -176,11 +174,22 @@ const fetchData = async () => {
 
                 ) : (
                     <TouchableOpacity 
-                        style={[localStyles.actionBtn, { backgroundColor: (item.isCompleted || localCompletedExt.includes(item._id)) ? '#ffd000' : '#153c2a', borderColor: '#153c2a', borderWidth: 1.5 }]}
+                        style={[
+                            localStyles.actionBtn, 
+                            { 
+                                backgroundColor: (item.isCompleted && !item.canRetake) ? '#E2E8F0' : (item.isCompleted || localCompletedExt.includes(item._id)) ? '#ffd000' : '#153c2a', 
+                                borderColor: (item.isCompleted && !item.canRetake) ? '#E2E8F0' : '#153c2a', 
+                                borderWidth: 1.5 
+                            }
+                        ]}
                         onPress={() => navigation.navigate('TakeAssessment', { assessmentId: item._id })}
+                        disabled={item.isCompleted && !item.canRetake}
                     >
-                        <Text style={[localStyles.actionBtnText, { color: (item.isCompleted || localCompletedExt.includes(item._id)) ? '#153c2a' : '#fff' }]}>
-                            {(item.isCompleted || localCompletedExt.includes(item._id)) ? 'Retake Assessment' : 'Start Assessment'}
+                        <Text style={[
+                            localStyles.actionBtnText, 
+                            { color: (item.isCompleted && !item.canRetake) ? '#94A3B8' : (item.isCompleted || localCompletedExt.includes(item._id)) ? '#153c2a' : '#fff' }
+                        ]}>
+                            {(item.isCompleted && !item.canRetake) ? 'Attempt Limit Reached' : (item.isCompleted || localCompletedExt.includes(item._id)) ? 'Retake Assessment' : 'Start Assessment'}
                         </Text>
                     </TouchableOpacity>
                 )}

@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useContext } from 'react';
 import { 
     View, Text, ActivityIndicator, TouchableOpacity, StyleSheet, 
-    Dimensions, ScrollView, Platform, StatusBar 
+    Dimensions, ScrollView, Platform, StatusBar, Modal 
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -28,6 +28,18 @@ export default function LessonStudent({ route, navigation }) {
   
   const [localPdfPath, setLocalPdfPath] = useState(null);
   const [pdfError, setPdfError] = useState('');
+
+  const [showInterventionAlert, setShowInterventionAlert] = useState(false);
+  const [newAssessmentId, setNewAssessmentId] = useState(null);
+
+  const [confirmModal, setConfirmModal] = useState({
+      visible: false, title: '', message: '', iconName: 'help', iconColor: '#153c2a', iconBg: '#E7F5EE', 
+      confirmText: 'Confirm', hideCancel: false, onConfirm: () => {}
+  });
+
+  const triggerCustomAlert = (title, message, onConfirm, iconName = 'help', iconColor = '#153c2a', iconBg = '#E7F5EE', confirmText = 'Confirm', hideCancel = false) => {
+      setConfirmModal({ visible: true, title, message, onConfirm, iconName, iconColor, iconBg, confirmText, hideCancel });
+  };
 
   useEffect(() => {
     AsyncStorage.getItem('user').then(u => {
@@ -165,10 +177,7 @@ export default function LessonStudent({ route, navigation }) {
 
       try {
           setGeneratingQuiz(true);
-          
-          // Ensure we extract ONLY the text content, removing the hidden PDF URL marker
           const cleanContent = String(personalizedLesson.content || '').split('|||PDF_URL|||')[0];
-
           const res = await api.post('/ai/generate-remedial', {
               studentId: currentUser._id,
               topic: personalizedLesson.topic,
@@ -179,9 +188,18 @@ export default function LessonStudent({ route, navigation }) {
               sourceAssessmentId: personalizedLesson.sourceAssessmentId
           });
           
-          toastSuccess("Remedial Assessment Generated!");
-          setRemedialAssessmentId(res.data.assessmentId);
-          navigation.navigate('TakeAssessment', { assessmentId: res.data.assessmentId });
+          setNewAssessmentId(res.data.assessmentId);
+          triggerCustomAlert(
+              "Remedial Assessment Generated",
+              "MyphoAI successfully generated a remedial assessment based on this remedial lesson.",
+              () => {
+                  setRemedialAssessmentId(res.data.assessmentId);
+                  navigation.navigate('TakeAssessment', { assessmentId: res.data.assessmentId });
+              },
+              "sparkles", "#10B981", "#E7F5EE",
+              "Start Assessment",
+              true
+          );
       } catch (err) {
           toastError(err.response?.data?.message || "Failed to generate assessment. MyphoAI might be busy.");
       } finally {
@@ -205,7 +223,7 @@ export default function LessonStudent({ route, navigation }) {
       <View style={[localStyles.header, { backgroundColor: '#153c2a' }]}>
         <View style={localStyles.headerRow}>
           <TouchableOpacity onPress={() => navigation.goBack()} style={{ marginRight: 15 }}>
-            <Ionicons name="arrow-back" size={28} color="#fff" />
+            <Ionicons name="arrow-back" size={25} color="#fff" />
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
             <Text style={localStyles.title} numberOfLines={2}>
@@ -285,8 +303,40 @@ export default function LessonStudent({ route, navigation }) {
             </TouchableOpacity>
         </View>
       )}
+      {renderConfirmModal()}
     </View>
   );
+
+  function renderConfirmModal() {
+      return (
+          <Modal visible={confirmModal.visible} transparent animationType="fade">
+              <View style={localStyles.modalOverlay}>
+                  <View style={[localStyles.modalCard, { backgroundColor: theme?.card || '#FFF' }]}>
+                      <View style={[localStyles.modalIconCircle, { backgroundColor: confirmModal.iconBg }]}>
+                          <Ionicons name={confirmModal.iconName} size={28} color={confirmModal.iconColor} />
+                      </View>
+                      <Text style={[localStyles.modalTitle, { color: theme?.text || '#1E293B' }]}>{confirmModal.title}</Text>
+                      <Text style={localStyles.modalMessage}>{confirmModal.message}</Text>
+                      
+                      <View style={localStyles.modalBtnRow}>
+                          {!confirmModal.hideCancel && (
+                              <TouchableOpacity style={localStyles.modalCancelBtn} onPress={() => setConfirmModal(prev => ({ ...prev, visible: false }))}>
+                                  <Text style={localStyles.modalCancelText}>Cancel</Text>
+                              </TouchableOpacity>
+                          )}
+                          
+                          <TouchableOpacity 
+                              style={localStyles.modalConfirmBtn} 
+                              onPress={() => { const action = confirmModal.onConfirm; setConfirmModal(prev => ({ ...prev, visible: false })); action(); }}
+                          >
+                              <Text style={localStyles.modalConfirmText}>{confirmModal.confirmText}</Text>
+                          </TouchableOpacity>
+                      </View>
+                  </View>
+              </View>
+          </Modal>
+      );
+  }
 }
 
 const localStyles = StyleSheet.create({
@@ -296,18 +346,18 @@ const localStyles = StyleSheet.create({
     paddingHorizontal: 20, 
     paddingTop: Platform.OS === 'ios' ? 60 : 40, 
     paddingBottom: 25, 
-    borderBottomLeftRadius: 30, 
-    borderBottomRightRadius: 30 
+    borderBottomLeftRadius: 10, 
+    borderBottomRightRadius: 10 
   },
   headerRow: { flexDirection: 'row', alignItems: 'center' },
   title: { fontSize: 20, fontWeight: '900', color: '#fff', marginTop: 10 },
   subtitle: { fontSize: 13, color: '#d1fae5', marginTop: 2 },
-  iconBtn: { backgroundColor: 'rgba(255,255,255,0.2)', padding: 8, borderRadius: 12, marginTop: 10 },
+  iconBtn: { backgroundColor: 'rgba(255,255,255,0.2)', padding: 8, borderRadius: 10, marginTop: 10 },
 
   textContent: {
     margin: 16,
     padding: 16,
-    borderRadius: 16,
+    borderRadius: 10,
     elevation: 3,
     shadowColor: '#000',
     shadowOpacity: 0.05,
@@ -318,8 +368,8 @@ const localStyles = StyleSheet.create({
     flex: 1,
     width: Dimensions.get('window').width,
     backgroundColor: '#E5E5E5',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderTopLeftRadius: 10,
+    borderTopRightRadius: 10,
     overflow: 'hidden'
   },
   pdfView: {
@@ -339,7 +389,7 @@ const localStyles = StyleSheet.create({
   submitBtn: { 
     backgroundColor: '#153c2a', 
     padding: 18, 
-    borderRadius: 16, 
+    borderRadius: 10, 
     alignItems: 'center' 
   },
   submitBtnText: { 
@@ -347,5 +397,15 @@ const localStyles = StyleSheet.create({
     fontWeight: '900', 
     fontSize: 15,
     letterSpacing: 0.5 
-  }
+  },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  modalCard: { width: '100%', maxWidth: 340, padding: 25, borderRadius: 10, alignItems: 'center', elevation: 10 },
+  modalIconCircle: { width: 55, height: 55, borderRadius: 27.5, justifyContent: 'center', alignItems: 'center', marginBottom: 15 },
+  modalTitle: { fontSize: 18, fontWeight: '900', marginBottom: 8, textAlign: 'center' },
+  modalMessage: { fontSize: 13, color: '#64748B', textAlign: 'center', marginBottom: 25, fontWeight: '600', lineHeight: 18 },
+  modalBtnRow: { flexDirection: 'row', gap: 12, width: '100%' },
+  modalCancelBtn: { flex: 1, paddingVertical: 14, borderRadius: 10, backgroundColor: '#F1F5F9', alignItems: 'center' },
+  modalCancelText: { fontWeight: '800', color: '#64748B', fontSize: 13 },
+  modalConfirmBtn: { flex: 1, paddingVertical: 14, borderRadius: 10, backgroundColor: '#153c2a', alignItems: 'center' },
+  modalConfirmText: { fontWeight: '800', color: '#FFF', fontSize: 13 }
 });

@@ -52,6 +52,7 @@ export default function CreateAssessmentAI({ navigation }) {
     targetSections: [],
     excludedStudentIds: [],
     isPracticeOnly: false,
+    shuffleQuestions: false,
   });
 
   useEffect(() => {
@@ -276,6 +277,9 @@ export default function CreateAssessmentAI({ navigation }) {
             ? Number(settings.timer?.minutes || 30)
             : null,
         },
+        excludedStudentIds: settings.excludedStudentIds || [],
+        isPracticeOnly: !!settings.isPracticeOnly,
+        shuffleQuestions: !!settings.shuffleQuestions,
         questions: questions.map((q) => ({
           format: q.format || 'multiple_choice',
           text: String(q.text || '').trim(),
@@ -313,34 +317,27 @@ export default function CreateAssessmentAI({ navigation }) {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={[styles.container, { backgroundColor: theme?.bg || '#F4F7F6' }]}
     >
-      {/* HEADER WITH STUDENT VIEW PILL & SETTINGS COG */}
+      {/* HEADER */}
       <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          style={styles.backBtn}
-        >
-          <Ionicons name="arrow-back" size={24} color="#153c2a" />
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <Ionicons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
 
-        <Text style={styles.headerTitle}>AI Generator</Text>
-
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <View style={styles.headerCenter}>
+          <Text style={styles.headerTitle}>MyphoAI Question Generator</Text>
           <TouchableOpacity
             style={styles.studentViewBtn}
             onPress={() => setShowStudentView(true)}
             activeOpacity={0.8}
           >
-            <Ionicons name="eye-outline" size={16} color="#153c2a" />
+            <Ionicons name="eye-outline" size={14} color="#FFF" />
             <Text style={styles.studentViewText}>Student View</Text>
           </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.settingsBtn}
-            onPress={() => setShowSettings(true)}
-          >
-            <Ionicons name="settings-sharp" size={20} color="#153c2a" />
-          </TouchableOpacity>
         </View>
+
+        <TouchableOpacity style={styles.settingsBtn} onPress={() => setShowSettings(true)}>
+          <Ionicons name="settings-sharp" size={20} color="#FFF" />
+        </TouchableOpacity>
       </View>
 
       <ScrollView
@@ -397,7 +394,7 @@ export default function CreateAssessmentAI({ navigation }) {
           )}
 
           <Text style={[styles.label, { marginTop: 20 }]}>
-            Reference Material (PDF)
+            Reference Material (Optional)
           </Text>
           <TouchableOpacity style={styles.uploadBox} onPress={pickDocument}>
             <Ionicons
@@ -501,7 +498,7 @@ export default function CreateAssessmentAI({ navigation }) {
                       }
                     >
                       {q.correctIndex === oIndex && (
-                        <View style={styles.radioInner} />
+                        <Ionicons name="checkmark" size={16} color="#10B981" />
                       )}
                     </TouchableOpacity>
                     <TextInput
@@ -583,32 +580,48 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 20,
     paddingTop: Platform.OS === 'ios' ? 60 : 40,
-    paddingBottom: 15,
-    backgroundColor: '#FFF',
+    paddingBottom: 25,
+    borderBottomLeftRadius: 10,
+    borderBottomRightRadius: 10,
+    backgroundColor: '#153c2a',
     elevation: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 8
+  },
+  headerCenter: {
+    flex: 1,
+    alignItems: 'center',
+    paddingHorizontal: 10,
   },
   backBtn: { padding: 5 },
-  settingsBtn: { padding: 5, backgroundColor: '#E7F5EE', borderRadius: 10 },
+  settingsBtn: { padding: 8, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 10 },
   studentViewBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#E7F5EE',
-    paddingHorizontal: 10,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 10,
+    borderRadius: 8,
     gap: 4,
   },
-  studentViewText: { fontSize: 12, fontWeight: '800', color: '#153c2a' },
-  headerTitle: { fontSize: 18, fontWeight: '900', color: '#153c2a' },
+  studentViewText: { fontSize: 13, fontWeight: '800', color: '#fff' },
+  headerTitle: { 
+    fontSize: 18, 
+    fontWeight: '900', 
+    color: '#FFF',
+    marginBottom: 6,
+    textAlign: 'center' 
+  },
   card: {
     backgroundColor: '#FFF',
     padding: 20,
-    borderRadius: 20,
+    borderRadius: 10,
     elevation: 2,
-    marginBottom: 20,
+    marginBottom: 10,
   },
   label: {
-    fontSize: 12,
+    fontSize: 15,
     fontWeight: '800',
     color: '#64748B',
     marginBottom: 8,
@@ -620,7 +633,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    fontSize: 15,
+    fontSize: 14,
     backgroundColor: '#F8FAFC',
     color: '#0F172A',
     fontWeight: '600',
@@ -634,14 +647,14 @@ const styles = StyleSheet.create({
   chip: {
     paddingHorizontal: 14,
     paddingVertical: 10,
-    borderRadius: 20,
+    borderRadius: 10,
     backgroundColor: '#F1F5F9',
     borderWidth: 1,
     borderColor: '#E2E8F0',
     maxWidth: '100%',
   },
   chipActive: { backgroundColor: '#E7F5EE', borderColor: '#10B981' },
-  chipText: { fontSize: 12, fontWeight: '700', color: '#64748B' },
+  chipText: { fontSize: 13, fontWeight: '700', color: '#64748B' },
   chipTextActive: { color: '#10B981' },
   emptyText: {
     fontStyle: 'italic',
@@ -651,7 +664,7 @@ const styles = StyleSheet.create({
   },
   uploadBox: {
     minHeight: 100,
-    borderRadius: 15,
+    borderRadius: 10,
     borderWidth: 2,
     borderColor: '#E2E8F0',
     borderStyle: 'dashed',
@@ -669,7 +682,7 @@ const styles = StyleSheet.create({
   },
   textArea: {
     padding: 15,
-    borderRadius: 12,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     fontSize: 15,
@@ -681,9 +694,9 @@ const styles = StyleSheet.create({
   },
   generateBtn: {
     flexDirection: 'row',
-    backgroundColor: '#8B5CF6',
+    backgroundColor: '#10B981',
     padding: 16,
-    borderRadius: 15,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
     elevation: 4,
@@ -703,7 +716,7 @@ const styles = StyleSheet.create({
   qCard: {
     backgroundColor: '#FFF',
     padding: 20,
-    borderRadius: 20,
+    borderRadius: 10,
     marginBottom: 20,
     elevation: 2,
     borderWidth: 1,
@@ -726,26 +739,20 @@ const styles = StyleSheet.create({
   radio: {
     width: 24,
     height: 24,
-    borderRadius: 12,
+    borderRadius: 8,
     borderWidth: 2,
     borderColor: '#CBD5E1',
     justifyContent: 'center',
     alignItems: 'center',
   },
   radioActive: { borderColor: '#10B981' },
-  radioInner: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#10B981',
-  },
   addBtn: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 18,
     backgroundColor: '#E7F5EE',
-    borderRadius: 15,
+    borderRadius: 10,
     marginBottom: 30,
     borderWidth: 1,
     borderColor: '#153c2a',
@@ -755,14 +762,14 @@ const styles = StyleSheet.create({
   publishBtn: {
     backgroundColor: '#153c2a',
     padding: 16,
-    borderRadius: 15,
+    borderRadius: 10,
     alignItems: 'center',
     elevation: 4,
   },
   draftBtn: {
     backgroundColor: '#F1F5F9',
     padding: 16,
-    borderRadius: 15,
+    borderRadius: 10,
     alignItems: 'center',
     marginTop: 15,
     borderWidth: 1,

@@ -734,7 +734,7 @@ const localStyles = StyleSheet.create({
     shadowRadius: 5,
     elevation: 6,
     },
-    tabContainer: { flexDirection: 'row', backgroundColor: '#F1F5F9', borderRadius: 12, padding: 4, marginBottom: 16 },
+    tabContainer: { flexDirection: 'row', backgroundColor: '#F1F5F9', borderRadius: 10, padding: 4, marginBottom: 16 },
     tabButton: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 8, paddingHorizontal: 4 },
     activeTabButton: { backgroundColor: '#FFF', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 3, elevation: 2 },
     tabText: { fontSize: 15, fontWeight: '600', color: '#64748B', textAlign: 'center' },
