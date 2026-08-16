@@ -8,7 +8,7 @@
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/mypholens_logo.png",
+      "image": "./assets/mypholens-logo-sq.png",
       "resizeMode": "cover",
       "backgroundColor": "#ffffff"
     },
@@ -21,14 +21,14 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/mypholens_logo.png",
+        "foregroundImage": "./assets/mypholens-logo-sq.png",
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
       "package": "com.anonymous.MyphoLens"
     },
     "web": {
-      "favicon": "./assets/mypholens_logo.png"
+      "favicon": "./assets/mypholens-logo-sq.png"
     },
     "extra": {
       "eas": {
