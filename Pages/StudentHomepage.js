@@ -17,6 +17,12 @@ const getInitials = (name) => {
   return parts[0][0].toUpperCase();
 };
 
+const getAvatarUri = (url, u) => {
+  if (!url) return null;
+  if (url.startsWith('data:image') || url.startsWith('file:')) return url;
+  return `${toAbsUrl(url)}?v=${u?.updatedAt || '1'}`;
+};
+
 export default function StudentHomepage({ navigation }) {
   const [user, setUser] = useState(null);
   const [scans, setScans] = useState([]);
@@ -34,10 +40,25 @@ export default function StudentHomepage({ navigation }) {
             setLoading(true);
             const rawUser = await AsyncStorage.getItem('user'); 
             if (!rawUser) return; 
-            const currentUser = JSON.parse(rawUser); 
-            setUser(currentUser);
             
-            // Fetch necessary dashboard data in parallel
+            let currentUser = JSON.parse(rawUser); 
+            // 1. Instantly set local user so the UI doesn't look empty
+            setUser(currentUser);
+
+            // 2. THE FIX: Silently sync the latest user data (including avatar) from the backend
+            try {
+                const userRes = await api.get(`/meds/${currentUser._id}`);
+                const updatedUser = userRes.data?.data || userRes.data;
+                if (updatedUser) {
+                    currentUser = updatedUser; // Update the reference for the upcoming Promise.all
+                    setUser(currentUser);
+                    await AsyncStorage.setItem('user', JSON.stringify(currentUser));
+                }
+            } catch (err) {
+                console.log("Failed to sync latest user data:", err);
+            }
+            
+            // 3. Fetch necessary dashboard data in parallel
             const [usersRes, syRes, lessonsRes, remedialRes, scansRes, bookmarksRaw] = await Promise.all([
                 api.get('/admin/users').catch(() => api.get('/getMed').catch(() => ({ data: [] }))), // Fallback routing for users
                 api.get('/admin/academic-settings/school-years').catch(() => ({ data: {} })),
@@ -101,11 +122,9 @@ export default function StudentHomepage({ navigation }) {
   const handleToggleBookmark = async (itemId, type) => {
         try {
             if (type === 'scan') {
-                // Handle Scan Bookmarking via Backend API
                 const res = await api.put(`/scan-bookmark/${itemId}`);
                 const updated = res.data.data;
                 
-                // Update local state to reflect UI change instantly
                 setScans(prev => prev.map(s => s._id === itemId ? { ...s, bookmarked: updated.bookmarked } : s));
                 
                 if (updated.bookmarked) {
@@ -115,7 +134,6 @@ export default function StudentHomepage({ navigation }) {
                 }
                 
             } else if (type === 'lesson') {
-                // Handle Lesson Bookmarking via Local Storage
                 let newBookmarks = { ...bookmarks };
                 if (!newBookmarks.lessons) newBookmarks.lessons = [];
 
@@ -178,14 +196,12 @@ export default function StudentHomepage({ navigation }) {
   const recentScansList = scans.slice(0, 5);
   const recentLessonsList = suggestedLessons.slice(0, 5);
 
-  // Check safely if latestQuiz actually contains valid metrics
   const hasValidAssessment = latestQuiz && latestQuiz.score !== undefined && latestQuiz.score !== null;
 
   return (
     <View style={[localStyles.container, { backgroundColor: theme?.bg || '#F8F9FA' }]}>
       <StatusBar barStyle="dark-content" backgroundColor="#F8F9FA" />
 
-      {/* Top Header Row */}
       <View style={localStyles.topHeaderBar}>
         <Text style={[localStyles.headerTitle, { color: '#153c2a' || theme?.text }]}>Home</Text>
         <TouchableOpacity 
@@ -199,7 +215,6 @@ export default function StudentHomepage({ navigation }) {
 
       <ScrollView contentContainerStyle={localStyles.scrollContainer} showsVerticalScrollIndicator={false}>
         
-        {/* Welcome Banner Card */}
         <View style={localStyles.welcomeBanner}>
           <View style={localStyles.welcomeTextContainer}>
             <Text style={localStyles.welcomeSubText}>Welcome back,</Text>
@@ -207,14 +222,13 @@ export default function StudentHomepage({ navigation }) {
           </View>
           <View style={localStyles.welcomeAvatarCircle}>
             {user?.avatar ? (
-              <Image source={{ uri: toAbsUrl(user.avatar) }} style={localStyles.avatarImage} />
+              <Image source={{ uri: getAvatarUri(user.avatar, user) }} style={localStyles.avatarImage} />
             ) : (
               <Text style={localStyles.avatarInitials}>{getInitials(fullName)}</Text>
             )}
           </View>
         </View>
 
-        {/* Quick Links Section */}
         <View style={localStyles.sectionHeadingRow}>
           <Ionicons name="link" size={25} color="#153c2a" style={{ marginRight: 10 }} />
           <Text style={[localStyles.sectionHeaderTitle, { color: '#153c2a' || theme?.text  }]}>Quick Links</Text>
@@ -288,7 +302,6 @@ export default function StudentHomepage({ navigation }) {
           </TouchableOpacity>
         </View>
 
-        {/* Recent Scans Section */}
         <View style={localStyles.sectionHeadingRow}>
           <Ionicons name="scan" size={25} color="#153c2a" style={{ marginRight: 10 }} />
           <Text style={[localStyles.sectionHeaderTitle, { color: '#153c2a' || theme?.text  }]}>Recent Scans</Text>
@@ -315,7 +328,6 @@ export default function StudentHomepage({ navigation }) {
                               <Text style={localStyles.recentScanSubtitle}>
                                   {Number(scan.confidence).toFixed(1)}% Accuracy Score
                               </Text>
-                              {/* ADDED DATE AND TIME */}
                               <Text style={localStyles.recentScanMeta}>
                                   {dateStr} • {timeStr}
                               </Text>
@@ -342,7 +354,6 @@ export default function StudentHomepage({ navigation }) {
           )}
         </ScrollView>
 
-        {/* Latest Assessment Score Section */}
         <View style={localStyles.sectionHeadingRow}>
           <Ionicons name="bar-chart" size={25} color="#153c2a" style={{ marginRight: 10 }} />
           <Text style={[localStyles.sectionHeaderTitle, { color: '#153c2a' || theme?.text  }]}>Latest Assessment Score</Text>
@@ -384,7 +395,6 @@ export default function StudentHomepage({ navigation }) {
           </View>
         )}
 
-        {/* Recently Opened Lessons Section */}
         <View style={localStyles.sectionHeadingRow}>
           <Ionicons name="book" size={25} color="#153c2a" style={{ marginRight: 10 }} />
           <Text style={[localStyles.sectionHeaderTitle, { color: '#153c2a' || theme?.text  }]}>Recently Opened Lessons</Text>
@@ -412,7 +422,6 @@ export default function StudentHomepage({ navigation }) {
                                     <Ionicons name={isRemedial ? "medical" : "book"} size={24} color={isRemedial ? "#EF4444" : "#153c2a"} />
                                 </View>
                                 
-                                {/* NEW: LESSON BOOKMARK BUTTON */}
                                 <TouchableOpacity 
                                     style={{ padding: 4 }} 
                                     onPress={() => handleToggleBookmark(lesson._id, 'lesson')}
@@ -478,7 +487,7 @@ export default function StudentHomepage({ navigation }) {
                                 
                                 <TouchableOpacity 
                                     style={localStyles.downloadBtn} 
-                                    onPress={handleDownload} // Removed (selectedScan) parameter
+                                    onPress={handleDownload} 
                                     disabled={isDownloading}
                                 >
                                     {isDownloading ? (
@@ -500,300 +509,60 @@ export default function StudentHomepage({ navigation }) {
 }
 
 const localStyles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  centered: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  topHeaderBar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: Platform.OS === 'ios' ? 60 : 40,
-    paddingBottom: 10,
-    backgroundColor: 'transparent',
-  },
-  headerTitle: {
-    fontSize: 25,
-    fontWeight: '600',
-    color: '#153c2a' 
-  },
-  notificationBell: {
-    width: 45,
-    height: 45,
-    borderRadius: 22.5,
-    backgroundColor: '#EAEFEB',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  scrollContainer: {
-    paddingHorizontal: 20,
-    paddingTop: 10,
-  },
-  welcomeBanner: {
-    backgroundColor: '#153c2a',
-    borderRadius: 10,
-    padding: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 24,
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 3 },
-  },
-  welcomeTextContainer: {
-    flex: 1,
-    paddingRight: 12,
-  },
-  welcomeSubText: {
-    fontSize: 23,
-    color: '#ffffff',
-    fontWeight: '400',
-    marginBottom: 4,
-  },
-  welcomeUserName: {
-    fontSize: 25,
-    fontWeight: '900',
-    color: '#FFFFFF',
-  },
-  welcomeAvatarCircle: {
-    width: 75,
-    height: 75,
-    borderRadius: 37.5,
-    backgroundColor: '#FFFFFF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    overflow: 'hidden',
-  },
-  avatarImage: {
-    width: '100%',
-    height: '100%',
-    resizeMode: 'cover',
-  },
-  avatarInitials: {
-    fontSize: 30,
-    fontWeight: '900',
-    color: '#153c2a',
-  },
-  sectionHeadingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
-    marginTop: 5,
-  },
-  sectionHeaderTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-  },
-  quickLinksGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    marginBottom: 20,
-  },
-  quickLinkCard: {
-    width: (width - 40 - 20) / 3,
-    borderRadius: 10,
-    paddingVertical: 16,
-    paddingHorizontal: 8,
-    alignItems: 'center',
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOpacity: 0.02,
-    shadowRadius: 4,
-  },
-  quickLinkIconBox: {
-    width: 70,
-    height: 70,
-    borderRadius: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  quickLinkText: {
-    fontSize: 13,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  horizontalScrollBox: {
-    paddingVertical: 4,
-    marginBottom: 16,
-  },
-  recentScanCard: {
-    width: 300,
-    borderRadius: 10,
-    padding: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginRight: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    elevation: 1,
-    marginBottom: 20,
-  },
-  recentScanThumb: {
-    width: 70,
-    height: 70,
-    borderRadius: 10,
-    backgroundColor: '#E2E8F0',
-    marginRight: 12,
-  },
-  recentScanInfo: {
-    flex: 1,
-  },
-  recentScanTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-    marginBottom: 2,
-  },
-  recentScanSubtitle: {
-    fontSize: 13,
-    color: '#64748B',
-    fontWeight: '500',
-  },
-  emptyCardBox: {
-    width: width - 40,
-    borderRadius: 10,
-    padding: 20,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderStyle: 'dashed',
-    marginBottom: 20,
-  },
-  emptyCardTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-    marginBottom: 2,
-  },
-  emptyCardSub: {
-    fontSize: 13,
-    color: '#64748B',
-  },
-  assessmentScoreCard: {
-    borderRadius: 10,
-    padding: 18,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 30,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    elevation: 1,
-  },
-  emptyAssessmentCard: {
-    borderRadius: 10,
-    padding: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 30,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderStyle: 'dashed',
-    elevation: 1,
-  },
-  emptyAssessmentTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-    marginBottom: 12,
-  },
-  takeAssessmentBtn: {
-    backgroundColor: '#153c2a',
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 12,
-    alignItems: 'center',
-    elevation: 2,
-  },
-  takeAssessmentBtnText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '800',
-  },
-  assessmentContentLeft: {
-    flex: 1,
-    paddingRight: 10,
-  },
-  quizBadgeTag: {
-    backgroundColor: '#153c2a',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-    alignSelf: 'flex-start',
-    marginBottom: 6,
-  },
-  quizBadgeTagText: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#FFFFFF',
-  },
-  assessmentSubmittedText: {
-    fontSize: 15,
-    color: '#64748B',
-    marginBottom: 4,
-    fontWeight: '500',
-  },
-  assessmentFeedbackText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  assessmentContentRight: {
-    alignItems: 'flex-end',
-  },
-  scoreFractionText: {
-    fontSize: 25,
-    fontWeight: '900',
-    marginBottom: 2,
-  },
-  viewAllLinkText: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#153c2a',
-  },
-  lessonItemCard: {
-    width: 250,
-    borderRadius: 10,
-    padding: 14,
-    marginRight: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    elevation: 1,
-  },
-  lessonIconSmallBox: {
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  lessonCardTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-    marginBottom: 2,
-  },
-  lessonCardSub: {
-    fontSize: 13,
-    color: '#64748B',
-    fontWeight: '500',
-  },
-    recentScanMeta: { fontSize: 11, color: '#94A3B8', fontWeight: '600', marginTop: 4 },
-    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', padding: 20 },
-    modalContent: { width: '100%', backgroundColor: '#fff', borderRadius: 20, padding: 20, alignItems: 'center', elevation: 10, position: 'relative' },
-    closeBtn: { position: 'absolute', top: 15, right: 15, zIndex: 10 },
-    fullImage: { width: '100%', height: 300, borderRadius: 15, marginBottom: 20, backgroundColor: '#f1f5f9' },
-    metadataBox: { alignItems: 'center', marginBottom: 20 },
-    metaTitle: { fontSize: 22, fontWeight: '900', color: '#153c2a', marginBottom: 4 },
-    metaSub: { fontSize: 14, color: '#64748B', fontWeight: '600', marginBottom: 2 },
-    downloadBtn: { flexDirection: 'row', backgroundColor: '#153c2a', paddingVertical: 14, paddingHorizontal: 24, borderRadius: 12, alignItems: 'center', width: '100%', justifyContent: 'center' },
-    downloadBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
-    printContainer: { width: '100%', backgroundColor: '#ffffff', padding: 10, borderRadius: 15, alignItems: 'center' },
+  container: { flex: 1 },
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  topHeaderBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: Platform.OS === 'ios' ? 60 : 40, paddingBottom: 10, backgroundColor: 'transparent' },
+  headerTitle: { fontSize: 25, fontWeight: '600', color: '#153c2a' },
+  notificationBell: { width: 45, height: 45, borderRadius: 22.5, backgroundColor: '#EAEFEB', justifyContent: 'center', alignItems: 'center' },
+  scrollContainer: { paddingHorizontal: 20, paddingTop: 10 },
+  welcomeBanner: { backgroundColor: '#153c2a', borderRadius: 10, padding: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, elevation: 3, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 6, shadowOffset: { width: 0, height: 3 } },
+  welcomeTextContainer: { flex: 1, paddingRight: 12 },
+  welcomeSubText: { fontSize: 23, color: '#ffffff', fontWeight: '400', marginBottom: 4 },
+  welcomeUserName: { fontSize: 25, fontWeight: '900', color: '#FFFFFF' },
+  welcomeAvatarCircle: { width: 75, height: 75, borderRadius: 37.5, justifyContent: 'center', alignItems: 'center', overflow: 'hidden', borderWidth:3, borderColor: '#153c2a', },
+  avatarImage: { width: '100%', height: '100%', resizeMode: 'cover' },
+  avatarInitials: { fontSize: 30, fontWeight: '900', color: '#153c2a' },
+  sectionHeadingRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10, marginTop: 5 },
+  sectionHeaderTitle: { fontSize: 20, fontWeight: '700' },
+  quickLinksGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 20 },
+  quickLinkCard: { width: (width - 40 - 20) / 3, borderRadius: 10, paddingVertical: 16, paddingHorizontal: 8, alignItems: 'center', marginBottom: 12, borderWidth: 1, borderColor: '#E2E8F0', elevation: 1, shadowColor: '#000', shadowOpacity: 0.02, shadowRadius: 4 },
+  quickLinkIconBox: { width: 70, height: 70, borderRadius: 14, justifyContent: 'center', alignItems: 'center', marginBottom: 8 },
+  quickLinkText: { fontSize: 13, fontWeight: '700', textAlign: 'center' },
+  horizontalScrollBox: { paddingVertical: 4, marginBottom: 16 },
+  recentScanCard: { width: 300, borderRadius: 10, padding: 12, flexDirection: 'row', alignItems: 'center', marginRight: 12, borderWidth: 1, borderColor: '#E2E8F0', elevation: 1, marginBottom: 20 },
+  recentScanThumb: { width: 70, height: 70, borderRadius: 10, backgroundColor: '#E2E8F0', marginRight: 12 },
+  recentScanInfo: { flex: 1 },
+  recentScanTitle: { fontSize: 15, fontWeight: '800', marginBottom: 2 },
+  recentScanSubtitle: { fontSize: 13, color: '#64748B', fontWeight: '500' },
+  recentScanMeta: { fontSize: 11, color: '#94A3B8', fontWeight: '600', marginTop: 4 },
+  emptyCardBox: { width: width - 40, borderRadius: 10, padding: 20, alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0', borderStyle: 'dashed', marginBottom: 20 },
+  emptyCardTitle: { fontSize: 15, fontWeight: '800', marginBottom: 2 },
+  emptyCardSub: { fontSize: 13, color: '#64748B' },
+  assessmentScoreCard: { borderRadius: 10, padding: 18, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 30, borderWidth: 1, borderColor: '#E2E8F0', elevation: 1 },
+  emptyAssessmentCard: { borderRadius: 10, padding: 22, alignItems: 'center', justifyContent: 'center', marginBottom: 30, borderWidth: 1, borderColor: '#E2E8F0', borderStyle: 'dashed', elevation: 1 },
+  emptyAssessmentTitle: { fontSize: 15, fontWeight: '800', marginBottom: 12 },
+  takeAssessmentBtn: { backgroundColor: '#153c2a', paddingVertical: 10, paddingHorizontal: 20, borderRadius: 12, alignItems: 'center', elevation: 2 },
+  takeAssessmentBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
+  assessmentContentLeft: { flex: 1, paddingRight: 10 },
+  quizBadgeTag: { backgroundColor: '#153c2a', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, alignSelf: 'flex-start', marginBottom: 6 },
+  quizBadgeTagText: { fontSize: 13, fontWeight: '800', color: '#FFFFFF' },
+  assessmentSubmittedText: { fontSize: 15, color: '#64748B', marginBottom: 4, fontWeight: '500' },
+  assessmentFeedbackText: { fontSize: 13, fontWeight: '600' },
+  assessmentContentRight: { alignItems: 'flex-end' },
+  scoreFractionText: { fontSize: 25, fontWeight: '900', marginBottom: 2 },
+  viewAllLinkText: { fontSize: 13, fontWeight: '800', color: '#153c2a' },
+  lessonItemCard: { width: 250, borderRadius: 10, padding: 14, marginRight: 12, borderWidth: 1, borderColor: '#E2E8F0', elevation: 1 },
+  lessonIconSmallBox: { borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginBottom: 10 },
+  lessonCardTitle: { fontSize: 15, fontWeight: '800', marginBottom: 2 },
+  lessonCardSub: { fontSize: 13, color: '#64748B', fontWeight: '500' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  modalContent: { width: '100%', backgroundColor: '#fff', borderRadius: 20, padding: 20, alignItems: 'center', elevation: 10, position: 'relative' },
+  closeBtn: { position: 'absolute', top: 15, right: 15, zIndex: 10 },
+  fullImage: { width: '100%', height: 300, borderRadius: 15, marginBottom: 20, backgroundColor: '#f1f5f9' },
+  metadataBox: { alignItems: 'center', marginBottom: 20 },
+  metaTitle: { fontSize: 22, fontWeight: '900', color: '#153c2a', marginBottom: 4 },
+  metaSub: { fontSize: 14, color: '#64748B', fontWeight: '600', marginBottom: 2 },
+  downloadBtn: { flexDirection: 'row', backgroundColor: '#153c2a', paddingVertical: 14, paddingHorizontal: 24, borderRadius: 12, alignItems: 'center', width: '100%', justifyContent: 'center' },
+  downloadBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
+  printContainer: { width: '100%', backgroundColor: '#ffffff', padding: 10, borderRadius: 15, alignItems: 'center' },
 });

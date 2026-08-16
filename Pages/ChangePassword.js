@@ -139,12 +139,12 @@ export default function ChangePassword({ navigation }) {
 
             <View style={[localStyles.header, { backgroundColor: '#153c2a' }]}>
                 <View style={localStyles.headerRow}>
-                    <TouchableOpacity onPress={() => navigation.goBack()} style={{ marginRight: 15 }}>
+                    <TouchableOpacity onPress={() => navigation.goBack()} style={localStyles.backBtn}>
                         <Ionicons name="arrow-back" size={28} color="#fff" />
                     </TouchableOpacity>
-                    <View>
+                    <View style={localStyles.headerTextContainer}>
                         <Text style={localStyles.headerTitle}>Change Password</Text>
-                        <Text style={localStyles.headerSubtitle}>Change your account password</Text>
+                        <Text style={localStyles.headerSubtitle}>Update your account security</Text>
                     </View>
                 </View>
             </View>
@@ -287,12 +287,21 @@ export default function ChangePassword({ navigation }) {
 
 const localStyles = StyleSheet.create({
     header: { 
-        paddingHorizontal: 20, paddingTop: Platform.OS === 'ios' ? 60 : 40, 
-        paddingBottom: 25, borderBottomLeftRadius: 30, borderBottomRightRadius: 30 
+        paddingHorizontal: 20, 
+        paddingTop: Platform.OS === 'ios' ? 60 : 40, 
+        paddingBottom: 25, 
+        borderBottomLeftRadius: 25, 
+        borderBottomRightRadius: 25,
+        elevation: 4,
+        shadowColor: '#000',
+        shadowOpacity: 0.1,
+        shadowRadius: 8
     },
-    headerRow: { flexDirection: 'row', alignItems: 'center' },
-    headerTitle: { fontSize: 22, fontWeight: '900', color: '#fff', marginTop: 15 },
-    headerSubtitle: { fontSize: 13, color: '#d1fae5', marginTop: 2 },
+    headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 20, position: 'relative' },
+    backBtn: { position: 'absolute', left: 0, zIndex: 10 },
+    headerTextContainer: { alignItems: 'center', paddingHorizontal: 35 },
+    headerTitle: { fontSize: 22, fontWeight: '900', color: '#fff', textAlign: 'center' },
+    headerSubtitle: { fontSize: 13, color: '#d1fae5', marginTop: 2, textAlign: 'center' },
 
     card: { padding: 25, borderRadius: 24, elevation: 4, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10 },
     shieldIcon: { width: 90, height: 90, borderRadius: 45, backgroundColor: '#e7f8f2', justifyContent: 'center', alignItems: 'center', marginBottom: 20 },

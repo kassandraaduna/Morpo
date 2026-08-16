@@ -4,12 +4,19 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import ConfirmSheet from './src/components/ConfirmSheet';
 import { ThemeContext } from './src/context/ThemeContext';
-import { toAbsUrl } from './src/services/api';
+import api, { toAbsUrl } from './src/services/api';
 
 const getInitials = (fname, lname) => {
   const f = fname ? fname.charAt(0).toUpperCase() : '';
   const l = lname ? lname.charAt(0).toUpperCase() : '';
   return `${f}${l}` || 'U';
+};
+
+// PREVENTS MOBILE CACHING WHEN SYNCING FROM WEB
+const getAvatarUri = (url, u) => {
+  if (!url) return null;
+  if (url.startsWith('data:image') || url.startsWith('file:')) return url;
+  return `${toAbsUrl(url)}?v=${u?.updatedAt || '1'}`;
 };
 
 export default function Profile({ navigation }) {
@@ -21,9 +28,24 @@ export default function Profile({ navigation }) {
     const loadUser = async () => {
       const rawUser = await AsyncStorage.getItem('user');
       if (rawUser) {
-        setUser(JSON.parse(rawUser));
+        const parsedUser = JSON.parse(rawUser);
+        setUser(parsedUser);
+
+        try {
+          // Immediately fetch fresh DB data so web updates reflect here
+          const res = await api.get(`/meds/${parsedUser._id}`);
+          const updatedUser = res.data?.data || res.data;
+          
+          if (updatedUser) {
+            setUser(updatedUser);
+            await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
+          }
+        } catch (err) {
+          console.log("Failed to sync latest user data", err);
+        }
       }
     };
+    
     loadUser();
     const unsubscribe = navigation.addListener('focus', loadUser);
     return unsubscribe;
@@ -67,7 +89,7 @@ export default function Profile({ navigation }) {
         <View style={[localStyles.profileCard, { backgroundColor: theme.card }]}>
           <View style={localStyles.avatarContainer}>
             {user.avatar ? (
-              <Image source={{ uri: toAbsUrl(user.avatar) }} style={localStyles.avatarImage} />
+              <Image source={{ uri: getAvatarUri(user.avatar, user) }} style={localStyles.avatarImage} />
             ) : (
               <Text style={localStyles.initialsText}>
                 {getInitials(user.fname, user.lname)}
@@ -96,16 +118,16 @@ export default function Profile({ navigation }) {
           <Row label="Dataset Library" icon="images-outline" onPress={() => navigation.navigate('DatasetLibrary')} />
         )}
 
-        <Text style={localStyles.sectionTitle}>PREFERENCES</Text>
-        <Row 
+        <Text style={localStyles.sectionTitle}>PRIVACY & SECURITY</Text>
+        {/* <Row 
           label="Dark Mode" 
           icon="moon-outline" 
           chevron={false} 
           right={<Switch value={darkMode} onValueChange={toggleTheme} trackColor={{ false: "#ccc", true: "#153c2a" }} />} 
-        />
+        /> */}
         <Row label="Change Password" icon="lock-closed-outline" onPress={() => navigation.navigate('ChangePassword')} />
 
-        <Text style={localStyles.sectionTitle}>SUPPORT</Text>
+        <Text style={localStyles.sectionTitle}>HELP & SUPPORT</Text>
         <Row label="FAQs" icon="help-circle-outline" onPress={() => navigation.navigate('FAQs')} />
         <Row label="Terms & Conditions" icon="document-text-outline" onPress={() => navigation.navigate('Terms')} />
         <Row label="Privacy Policy" icon="shield-checkmark-outline" onPress={() => navigation.navigate('Privacy')} />
@@ -135,51 +157,24 @@ export default function Profile({ navigation }) {
 }
 
 const localStyles = StyleSheet.create({
-  header: { 
-      paddingHorizontal: 20, 
-      paddingTop: Platform.OS === 'ios' ? 60 : 40,
-      paddingBottom: 25,
-      borderBottomLeftRadius: 30,
-      borderBottomRightRadius: 30
-    },
-    headerTop: { 
-      flexDirection: 'column',
-      alignItems: 'flex-start',
-      marginBottom: 10 
-    },
-    headerTitle: { 
-      fontSize: 24, 
-      fontWeight: '900', 
-      color: '#fff',
-      marginTop: 20,
-    },
-    headerSubtitle: { 
-      fontSize: 13, 
-      color: '#d1fae5', 
-      marginTop: 2 
-    },
-  profileCard: { 
-    flexDirection: 'row', alignItems: 'center', marginTop: 25, marginBottom: 20, 
-    padding: 20, borderRadius: 24, elevation: 4, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10 
-  },
-  avatarContainer: { 
-    width: 75, height: 75, borderRadius: 40, backgroundColor: '#E7F5EE', 
-    justifyContent: 'center', alignItems: 'center', overflow: 'hidden' 
-  },
+  header: { paddingHorizontal: 20, paddingTop: Platform.OS === 'ios' ? 60 : 40, paddingBottom: 25, borderBottomLeftRadius: 10, borderBottomRightRadius: 10, elevation: 4, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 8 },
+  headerTop: { alignItems: 'center', marginBottom: 10 },
+  headerTitle: { fontSize: 25, fontWeight: '900', color: '#fff', marginTop: 20, textAlign: 'center' },
+  headerSubtitle: { fontSize: 13, color: '#d1fae5', marginTop: 2, textAlign: 'center' },
+  profileCard: { flexDirection: 'row', alignItems: 'center', marginTop: 25, marginBottom: 20, padding: 20, borderRadius: 10, elevation: 4, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10 },
+  avatarContainer: { width: 75, height: 75, borderRadius: 40, justifyContent: 'center', alignItems: 'center', overflow: 'hidden', borderWidth:3, borderColor: '#153c2a', },
   avatarImage: { width: '100%', height: '100%', resizeMode: 'cover' },
-  initialsText: { fontSize: 26, fontWeight: '900', color: '#94A3B8' },
+  initialsText: { fontSize: 30, fontWeight: '900', color: '#153c2a' },
   profileTextContainer: { flex: 1, marginLeft: 16 },
   nameText: { fontSize: 20, fontWeight: '900' },
   emailText: { fontSize: 13, color: '#64748B', marginTop: 2, fontWeight: '500' },
   roleBadge: { alignSelf: 'flex-start', backgroundColor: '#e7f8f2', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8, marginTop: 8 },
-  roleText: { color: '#153c2a', fontSize: 10, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.5 },
-
-  sectionTitle: { fontSize: 12, fontWeight: '900', color: '#153c2a', marginTop: 15, marginBottom: 10, letterSpacing: 1 },
-  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 15, borderRadius: 16, marginBottom: 8, elevation: 1 },
+  roleText: { color: '#153c2a', fontSize: 12, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.5 },
+  sectionTitle: { fontSize: 18, fontWeight: '900', color: '#153c2a', marginTop: 15, marginBottom: 10, },
+  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 15, borderRadius: 10, marginBottom: 8, elevation: 1 },
   rowLeft: { flexDirection: 'row', alignItems: 'center' },
   iconBox: { width: 36, height: 36, borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
-  rowText: { fontSize: 14, fontWeight: '700' },
-
-  logoutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#FEF2F2', padding: 18, borderRadius: 16, marginTop: 30, marginBottom: 10, borderWidth: 1, borderColor: '#FEE2E2' },
+  rowText: { fontSize: 15, fontWeight: '700' },
+  logoutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#FEF2F2', padding: 18, borderRadius: 10, marginTop: 30, marginBottom: 10, borderWidth: 1, borderColor: '#FEE2E2' },
   logoutText: { color: '#EF4444', fontWeight: '900', fontSize: 15, marginLeft: 8 }
 });

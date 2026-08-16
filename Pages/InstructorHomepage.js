@@ -9,13 +9,13 @@ import {
   Dimensions, 
   ActivityIndicator,
   Modal,
-  FlatList, DeviceEventEmitter,
+  FlatList, DeviceEventEmitter, Image,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { ThemeContext } from './src/context/ThemeContext';
 import { CommonActions } from '@react-navigation/native';
-import api from './src/services/api';
+import api, {toAbsUrl} from './src/services/api';
 
 const { width } = Dimensions.get('window');
 
@@ -24,6 +24,12 @@ const getInitials = (name) => {
   const parts = name.trim().split(' ');
   if (parts.length > 1) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   return parts[0][0].toUpperCase();
+};
+
+const getAvatarUri = (url, u) => {
+  if (!url) return null;
+  if (url.startsWith('data:image') || url.startsWith('file:')) return url;
+  return `${toAbsUrl(url)}?v=${u?.updatedAt || '1'}`;
 };
 
 const formatDate = (dateString) => {
@@ -46,12 +52,10 @@ export default function InstructorHomepage({ navigation }) {
   const { theme } = useContext(ThemeContext);
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  
-  // Modals States
+
   const [showCalendar, setShowCalendar] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
 
-  // Data States
   const [stats, setStats] = useState({ sectionsAssigned: 0, totalStudents: 0, avgScore: 0 });
   const [performance, setPerformance] = useState([]);
   const [notifications, setNotifications] = useState([]);
@@ -76,7 +80,6 @@ export default function InstructorHomepage({ navigation }) {
       let generatedNotifs = [];
       let plottedEvents = [];
 
-      // 1. EXTRACT INSTRUCTOR'S ASSIGNED SECTIONS
       const assignments = currentUser.instructorAssignments || [];
       const fallbackArr = Array.isArray(currentUser.assignedSections) ? currentUser.assignedSections : [];
       const fallbackStr = currentUser.section ? [currentUser.section] : [];
@@ -90,7 +93,6 @@ export default function InstructorHomepage({ navigation }) {
       const uniqueSections = new Set(allSectionsRaw.map(normalizeSection).filter(Boolean));
       const sectionsAssigned = uniqueSections.size;
 
-      // 2. FETCH STUDENTS
       try {
         const res = await api.get('/admin/users', config);
         const allUsers = Array.isArray(res.data) ? res.data : (res.data?.users || []);
@@ -110,13 +112,12 @@ export default function InstructorHomepage({ navigation }) {
 
       const totalStudents = fetchedStudents.length;
 
-      // 3. FETCH SCORES & SUBMISSIONS 
       if (totalStudents > 0) {
         try {
           const scorePromises = fetchedStudents.map(student => 
             api.get(`/practice/history/${student._id}`, config)
-               .catch(() => api.get(`/assessments/history/${student._id}`, config))
-               .catch(() => ({ data: [] })) 
+                .catch(() => api.get(`/assessments/history/${student._id}`, config))
+                .catch(() => ({ data: [] })) 
           );
 
           const historyResponses = await Promise.all(scorePromises);
@@ -139,14 +140,12 @@ export default function InstructorHomepage({ navigation }) {
         }
       }
 
-      // 4. COMPUTE TOP-LEVEL STATS
       const overallAvgScore = relevantScores.length > 0 
         ? relevantScores.reduce((acc, curr) => acc + (curr.score || 0), 0) / relevantScores.length 
         : 0;
 
       setStats({ sectionsAssigned, totalStudents, avgScore: overallAvgScore });
 
-      // 5. MAP INDIVIDUAL STUDENT PERFORMANCE
       const performanceData = fetchedStudents.map(student => {
         const studentSubmissions = relevantScores.filter(s => s.studentId === student._id);
         const studentAvg = studentSubmissions.length > 0
@@ -164,7 +163,6 @@ export default function InstructorHomepage({ navigation }) {
 
       setPerformance(performanceData);
 
-      // 6. GENERATE INSTRUCTOR NOTIFICATIONS & CALENDAR EVENTS
       if (relevantScores.length > 0) {
         const recentSubmissions = relevantScores
           .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
@@ -339,7 +337,11 @@ export default function InstructorHomepage({ navigation }) {
             <Text style={localStyles.welcomeUserName}>{fullName}</Text>
           </View>
           <View style={localStyles.welcomeAvatarCircle}>
-            <Text style={localStyles.avatarInitials}>{getInitials(fullName)}</Text>
+            {user?.avatar ? (
+              <Image source={{ uri: getAvatarUri(user.avatar, user) }} style={localStyles.avatarImage} />
+            ) : (
+              <Text style={localStyles.avatarInitials}>{getInitials(fullName)}</Text>
+            )}
           </View>
         </View>
 
@@ -626,10 +628,10 @@ const localStyles = StyleSheet.create({
     width: 75,
     height: 75,
     borderRadius: 37.5,
-    backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
     overflow: 'hidden', 
+    borderWidth:3, borderColor: '#FFF',
   },
   avatarImage: {
     width: '100%',
@@ -639,7 +641,7 @@ const localStyles = StyleSheet.create({
   avatarInitials: {
     fontSize: 30,
     fontWeight: '900',
-    color: '#153c2a',
+    color: '#FFF',
   },
   
   statsContainer: { 
@@ -699,7 +701,7 @@ const localStyles = StyleSheet.create({
   viewAllText: { 
     fontSize: 13, 
     fontWeight: '800', 
-    color: '#10B981' 
+    color: '#153c2a' 
   }, 
   
   quickLinksGrid: { 

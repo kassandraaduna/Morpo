@@ -262,7 +262,7 @@ export default function AssessmentSettings({
                       onPress={() => clearDate('availableAt')}
                       style={styles.clearBtn}
                     >
-                      <Ionicons name="trash-outline" size={16} color="#EF4444" />
+                      <Ionicons name="trash-outline" size={20} color="#EF4444" />
                     </TouchableOpacity>
                   )}
                 </View>
@@ -271,11 +271,11 @@ export default function AssessmentSettings({
                   onPress={() => openPicker('availableAt', 'date')}
                   activeOpacity={0.8}
                 >
-                  <Ionicons name="calendar-outline" size={18} color="#153c2a" />
+                  <Ionicons name="calendar-outline" size={20} color="#153c2a" />
                   <Text style={styles.dateText}>
                     {formatDateLabel(settings.availableAt)}
                   </Text>
-                  <Ionicons name="chevron-forward" size={16} color="#94A3B8" />
+                  <Ionicons name="chevron-forward" size={20} color="#94A3B8" />
                 </TouchableOpacity>
               </View>
 
@@ -293,7 +293,7 @@ export default function AssessmentSettings({
                       onPress={() => clearDate('deadlineAt')}
                       style={styles.clearBtn}
                     >
-                      <Ionicons name="trash-outline" size={16} color="#EF4444" />
+                      <Ionicons name="trash-outline" size={20} color="#EF4444" />
                     </TouchableOpacity>
                   )}
                 </View>
@@ -302,11 +302,11 @@ export default function AssessmentSettings({
                   onPress={() => openPicker('deadlineAt', 'date')}
                   activeOpacity={0.8}
                 >
-                  <Ionicons name="time-outline" size={18} color="#153c2a" />
+                  <Ionicons name="time-outline" size={20} color="#153c2a" />
                   <Text style={styles.dateText}>
                     {formatDateLabel(settings.deadlineAt)}
                   </Text>
-                  <Ionicons name="chevron-forward" size={16} color="#94A3B8" />
+                  <Ionicons name="chevron-forward" size={20} color="#94A3B8" />
                 </TouchableOpacity>
 
                 {/* Close on deadline toggle */}
@@ -636,7 +636,6 @@ const styles = StyleSheet.create({
   },
   clearBtn: {
     padding: 6,
-    backgroundColor: '#FEE2E2',
     borderRadius: 8,
   },
   dateSelectorBtn: {

@@ -402,7 +402,7 @@ export default function Scan({ navigation }) {
             <View style={styles.historyHeaderRow}>
               <Text style={[styles.historyTitle, { color: theme.text }]}>Recent Scans</Text>
               <TouchableOpacity onPress={() => navigation.navigate('ScanHistory')}>
-                <Text style={{ color: '#059669', fontWeight: 'bold' }}>View All</Text>
+                <Text style={{ color: '#153c2a', fontWeight: 'bold' }}>View All</Text>
               </TouchableOpacity>
             </View>
             
@@ -425,7 +425,7 @@ export default function Scan({ navigation }) {
                           <Ionicons 
                               name={item.bookmarked ? "bookmark" : "bookmark-outline"} 
                               size={22} 
-                              color={item.bookmarked ? "#059669" : theme.subText} 
+                              color={item.bookmarked ? "#153c2a" : theme.subText} 
                           />
                       </TouchableOpacity>
                       <TouchableOpacity onPress={() => handleDeleteHistoryItem(item._id)}>
@@ -446,10 +446,14 @@ const styles = StyleSheet.create({
   header: { 
     paddingHorizontal: 20, 
     paddingTop: Platform.OS === 'ios' ? 60 : 40,
-    paddingBottom: 30,
+    paddingBottom: 25,
     borderBottomLeftRadius: 10, 
     borderBottomRightRadius: 10, 
-    width: '100%'  
+    width: '100%',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
   },
   headerTop: { 
     flexDirection: 'column', 
