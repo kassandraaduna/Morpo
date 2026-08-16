@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useContext, useRef, useCallback } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Image, Modal, Alert, StyleSheet, Platform, StatusBar, Dimensions, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Image, Modal, StyleSheet, Platform, StatusBar, Dimensions, ActivityIndicator, FlatList } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -10,6 +10,8 @@ import * as MediaLibrary from 'expo-media-library';
 import { toastError, toastSuccess } from './src/components/ToastMsg';
 
 const { width } = Dimensions.get('window');
+
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 const getInitials = (name) => {
   if (!name) return 'S';
@@ -47,6 +49,12 @@ const getUserId = (field) => {
     return null;
 };
 
+const formatDate = (dateString) => {
+  if (!dateString) return '';
+  const date = new Date(dateString);
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+};
+
 export default function StudentHomepage({ navigation }) {
   const [user, setUser] = useState(null);
   const [scans, setScans] = useState([]);
@@ -57,6 +65,16 @@ export default function StudentHomepage({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [bookmarks, setBookmarks] = useState({ lessons: [], models: [], scans: [] });
   const [usersMap, setUsersMap] = useState({});
+  
+  // Calendar States
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [calendarEvents, setCalendarEvents] = useState([]);
+  const today = new Date();
+  const initDateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const [calendarMonth, setCalendarMonth] = useState(today.getMonth());
+  const [calendarYear, setCalendarYear] = useState(today.getFullYear());
+  const [selectedDateStr, setSelectedDateStr] = useState(initDateStr);
+
   const { theme } = useContext(ThemeContext);
   const printRef = useRef();
 
@@ -64,6 +82,7 @@ export default function StudentHomepage({ navigation }) {
         try { 
             setLoading(true);
             const rawUser = await AsyncStorage.getItem('user'); 
+            const token = await AsyncStorage.getItem('token');
             if (!rawUser) {
                 setLoading(false);
                 return;
@@ -72,8 +91,13 @@ export default function StudentHomepage({ navigation }) {
             let currentUser = JSON.parse(rawUser); 
             setUser(currentUser);
 
+            const config = {
+              headers: { Authorization: token ? `Bearer ${token}` : '' }
+            };
+
+            // Silently sync latest user data
             try {
-                const userRes = await api.get(`/meds/${currentUser._id}`).catch(() => api.get(`/admin/users/${currentUser._id}`));
+                const userRes = await api.get(`/meds/${currentUser._id}`, config).catch(() => api.get(`/admin/users/${currentUser._id}`, config));
                 const updatedUser = userRes.data?.data || userRes.data;
                 if (updatedUser) {
                     currentUser = updatedUser;
@@ -84,21 +108,91 @@ export default function StudentHomepage({ navigation }) {
                 console.log("Failed to sync latest user data:", err);
             }
             
-            // THE FIX: Fetch explicit attempt logs using the CORRECT backend endpoint: `/student/:studentId/assessment-history`[cite: 11]
-            const [usersRes, syRes, lessonsRes, remedialRes, scansRes, assessmentsRes, historyRes, bookmarksRaw, recentLessonsRaw] = await Promise.all([
-                api.get('/admin/users').catch(() => api.get('/getMed').catch(() => ({ data: [] }))),
-                api.get('/admin/academic-settings/school-years').catch(() => ({ data: {} })),
-                api.get('/lessons').catch(() => ({ data: [] })),
-                api.get(`/ai/personalized-lessons/${currentUser._id}`).catch(() => ({ data: [] })),
-                api.get(`/scan/history/${currentUser._id}`).catch(() => ({ data: [] })),
-                api.get(`/assessments?studentId=${currentUser._id}&_t=${Date.now()}`).catch(() => ({ data: [] })),
-                api.get(`/student/${currentUser._id}/assessment-history?_t=${Date.now()}`).catch(() => ({ data: [] })),
+            // THE FIX: Fetch attempts from ALL known history endpoints universally to guarantee nothing is missed.
+            const [
+                usersRes, syRes, lessonsRes, remedialRes, scansRes, bookmarksRaw, calRes, assessRes, 
+                officialHistoryRes, unifiedHistoryRes, recentLessonsRaw
+            ] = await Promise.all([
+                api.get('/admin/users', config).catch(() => api.get('/getMed', config).catch(() => ({ data: [] }))),
+                api.get('/admin/academic-settings/school-years', config).catch(() => ({ data: {} })),
+                api.get('/lessons', config).catch(() => ({ data: { data: [] } })),
+                api.get(`/ai/personalized-lessons/${currentUser._id}`, config).catch(() => ({ data: { data: [] } })),
+                api.get(`/scan/history/${currentUser._id}`, config).catch(() => ({ data: { data: [] } })),
                 AsyncStorage.getItem('studentBookmarks_v1').catch(() => null),
+                api.get('/calendar/events', config).catch(() => ({ data: [] })),
+                api.get(`/assessments?studentId=${currentUser._id}&_t=${Date.now()}`, config).catch(() => ({ data: [] })),
+                api.get(`/assessments/history/${currentUser._id}?_t=${Date.now()}`, config).catch(() => ({ data: [] })),
+                api.get(`/student/${currentUser._id}/assessment-history?_t=${Date.now()}`, config).catch(() => ({ data: [] })),
                 AsyncStorage.getItem(`recent_lessons_${currentUser._id}`).catch(() => null)
             ]);
 
             if (bookmarksRaw) setBookmarks(JSON.parse(bookmarksRaw));
+            
+            // =========================================================================
+            // THE FIX: UNIVERSAL CHRONOLOGICAL SORTING FOR LATEST ATTEMPT
+            // =========================================================================
+            let allOfficialAttempts = [];
 
+            // 1. Extract from the general assessments array
+            const allAssessments = extractArray(assessRes.data);
+            allAssessments.forEach(a => {
+                if (!a.isPracticeOnly && a.latestAttempt && a.latestAttempt.score !== undefined) {
+                    allOfficialAttempts.push({
+                        title: a.title || 'Assessment',
+                        score: a.latestAttempt.score,
+                        total: a.latestAttempt.total || a.questions?.length || 10,
+                        percent: a.latestAttempt.percent,
+                        feedback: a.latestAttempt.feedback,
+                        // Ensure we strictly extract the attempt's time, not the assessment's update time!
+                        timestamp: new Date(a.latestAttempt.submittedAt || a.latestAttempt.createdAt || a.latestAttempt.updatedAt || 0).getTime()
+                    });
+                }
+            });
+
+            // 2. Extract from the explicit official history endpoints
+            const extractFromHistory = (historyData) => {
+                const historyArray = extractArray(historyData?.history || historyData?.data || historyData);
+                historyArray.forEach(att => {
+                    const isPractice = att.isPracticeOnly || att.assessment?.isPracticeOnly;
+                    if (!isPractice && att.score !== undefined) {
+                        allOfficialAttempts.push({
+                            title: att.assessment?.title || att.title || 'Assessment',
+                            score: att.score,
+                            total: att.total || 10,
+                            percent: att.percent,
+                            feedback: att.feedback,
+                            timestamp: new Date(att.submittedAt || att.createdAt || att.updatedAt || 0).getTime()
+                        });
+                    }
+                });
+            };
+
+            extractFromHistory(officialHistoryRes.data);
+            extractFromHistory(unifiedHistoryRes.data);
+
+            if (allOfficialAttempts.length > 0) {
+                allOfficialAttempts.sort((a, b) => b.timestamp - a.timestamp);
+                const latest = allOfficialAttempts[0];
+
+                let percent = latest.percent;
+                if (percent === undefined) {
+                     percent = latest.total > 0 ? Math.round((latest.score / latest.total) * 100) : 0;
+                }
+
+                setLatestQuiz({
+                    title: latest.title,
+                    submittedAt: new Date(latest.timestamp || Date.now()).toISOString(),
+                    score: latest.score,
+                    total: latest.total,
+                    percent: percent,
+                    feedback: latest.feedback || (percent >= 70 ? 'Passed' : 'Needs Review')
+                });
+            } else {
+                setLatestQuiz(null);
+            }
+            // =========================================================================
+
+            // 2. MAP USERS FOR MODIFIED BY
             const allUsers = Array.isArray(usersRes.data) ? usersRes.data : (usersRes.data?.data || []);
             const uMap = {};
             allUsers.forEach(u => {
@@ -106,48 +200,36 @@ export default function StudentHomepage({ navigation }) {
             });
             setUsersMap(uMap);
 
-            const recentLessonsMap = recentLessonsRaw ? JSON.parse(recentLessonsRaw) : {};
-
-            // THE FIX: Process direct history logs first
-            const rawHistory = extractArray(historyRes.data?.history || historyRes.data?.data || historyRes.data);
-            
-            if (rawHistory.length > 0) {
-                rawHistory.sort((a, b) => new Date(b.createdAt || b.updatedAt || 0).getTime() - new Date(a.createdAt || a.updatedAt || 0).getTime());
-                const latest = rawHistory[0];
-                setLatestQuiz({
-                    title: latest.assessment?.title || latest.title || 'Assessment',
-                    submittedAt: latest.createdAt || latest.updatedAt || new Date().toISOString(),
-                    score: latest.score || 0,
-                    total: latest.total || 10,
-                    percent: latest.percent || 0,
-                    feedback: latest.feedback || (latest.percent >= 70 ? 'Passed' : 'Needs Review')
+            // 3. POPULATE CALENDAR
+            let plottedEvents = [];
+            const events = extractArray(calRes.data?.events || calRes.data);
+            events.forEach(ev => {
+              if(ev.date) {
+                plottedEvents.push({
+                  id: ev._id || Math.random().toString(),
+                  title: ev.title,
+                  date: new Date(ev.date),
+                  type: ev.type || 'event',
+                  color: ev.color || '#153c2a'
                 });
-            } else {
-                // Fallback Logic
-                const allAssessments = extractArray(assessmentsRes.data);
-                const completedAssessments = allAssessments.filter(a => a.latestAttempt && a.latestAttempt.score !== undefined);
-                
-                completedAssessments.sort((a, b) => {
-                    const timeA = new Date(a.latestAttempt.createdAt || a.updatedAt || 0).getTime();
-                    const timeB = new Date(b.latestAttempt.createdAt || b.updatedAt || 0).getTime();
-                    return timeB - timeA;
+              }
+            });
+
+            allAssessments.forEach(a => {
+              if(a.deadlineAt || a.closesAt) {
+                plottedEvents.push({
+                  id: `assess-${a._id}`,
+                  title: `${a.title} Due`,
+                  date: new Date(a.deadlineAt || a.closesAt),
+                  type: 'assessment',
+                  color: '#EF4444' 
                 });
+              }
+            });
+            plottedEvents.sort((a, b) => a.date - b.date);
+            setCalendarEvents(plottedEvents);
 
-                if (completedAssessments.length > 0) {
-                    const latest = completedAssessments[0];
-                    setLatestQuiz({
-                        title: latest.title || 'Assessment',
-                        submittedAt: latest.latestAttempt.createdAt || latest.updatedAt || new Date().toISOString(),
-                        score: latest.latestAttempt.score || 0,
-                        total: latest.latestAttempt.total || latest.questions?.length || 10,
-                        percent: latest.latestAttempt.percent || 0,
-                        feedback: latest.latestAttempt.feedback || (latest.latestAttempt.percent >= 70 ? 'Passed' : 'Needs Review')
-                    });
-                } else {
-                    setLatestQuiz(null);
-                }
-            }
-
+            // 4. PARSE RECENT LESSONS
             const syContext = syRes.data?.context || {};
             const activeSyId = syContext.activeSchoolYearId;
             const activeTermKey = syContext.activeTermKey;
@@ -176,6 +258,7 @@ export default function StudentHomepage({ navigation }) {
                 ...rawRemedial.map(l => ({ ...l, type: 'remedial', title: l.title || `Remedial: ${l.topic || 'Lesson'}`, updatedAt: l.createdAt || l.updatedAt }))
             ];
 
+            const recentLessonsMap = recentLessonsRaw ? JSON.parse(recentLessonsRaw) : {};
             combinedLessons.forEach(l => {
                 l.lastAccessedAt = recentLessonsMap[l._id] || 0;
             });
@@ -191,6 +274,7 @@ export default function StudentHomepage({ navigation }) {
 
             setSuggestedLessons(combinedLessons); 
             setScans(extractArray(scansRes.data));
+            
         } catch (error) {
             console.error("Dashboard Fetch Error:", error);
         } finally {
@@ -263,6 +347,101 @@ export default function StudentHomepage({ navigation }) {
         }
   };
 
+  // Calendar Navigation & Rendering Helpers
+  const handlePrevMonth = () => {
+    if (calendarMonth === 0) {
+      setCalendarMonth(11);
+      setCalendarYear(y => y - 1);
+    } else {
+      setCalendarMonth(m => m - 1);
+    }
+  };
+
+  const handleNextMonth = () => {
+    if (calendarMonth === 11) {
+      setCalendarMonth(0);
+      setCalendarYear(y => y + 1);
+    } else {
+      setCalendarMonth(m => m + 1);
+    }
+  };
+
+  const getSelectedEvents = () => {
+    if (!selectedDateStr) return [];
+    const [y, m, d] = selectedDateStr.split('-').map(Number);
+    return calendarEvents.filter(ev => {
+      const evDt = new Date(ev.date);
+      return evDt.getFullYear() === y && evDt.getMonth() === m - 1 && evDt.getDate() === d;
+    });
+  };
+
+  const renderEventItem = useCallback(({ item }) => (
+    <View style={localStyles.eventItem}>
+      <View style={[localStyles.eventColorIndicator, { backgroundColor: item.color }]} />
+      <View style={localStyles.eventContent}>
+        <Text style={localStyles.eventTitle}>{item.title}</Text>
+        <Text style={localStyles.eventDate}>{formatDate(item.date)}</Text>
+      </View>
+      <View style={localStyles.eventTypeBadge}>
+        <Text style={localStyles.eventTypeText}>{item.type}</Text>
+      </View>
+    </View>
+  ), []);
+
+  const renderCalendarGrid = () => {
+    const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
+    const firstDay = new Date(calendarYear, calendarMonth, 1).getDay();
+
+    const days = [];
+    for (let i = 0; i < firstDay; i++) {
+      days.push(<View key={`empty-${i}`} style={localStyles.dayCell} />);
+    }
+
+    for (let i = 1; i <= daysInMonth; i++) {
+      const yyyy = calendarYear;
+      const mm = String(calendarMonth + 1).padStart(2, '0');
+      const dd = String(i).padStart(2, '0');
+      const cellDateKey = `${yyyy}-${mm}-${dd}`;
+
+      const isSelected = selectedDateStr === cellDateKey;
+
+      const dayEvents = calendarEvents.filter(ev => {
+        const evDt = new Date(ev.date);
+        return evDt.getFullYear() === yyyy && evDt.getMonth() === calendarMonth && evDt.getDate() === i;
+      });
+
+      const colors = [...new Set(dayEvents.map(e => e.color))].slice(0, 3);
+
+      days.push(
+        <TouchableOpacity 
+          key={`day-${i}`} 
+          style={[localStyles.dayCell, isSelected && localStyles.cellSelected]}
+          onPress={() => setSelectedDateStr(cellDateKey)}
+        >
+          <Text style={[localStyles.dayText, isSelected && localStyles.cellTextSelected]}>{i}</Text>
+          <View style={localStyles.dotsRow}>
+            {colors.map((c, idx) => (
+              <View key={idx} style={[localStyles.dot, { backgroundColor: c }]} />
+            ))}
+          </View>
+        </TouchableOpacity>
+      );
+    }
+
+    return (
+      <View>
+        <View style={localStyles.daysOfWeekRow}>
+          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d, idx) => (
+            <Text key={idx} style={localStyles.dayOfWeekText}>{d}</Text>
+          ))}
+        </View>
+        <View style={localStyles.daysGridContainer}>
+          {days}
+        </View>
+      </View>
+    );
+  };
+
   if (!user || loading) {
     return (
       <View style={[localStyles.centered, { backgroundColor: theme?.bg || '#F8F9FA' }]}>
@@ -274,26 +453,37 @@ export default function StudentHomepage({ navigation }) {
   const fullName = `${user.fname || ''} ${user.lname || ''}`.trim() || 'Student User';
   const recentScansList = scans.slice(0, 5);
   const recentLessonsList = suggestedLessons.slice(0, 5);
-
   const hasValidAssessment = latestQuiz && latestQuiz.score !== undefined && latestQuiz.score !== null;
+  const selectedEvents = getSelectedEvents();
+
+  const legendsMap = {};
+  calendarEvents.forEach(e => { legendsMap[e.type] = e.color; });
+  const legendEntries = Object.keys(legendsMap).map(type => ({ type, color: legendsMap[type] }));
 
   return (
     <View style={[localStyles.container, { backgroundColor: theme?.bg || '#F8F9FA' }]}>
       <StatusBar barStyle="dark-content" backgroundColor="#F8F9FA" />
 
+      {/* Top Header Row */}
       <View style={localStyles.topHeaderBar}>
         <Text style={[localStyles.headerTitle, { color: '#153c2a' || theme?.text }]}>Home</Text>
-        <TouchableOpacity 
-          style={localStyles.notificationBell} 
-          onPress={() => navigation.navigate('Bookmarks', { initialTab: 'Notifications' })}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="notifications" size={22} color="#153c2a" />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <TouchableOpacity onPress={() => setShowCalendar(true)} style={[localStyles.notificationBell, { marginRight: 12 }]}>
+            <Ionicons name="calendar" size={22} color="#153c2a" />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={localStyles.notificationBell} 
+            onPress={() => navigation.navigate('Bookmarks', { initialTab: 'Notifications' })}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="notifications" size={22} color="#153c2a" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView contentContainerStyle={localStyles.scrollContainer} showsVerticalScrollIndicator={false}>
         
+        {/* Welcome Banner Card */}
         <View style={localStyles.welcomeBanner}>
           <View style={localStyles.welcomeTextContainer}>
             <Text style={localStyles.welcomeSubText}>Welcome back,</Text>
@@ -308,6 +498,7 @@ export default function StudentHomepage({ navigation }) {
           </View>
         </View>
 
+        {/* Quick Links Section */}
         <View style={localStyles.sectionHeadingRow}>
           <Ionicons name="link" size={25} color="#153c2a" style={{ marginRight: 10 }} />
           <Text style={[localStyles.sectionHeaderTitle, { color: '#153c2a' || theme?.text  }]}>Quick Links</Text>
@@ -381,6 +572,7 @@ export default function StudentHomepage({ navigation }) {
           </TouchableOpacity>
         </View>
 
+        {/* Recent Scans Section */}
         <View style={localStyles.sectionHeadingRow}>
           <Ionicons name="scan" size={25} color="#153c2a" style={{ marginRight: 10 }} />
           <Text style={[localStyles.sectionHeaderTitle, { color: '#153c2a' || theme?.text  }]}>Recent Scans</Text>
@@ -433,6 +625,7 @@ export default function StudentHomepage({ navigation }) {
           )}
         </ScrollView>
 
+        {/* Latest Assessment Score Section */}
         <View style={localStyles.sectionHeadingRow}>
           <Ionicons name="bar-chart" size={25} color="#153c2a" style={{ marginRight: 10 }} />
           <Text style={[localStyles.sectionHeaderTitle, { color: '#153c2a' || theme?.text  }]}>Latest Assessment Score</Text>
@@ -474,6 +667,7 @@ export default function StudentHomepage({ navigation }) {
           </View>
         )}
 
+        {/* Recently Opened Lessons Section */}
         <View style={localStyles.sectionHeadingRow}>
           <Ionicons name="book" size={25} color="#153c2a" style={{ marginRight: 10 }} />
           <Text style={[localStyles.sectionHeaderTitle, { color: '#153c2a' || theme?.text  }]}>Recently Opened Lessons</Text>
@@ -483,23 +677,24 @@ export default function StudentHomepage({ navigation }) {
           {recentLessonsList.length > 0 ? (
                 recentLessonsList.map((lesson, index) => {
                     const isRemedial = lesson.type === 'remedial';
+                    const modifierName = lesson.modifiedBy ? `${lesson.modifiedBy.fname} ${lesson.modifiedBy.lname}` : 'System';
                     const dateStr = new Date(lesson.lastAccessedAt || lesson.updatedAt || lesson.createdAt).toLocaleDateString();
                     const isBookmarked = bookmarks?.lessons?.includes(lesson._id);
 
-                    let modifierName = 'Instructor';
+                    let modNameRender = 'Instructor';
                     if (!isRemedial) {
                         const modId = getUserId(lesson.modifiedBy) || getUserId(lesson.createdBy);
                         const modUser = modId ? usersMap[String(modId)] : null;
 
                         if (modUser && modUser.fname) {
-                            modifierName = `${modUser.fname} ${modUser.lname}`.trim();
+                            modNameRender = `${modUser.fname} ${modUser.lname}`.trim();
                         } else if (typeof lesson.modifiedBy === 'object' && lesson.modifiedBy?.fname) {
-                            modifierName = `${lesson.modifiedBy.fname} ${lesson.modifiedBy.lname}`.trim();
+                            modNameRender = `${lesson.modifiedBy.fname} ${lesson.modifiedBy.lname}`.trim();
                         } else if (typeof lesson.createdBy === 'object' && lesson.createdBy?.fname) {
-                            modifierName = `${lesson.createdBy.fname} ${lesson.createdBy.lname}`.trim();
+                            modNameRender = `${lesson.createdBy.fname} ${lesson.createdBy.lname}`.trim();
                         }
                     } else {
-                        modifierName = 'System';
+                        modNameRender = 'System';
                     }
 
                     return (
@@ -533,7 +728,7 @@ export default function StudentHomepage({ navigation }) {
                             </Text>
                             
                             <Text style={localStyles.lessonCardSub}>
-                                {isRemedial ? 'Personalized Remedial' : `Modified by ${modifierName}`}
+                                {isRemedial ? 'Personalized Remedial' : `Modified by ${modNameRender}`}
                             </Text>
                             <Text style={[localStyles.lessonCardSub, { fontSize: 11, marginTop: 4 }]}>
                                 Last opened: {dateStr}
@@ -552,7 +747,7 @@ export default function StudentHomepage({ navigation }) {
         <View style={{ height: 40 }} />
       </ScrollView>
 
-      {/* THE FIX: Replaced generic modal with the official White Report Card UI */}
+      {/* FULL SCREEN REPORT CARD FOR SCANS */}
       <Modal visible={!!selectedScan} transparent={true} animationType="fade" onRequestClose={() => setSelectedScan(null)}>
           <View style={localStyles.fsModalBackground}>
               <View style={localStyles.fsModalHeader}>
@@ -591,6 +786,64 @@ export default function StudentHomepage({ navigation }) {
               )}
           </View>
       </Modal>
+
+      <Modal visible={showCalendar} transparent animationType="fade" onRequestClose={() => setShowCalendar(false)}>
+        <View style={localStyles.modalOverlay}>
+          <View style={[localStyles.modalCardContainer, { height: '85%' }]}>
+            <View style={localStyles.modalHeader}>
+              <Text style={localStyles.modalTitleText}>Academic Calendar</Text>
+              <TouchableOpacity onPress={() => setShowCalendar(false)} style={localStyles.closeModalBtn}>
+                <Ionicons name="close" size={24} color="#153c2a" />
+              </TouchableOpacity>
+            </View>
+            
+            {/* Calendar Controls */}
+            <View style={localStyles.calendarControlsRow}>
+              <TouchableOpacity onPress={handlePrevMonth} style={localStyles.calendarNavBtn}>
+                <Ionicons name="chevron-back" size={20} color="#153c2a" />
+              </TouchableOpacity>
+              <Text style={localStyles.calendarMonthText}>{MONTH_NAMES[calendarMonth]} {calendarYear}</Text>
+              <TouchableOpacity onPress={handleNextMonth} style={localStyles.calendarNavBtn}>
+                <Ionicons name="chevron-forward" size={20} color="#153c2a" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Grid */}
+            {renderCalendarGrid()}
+
+            {/* Legends */}
+            {legendEntries.length > 0 && (
+              <View style={localStyles.legendContainer}>
+                {legendEntries.map((legend, idx) => (
+                  <View key={idx} style={localStyles.legendItem}>
+                    <View style={[localStyles.legendDot, { backgroundColor: legend.color }]} />
+                    <Text style={localStyles.legendText}>{legend.type}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {/* Events for Selected Date */}
+            <View style={localStyles.selectedEventsContainer}>
+              <Text style={localStyles.selectedDateTitle}>
+                Events on {new Date(selectedDateStr).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+              </Text>
+              {selectedEvents.length === 0 ? (
+                <Text style={localStyles.emptyText}>No events scheduled for this day.</Text>
+              ) : (
+                <FlatList
+                  data={selectedEvents}
+                  keyExtractor={(item) => item.id.toString()}
+                  showsVerticalScrollIndicator={false}
+                  renderItem={renderEventItem}
+                  removeClippedSubviews={true}
+                />
+              )}
+            </View>
+            
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -606,14 +859,14 @@ const localStyles = StyleSheet.create({
   welcomeTextContainer: { flex: 1, paddingRight: 12 },
   welcomeSubText: { fontSize: 23, color: '#ffffff', fontWeight: '400', marginBottom: 4 },
   welcomeUserName: { fontSize: 25, fontWeight: '900', color: '#FFFFFF' },
-  welcomeAvatarCircle: { width: 75, height: 75, borderRadius: 37.5, backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
+  welcomeAvatarCircle: { width: 75, height: 75, borderRadius: 37.5, backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center', overflow: 'hidden', borderWidth: 3, borderColor: '#FFF' },
   avatarImage: { width: '100%', height: '100%', resizeMode: 'cover' },
   avatarInitials: { fontSize: 30, fontWeight: '900', color: '#153c2a' },
   sectionHeadingRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10, marginTop: 5 },
   sectionHeaderTitle: { fontSize: 20, fontWeight: '700' },
   quickLinksGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 20 },
   quickLinkCard: { width: (width - 40 - 20) / 3, borderRadius: 10, paddingVertical: 16, paddingHorizontal: 8, alignItems: 'center', marginBottom: 12, borderWidth: 1, borderColor: '#E2E8F0', elevation: 1, shadowColor: '#000', shadowOpacity: 0.02, shadowRadius: 4 },
-  quickLinkIconBox: { width: 70, height: 70, borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginBottom: 8 },
+  quickLinkIconBox: { width: 70, height: 70, borderRadius: 14, justifyContent: 'center', alignItems: 'center', marginBottom: 8 },
   quickLinkText: { fontSize: 13, fontWeight: '700', textAlign: 'center' },
   horizontalScrollBox: { paddingVertical: 4, marginBottom: 16 },
   recentScanCard: { width: 300, borderRadius: 10, padding: 12, flexDirection: 'row', alignItems: 'center', marginRight: 12, borderWidth: 1, borderColor: '#E2E8F0', elevation: 1, marginBottom: 20 },
@@ -642,43 +895,50 @@ const localStyles = StyleSheet.create({
   lessonIconSmallBox: { borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginBottom: 10 },
   lessonCardTitle: { fontSize: 15, fontWeight: '800', marginBottom: 2 },
   lessonCardSub: { fontSize: 13, color: '#64748B', fontWeight: '500' },
+  
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
+  modalCardContainer: { backgroundColor: '#fff', borderTopLeftRadius: 10, borderTopRightRadius: 10, padding: 24, maxHeight: '85%' },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  modalTitleText: { fontSize: 25, fontWeight: '900', color: '#153c2a' },
+  closeBtn: { position: 'absolute', top: 15, right: 15, zIndex: 10 },
+  closeModalBtn: { padding: 4, backgroundColor: '#F1F5F9', borderRadius: 10 },
 
   fsModalBackground: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center' },
   fsModalHeader: { position: 'absolute', top: Platform.OS === 'ios' ? 50 : 30, left: 0, right: 0, flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 20, zIndex: 10 },
   fsIconButton: { backgroundColor: 'rgba(255,255,255,0.2)', padding: 10, borderRadius: 30 },
-  
-  exportCard: {
-      backgroundColor: '#FFFFFF',
-      width: '85%',
-      borderRadius: 10,
-      overflow: 'hidden',
-      padding: 20,
-      alignItems: 'center',
-      elevation: 5,
-      shadowColor: '#000',
-      shadowOpacity: 0.2,
-      shadowRadius: 15,
-  },
+  exportCard: { backgroundColor: '#FFFFFF', width: '85%', borderRadius: 10, overflow: 'hidden', padding: 20, alignItems: 'center', elevation: 5, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 15 },
   exportBrandRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 15, gap: 6 },
   exportBrandText: { fontSize: 14, fontWeight: '800', color: '#153c2a', textTransform: 'uppercase', letterSpacing: 0.5 },
-  exportImage: {
-      width: '100%',
-      height: 320,
-      borderRadius: 10,
-      resizeMode: 'cover',
-      backgroundColor: '#F1F5F9',
-      marginBottom: 20,
-  },
-  exportData: {
-      width: '100%',
-      backgroundColor: '#F8FAFC',
-      padding: 15,
-      borderRadius: 10,
-      borderWidth: 1,
-      borderColor: '#E2E8F0',
-      alignItems: 'center',
-  },
-  exportTitle: { fontSize: 23, fontWeight: '900', color: '#153c2a', marginBottom: 6, textAlign: 'center' },
+  exportImage: { width: '100%', height: 320, borderRadius: 10, resizeMode: 'cover', backgroundColor: '#F1F5F9', marginBottom: 20 },
+  exportData: { width: '100%', backgroundColor: '#F8FAFC', padding: 15, borderRadius: 10, borderWidth: 1, borderColor: '#E2E8F0', alignItems: 'center' },
+  exportTitle: { fontSize: 22, fontWeight: '900', color: '#1E293B', marginBottom: 6, textAlign: 'center' },
   exportScore: { fontSize: 15, fontWeight: '800', color: '#10B981', marginBottom: 6 },
-  exportDate: { fontSize: 13, fontWeight: '600', color: '#64748B' }
+  exportDate: { fontSize: 12, fontWeight: '600', color: '#64748B' },
+
+  calendarControlsRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
+  calendarNavBtn: { padding: 8, backgroundColor: '#F1F5F9', borderRadius: 8 },
+  calendarMonthText: { fontSize: 18, fontWeight: '800', color: '#153c2a' },
+  daysOfWeekRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
+  dayOfWeekText: { width: '14.28%', textAlign: 'center', fontSize: 12, fontWeight: '800', color: '#64748B' },
+  daysGridContainer: { flexDirection: 'row', flexWrap: 'wrap' },
+  dayCell: { width: '14.28%', height: 50, justifyContent: 'flex-start', alignItems: 'center', marginVertical: 2, borderRadius: 10, paddingTop: 8 },
+  cellSelected: { backgroundColor: '#153c2a' },
+  dayText: { fontSize: 14, fontWeight: '700', color: '#0F172A' },
+  cellTextSelected: { color: '#FFFFFF', fontWeight: '900' },
+  dotsRow: { flexDirection: 'row', marginTop: 4, gap: 3 },
+  dot: { width: 5, height: 5, borderRadius: 2.5 },
+  legendContainer: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 15, paddingTop: 15, borderTopWidth: 1, borderTopColor: '#F1F5F9', gap: 10 },
+  legendItem: { flexDirection: 'row', alignItems: 'center' },
+  legendDot: { width: 10, height: 10, borderRadius: 5, marginRight: 6 },
+  legendText: { fontSize: 11, color: '#64748B', fontWeight: '700', textTransform: 'uppercase' },
+  selectedEventsContainer: { marginTop: 20, flex: 1 },
+  selectedDateTitle: { fontSize: 15, fontWeight: '800', color: '#1E293B', marginBottom: 10 },
+  eventItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
+  eventColorIndicator: { width: 12, height: 12, borderRadius: 6, marginRight: 14 },
+  eventContent: { flex: 1, paddingRight: 10 },
+  eventTitle: { fontSize: 16, fontWeight: '800', color: '#1E293B', marginBottom: 4 },
+  eventDate: { fontSize: 13, color: '#64748B', fontWeight: '600' },
+  eventTypeBadge: { backgroundColor: '#F1F5F9', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  eventTypeText: { fontSize: 9, fontWeight: '900', color: '#64748B', textTransform: 'uppercase' },
+  emptyText: { textAlign: 'center', color: '#64748B', marginVertical: 10, fontStyle: 'italic' }
 });
