@@ -4,7 +4,7 @@
     "slug": "MyphoLens",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/mypholens_logo.png",
+    "icon": "./assets/mypholens-logo-sq.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
@@ -13,7 +13,11 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.m2kp.mypholens",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -28,11 +32,12 @@
     },
     "extra": {
       "eas": {
-        "projectId": "2e7ca1e1-85a9-4e2a-981e-84e6cb6e149e"
+        "projectId": "ec7ec619-936a-4e99-ab8d-72b38dd5f9a3"
       }
     },
     "plugins": [
       "@react-native-community/datetimepicker"
-    ]
+    ],
+    "owner": "martinacelso"
   }
 }
