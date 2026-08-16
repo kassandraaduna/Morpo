@@ -271,7 +271,7 @@ export default function ArchiveLessons({ navigation }) {
           >
             <Ionicons name="arrow-back" size={24} color="#FFF" />
           </TouchableOpacity>
-          <View>
+          <View style={localStyles.centered}>
             <Text style={localStyles.title}>Archive Library</Text>
             <Text style={localStyles.subtitle}>
               Restore or permanently delete archived items
@@ -475,23 +475,22 @@ const localStyles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: Platform.OS === 'ios' ? 60 : 40,
     paddingBottom: 25,
-    borderBottomLeftRadius: 15,
-    borderBottomRightRadius: 15,
+    borderBottomLeftRadius: 10,
+    borderBottomRightRadius: 10,
   },
   headerRow: { flexDirection: 'row', alignItems: 'center' },
-  title: { fontSize: 22, fontWeight: '900', color: '#fff', marginTop: 10 },
+  title: { fontSize: 25, fontWeight: '900', color: '#fff', marginTop: 10 },
   subtitle: { fontSize: 13, color: '#d1fae5', marginTop: 2 },
   centered: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 60,
   },
   lessonCard: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 16,
-    borderRadius: 12,
+    borderRadius: 10,
     marginHorizontal: 20,
     marginBottom: 10,
     elevation: 2,
@@ -501,7 +500,7 @@ const localStyles = StyleSheet.create({
   },
   cardTitle: { fontSize: 15, fontWeight: '800' },
   cardMeta: {
-    fontSize: 11,
+    fontSize: 12,
     color: '#94A3B8',
     marginTop: 4,
     fontWeight: '600',
@@ -552,7 +551,7 @@ const localStyles = StyleSheet.create({
   modalContainer: {
     backgroundColor: '#FFF',
     width: '90%',
-    borderRadius: 20,
+    borderRadius: 10,
     padding: 24,
     alignItems: 'center',
     elevation: 10,

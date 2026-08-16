@@ -35,8 +35,7 @@ const fetchData = async () => {
             
             const userObj = JSON.parse(userRaw);
             setCurrentUser(userObj);
-            
-            // Pass timestamp bypass parameter to ensure network bypasses local cache
+
             const res = await api.get(`/assessments?studentId=${userObj._id}&_t=${Date.now()}`);
             const allAssessments = res.data?.data || [];
             
@@ -45,12 +44,14 @@ const fetchData = async () => {
             setLocalCompletedExt(localExtIds);
 
             const instructors = allAssessments.filter(a => 
+                a.status !== 'draft' &
                 a.createdBy !== userObj._id && 
                 a.isPracticeOnly !== true && 
                 a.quizType !== 'flashcard'
             );
 
             const practices = allAssessments.filter(a => 
+                a.status !== 'draft' &&
                 a.createdBy === userObj._id || 
                 a.isPracticeOnly === true || 
                 a.quizType === 'flashcard'

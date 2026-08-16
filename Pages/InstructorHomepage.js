@@ -13,8 +13,10 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { ThemeContext } from './src/context/ThemeContext';
 import api, { toAbsUrl } from './src/services/api';
+import { toastError, toastSuccess } from './src/components/ToastMsg';
 
 const { width } = Dimensions.get('window');
 
@@ -101,6 +103,9 @@ export default function InstructorHomepage({ navigation }) {
       const uniqueSections = new Set(allSectionsRaw.map(normalizeSection).filter(Boolean));
       const sectionsAssigned = uniqueSections.size;
 
+      const readNotifsRaw = await AsyncStorage.getItem('read_notifs').catch(() => null);
+      const readNotifs = readNotifsRaw ? JSON.parse(readNotifsRaw) : [];
+
       try {
         const res = await api.get('/admin/users', config);
         const allUsers = Array.isArray(res.data) ? res.data : (res.data?.users || []);
@@ -168,18 +173,19 @@ export default function InstructorHomepage({ navigation }) {
 
       setPerformance(performanceData);
 
+      // EXTRACT RECENT SUBMISSIONS FOR NOTIFICATIONS
       if (relevantScores.length > 0) {
         const recentSubmissions = relevantScores
           .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-          .slice(0, 3);
+          .slice(0, 5); // Get up to top 5 recent submissions
 
         recentSubmissions.forEach(sub => {
           const student = fetchedStudents.find(s => s._id === sub.studentId);
           if (student) {
             generatedNotifs.push({
-              _id: sub._id || Math.random().toString(),
+              _id: `sub-${sub._id}`, // Stable ID
               type: 'assessment',
-              message: `${student.fname} submitted a practice session (Score: ${Math.round(sub.score)}%)`,
+              message: `${student.fname} submitted an assessment (Score: ${Math.round(sub.score)}%)`,
               createdAt: sub.createdAt,
               isRead: false
             });
@@ -209,7 +215,7 @@ export default function InstructorHomepage({ navigation }) {
 
         if (events.length > 0) {
           generatedNotifs.push({
-            _id: `cal-${events[0]._id || Math.random()}`,
+            _id: `cal-${events[0]._id}`, // Stable ID
             type: 'calendar',
             message: `New calendar event added: ${events[0].title || 'Update'}`,
             createdAt: events[0].createdAt || new Date().toISOString(),
@@ -236,7 +242,7 @@ export default function InstructorHomepage({ navigation }) {
         const datasets = dataRes.data?.datasets || dataRes.data?.data || [];
         if (datasets.length > 0) {
           generatedNotifs.push({
-            _id: `data-${datasets[0]._id || Math.random()}`,
+            _id: `data-${datasets[0]._id}`, // Stable ID
             type: 'dataset',
             message: `New AI Scan added to Dataset Library.`,
             createdAt: datasets[0].createdAt || new Date().toISOString(),
@@ -248,15 +254,21 @@ export default function InstructorHomepage({ navigation }) {
       }
 
       generatedNotifs.push({
-        _id: 'sys-1',
+        _id: 'sys-assignment', // Stable ID
         type: 'assignment',
         message: `You are currently handling ${sectionsAssigned} section(s).`,
         createdAt: new Date().toISOString(),
-        isRead: true
+        isRead: false
       });
 
       generatedNotifs.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-      setNotifications(generatedNotifs);
+      
+      // Map cross-referenced local read state
+      const mappedNotifs = generatedNotifs.map(n => ({
+          ...n,
+          isRead: readNotifs.includes(n._id)
+      }));
+      setNotifications(mappedNotifs);
 
     } catch (error) {
       console.error("Critical error loading dashboard data:", error);
@@ -265,27 +277,65 @@ export default function InstructorHomepage({ navigation }) {
     }
   };
 
-  useEffect(() => {
-    loadInstructorData();
-    const unsubscribe = navigation.addListener('focus', loadInstructorData);
-    return unsubscribe;
-  }, [navigation]);
+  useFocusEffect(
+    useCallback(() => {
+      loadInstructorData();
+    }, [])
+  );
 
-  const renderNotifItem = useCallback(({ item }) => (
-    <View style={localStyles.notifItem}>
-      <View style={[localStyles.notifIconBox, !item.isRead && { backgroundColor: '#C5DEC9' }]}>
-        <Ionicons 
-          name={item.type === 'dataset' ? 'cube' : item.type === 'calendar' ? 'calendar' : item.type === 'assessment' ? 'clipboard' : 'notifications'} 
-          size={20} 
-          color="#153c2a" 
-        />
-      </View>
-      <View style={localStyles.notifContent}>
-        <Text style={[localStyles.notifText, !item.isRead && { fontWeight: '900' }]}>{item.message}</Text>
-        <Text style={localStyles.notifTime}>{formatDate(item.createdAt)}</Text>
-      </View>
-    </View>
-  ), []);
+  // THE FIX: Mark individual notification as read
+  const handleMarkAsRead = async (id) => {
+    try {
+        const raw = await AsyncStorage.getItem('read_notifs');
+        const readNotifs = raw ? JSON.parse(raw) : [];
+        if (!readNotifs.includes(id)) {
+            readNotifs.push(id);
+            await AsyncStorage.setItem('read_notifs', JSON.stringify(readNotifs));
+        }
+        setNotifications(prev => prev.map(n => n._id === id ? { ...n, isRead: true } : n));
+    } catch (e) {}
+  };
+
+  // THE FIX: Mark all notifications as read
+  const handleMarkAllAsRead = async () => {
+    try {
+        const raw = await AsyncStorage.getItem('read_notifs');
+        const readNotifs = raw ? JSON.parse(raw) : [];
+        notifications.forEach(n => {
+            if (!readNotifs.includes(n._id)) readNotifs.push(n._id);
+        });
+        await AsyncStorage.setItem('read_notifs', JSON.stringify(readNotifs));
+        setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+        toastSuccess('All notifications marked as read.');
+    } catch (e) {}
+  };
+
+  const renderNotifItem = ({ item }) => {
+    // INTERACTIVE ROUTING FOR INSTRUCTOR
+    const handlePress = async () => {
+        await handleMarkAsRead(item._id); // Clear the red dot
+        setShowNotifications(false);
+        if (item.type === 'dataset') navigation.navigate('DatasetLibrary');
+        else if (item.type === 'calendar') setShowCalendar(true);
+        else if (item.type === 'assessment' || item.type === 'assignment') navigation.navigate('StudentMonitoring');
+    };
+
+    return (
+        <TouchableOpacity style={localStyles.notifItem} onPress={handlePress} activeOpacity={0.7}>
+            <View style={[localStyles.notifIconBox, !item.isRead && { backgroundColor: '#C5DEC9' }]}>
+                <Ionicons 
+                    name={item.type === 'dataset' ? 'cube' : item.type === 'calendar' ? 'calendar' : item.type === 'assessment' ? 'clipboard' : 'notifications'} 
+                    size={20} 
+                    color="#153c2a" 
+                />
+            </View>
+            <View style={localStyles.notifContent}>
+                <Text style={[localStyles.notifText, !item.isRead && { fontWeight: '900' }]}>{item.message}</Text>
+                <Text style={localStyles.notifTime}>{formatDate(item.createdAt)}</Text>
+            </View>
+        </TouchableOpacity>
+    );
+  };
 
   const renderEventItem = useCallback(({ item }) => (
     <View style={localStyles.eventItem}>
@@ -394,7 +444,6 @@ export default function InstructorHomepage({ navigation }) {
   const unreadNotifs = notifications.filter(n => !n.isRead).length;
   const selectedEvents = getSelectedEvents();
   
-  // Extract Dynamic Legends
   const legendsMap = {};
   calendarEvents.forEach(e => { legendsMap[e.type] = e.color; });
   const legendEntries = Object.keys(legendsMap).map(type => ({ type, color: legendsMap[type] }));
@@ -489,7 +538,7 @@ export default function InstructorHomepage({ navigation }) {
 
             <TouchableOpacity 
               style={[localStyles.quickLinkCard, { backgroundColor: theme?.card || '#FFFFFF' }]} 
-              onPress={() => navigation.navigate('Learn', { initialTab: 'assessments' })}
+              onPress={() => navigation.navigate('Learn', { initialTab: 'Assessments' })}
               activeOpacity={0.8}
             >
               <View style={localStyles.quickLinkIconBox}>
@@ -500,7 +549,7 @@ export default function InstructorHomepage({ navigation }) {
 
             <TouchableOpacity 
               style={[localStyles.quickLinkCard, { backgroundColor: theme?.card || '#FFFFFF' }]} 
-              onPress={() => navigation.navigate('Learn', { initialTab: 'models' })}
+              onPress={() => navigation.navigate('Learn', { initialTab: '3D Models' })}
               activeOpacity={0.8}
             >
               <View style={localStyles.quickLinkIconBox}>
@@ -578,15 +627,22 @@ export default function InstructorHomepage({ navigation }) {
 
       </ScrollView>
 
-      {/* NOTIFICATIONS MODAL */}
+      {/* THE FIX: INSTRUCTOR NOTIFICATIONS MODAL (WITH MARK ALL AS READ) */}
       <Modal visible={showNotifications} transparent animationType="fade" onRequestClose={() => setShowNotifications(false)}>
         <View style={localStyles.modalOverlay}>
           <View style={localStyles.modalCard}>
             <View style={localStyles.modalHeader}>
               <Text style={localStyles.modalTitle}>Notifications</Text>
-              <TouchableOpacity onPress={() => setShowNotifications(false)} style={localStyles.closeBtn}>
-                <Ionicons name="close" size={24} color="#153c2a" />
-              </TouchableOpacity>
+              
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <TouchableOpacity onPress={handleMarkAllAsRead} style={localStyles.closeBtn}>
+                    <Ionicons name="checkmark-done" size={24} color="#153c2a" />
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => setShowNotifications(false)} style={localStyles.closeBtn}>
+                    <Ionicons name="close" size={24} color="#153c2a" />
+                  </TouchableOpacity>
+              </View>
+
             </View>
             
             {notifications.length === 0 ? (
@@ -597,10 +653,6 @@ export default function InstructorHomepage({ navigation }) {
                 keyExtractor={(item, index) => item._id || index.toString()}
                 showsVerticalScrollIndicator={false}
                 renderItem={renderNotifItem}
-                initialNumToRender={10}
-                maxToRenderPerBatch={10}
-                windowSize={5}
-                removeClippedSubviews={true}
               />
             )}
           </View>
@@ -670,375 +722,77 @@ export default function InstructorHomepage({ navigation }) {
 }
 
 const localStyles = StyleSheet.create({
-  container: { 
-    flex: 1 
-  },
-  centered: { 
-    flex: 1, 
-    justifyContent: 'center', 
-    alignItems: 'center' 
-  },
-  topHeaderBar: { 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
-    alignItems: 'center', 
-    paddingHorizontal: 20, 
-    paddingTop: Platform.OS === 'ios' ? 60 : 40, 
-    paddingBottom: 10,
-    backgroundColor: 'transparent', 
-  },
-  headerTitle: { 
-    fontSize: 25, 
-    fontWeight: '600', 
-    color: '#153c2a' 
-  },
-  bellContainer: { 
-    position: 'relative' 
-  },
-  badge: { 
-    position: 'absolute', 
-    right: -4, 
-    top: -4, 
-    backgroundColor: 'red', 
-    borderRadius: 10, 
-    width: 20, 
-    height: 20, 
-    justifyContent: 'center', 
-    alignItems: 'center', 
-    borderWidth: 2, 
-    borderColor: '#fff' 
-  },
-  badgeText: { 
-    color: 'white', 
-    fontSize: 10, 
-    fontWeight: 'bold' 
-  },
-  scrollContainer: { 
-    paddingHorizontal: 20, 
-    paddingBottom: 40 
-  },
-  welcomeBanner: {
-    backgroundColor: '#153c2a',
-    borderRadius: 10,
-    padding: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 24,
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 3 },
-  },
-  welcomeTextContainer: { 
-    flex: 1,
-    paddingRight: 12, 
-  },
-  welcomeSubText: { 
-    fontSize: 23,
-    color: '#ffffff',
-    fontWeight: '400',
-    marginBottom: 4,
-  },
-  welcomeUserName: { 
-    fontSize: 25, 
-    fontWeight: '900', 
-    color: '#FFFFFF' 
-  },
-  welcomeAvatarCircle: { 
-    width: 75,
-    height: 75,
-    borderRadius: 37.5,
-    justifyContent: 'center',
-    alignItems: 'center',
-    overflow: 'hidden', 
-    borderWidth:3, borderColor: '#FFF',
-  },
-  avatarImage: {
-    width: '100%',
-    height: '100%',
-    resizeMode: 'cover',
-  },
-  avatarInitials: {
-    fontSize: 30,
-    fontWeight: '900',
-    color: '#FFF',
-  },
-  
-  statsContainer: { 
-    marginBottom: 20 
-  },
-  statCard: { 
-    backgroundColor: '#FFFFFF', 
-    borderRadius: 10, 
-    padding: 18, 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    justifyContent: 'space-between', 
-    marginBottom: 10, 
-    borderWidth: 1, 
-    borderColor: '#F1F5F9' 
-  },
-  statLeft: { 
-    flexDirection: 'row', 
-    alignItems: 'center' 
-  },
-  statIconBox: { 
-    width: 40, 
-    height: 40, 
-    borderRadius: 10, 
-    backgroundColor: '#F1F5F9', 
-    justifyContent: 'center', 
-    alignItems: 'center', 
-    marginRight: 15 
-  },
-  statLabel: { 
-    fontSize: 15, 
-    color: '#000', 
-    fontWeight: '600' 
-  },
-  statNumber: { 
-    fontSize: 25, 
-    fontWeight: '900', 
-    color: '#153c2a' 
-  },
-  
-  sectionContainer: {
-    borderRadius: 10, 
-    padding: 16, 
-    marginBottom: 20,
-  },
-  sectionHeadingRow: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    marginBottom: 16 
-  },
-  sectionHeaderTitle: { 
-    fontSize: 16, 
-    fontWeight: '900', 
-    color: '#000', 
-    marginLeft: 8 
-  },
-  viewAllText: { 
-    fontSize: 13, 
-    fontWeight: '800', 
-    color: '#153c2a' 
-  }, 
-  
-  quickLinksGrid: { 
-    flexDirection: 'row', 
-    flexWrap: 'wrap', 
-    justifyContent: 'space-between' },
-  quickLinkCard: { 
-    width: (width - 40 - 32 - 16) / 3, 
-    backgroundColor: '#F4F7F6', 
-    borderRadius: 10, 
-    paddingVertical: 15, 
-    paddingHorizontal: 5, 
-    alignItems: 'center', 
-    marginBottom: 10, 
-    borderWidth: 1, 
-    borderColor: '#E2E8F0' 
-  },
-  quickLinkText: { 
-    fontSize: 13, 
-    fontWeight: '700', 
-    textAlign: 'center' 
-  },
-
-  performanceCard: { 
-    backgroundColor: '#F4F7F6', 
-    borderRadius: 10, 
-    padding: 16, 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    marginBottom: 12, 
-    borderWidth: 1, 
-    borderColor: '#E2E8F0' 
-  },
-  perfAvatarCircle: { 
-    width: 50, 
-    height: 50, 
-    borderRadius: 25, 
-    backgroundColor: '#C5DEC9', 
-    justifyContent: 'center', 
-    alignItems: 'center', 
-    marginRight: 15 
-  },
-  perfAvatarInitials: { 
-    fontSize: 20, 
-    fontWeight: '800', 
-    color: '#153c2a' 
-  },
-  perfInfo: { 
-    flex: 1, 
-    marginRight: 10 
-  },
-  perfName: { 
-    fontSize: 18, 
-    fontWeight: '800',
-  },
-  perfMeta: { 
-    fontSize: 13, 
-    color: '#000', 
-    fontWeight: '600', 
-    marginTop: 2, 
-    marginBottom: 6 
-  },
-  progressBarBg: { 
-    height: 6, 
-    backgroundColor: '#D1D5DB', 
-    borderRadius: 3, 
-    width: '100%' 
-  },
-  progressBarFill: { 
-    height: '100%', 
-    backgroundColor: '#10B981', 
-    borderRadius: 3 
-  },
-  perfScore: { 
-    fontSize: 15, 
-    fontWeight: '900', 
-    color: '#10B981' 
-  },
-  emptyText: { 
-    textAlign: 'center', 
-    color: '#64748B', 
-    marginVertical: 10, 
-    fontStyle: 'italic' 
-  },
-  
-  modalOverlay: { 
-    flex: 1, 
-    backgroundColor: 'rgba(0,0,0,0.5)', 
-    justifyContent: 'flex-end' 
-  },
-  modalCard: { 
-    backgroundColor: '#fff', 
-    borderTopLeftRadius: 24, 
-    borderTopRightRadius: 24, 
-    padding: 24, 
-    maxHeight: '85%' 
-  },
-  modalHeader: { 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
-    alignItems: 'center', 
-    marginBottom: 20 
-  },
-  modalTitle: { 
-    fontSize: 25, 
-    fontWeight: '900', 
-    color: '#153c2a' 
-  },
-  closeBtn: { 
-    padding: 4, 
-    backgroundColor: '#F1F5F9', 
-    borderRadius: 20 
-  },
-
-  notifItem: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    paddingVertical: 16, 
-    borderBottomWidth: 1, 
-    borderBottomColor: '#F1F5F9' 
-  },
-  notifIconBox: { 
-    width: 44, 
-    height: 44, 
-    borderRadius: 22, 
-    backgroundColor: '#E7F5EE', 
-    justifyContent: 'center', 
-    alignItems: 'center', 
-    marginRight: 16 
-  },
-  notifContent: { 
-    flex: 1 
-  },
-  notifText: { 
-    fontSize: 18, 
-    fontWeight: '700', 
-    color: '#1E293B', 
-    lineHeight: 20 
-  },
-  notifTime: { 
-    fontSize: 13, 
-    color: '#94A3B8', 
-    fontWeight: '500', 
-    marginTop: 4 
-  },
-
-  // Event List Item below Calendar
-  eventItem: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    paddingVertical: 14,
-    borderBottomWidth: 1, 
-    borderBottomColor: '#F1F5F9' 
-  },
-  eventColorIndicator: { 
-    width: 12, 
-    height: 12, 
-    borderRadius: 6, 
-    marginRight: 14 
-  },
-  eventContent: { 
-    flex: 1, 
-    paddingRight: 10 
-  },
-  eventTitle: { 
-    fontSize: 16, 
-    fontWeight: '800', 
-    color: '#1E293B', 
-    marginBottom: 4 
-  },
-  eventDate: { 
-    fontSize: 13, 
-    color: '#64748B', 
-    fontWeight: '600' 
-  },
-  eventTypeBadge: { 
-    backgroundColor: '#F1F5F9', 
-    paddingHorizontal: 8, 
-    paddingVertical: 4, 
-    borderRadius: 6 
-  },
-  eventTypeText: { 
-    fontSize: 9, 
-    fontWeight: '900', 
-    color: '#64748B', 
-    textTransform: 'uppercase' 
-  },
-
-  // Calendar Grid Styles
+  container: { flex: 1 },
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  topHeaderBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: Platform.OS === 'ios' ? 60 : 40, paddingBottom: 10, backgroundColor: 'transparent' },
+  headerTitle: { fontSize: 25, fontWeight: '600', color: '#153c2a' },
+  bellContainer: { position: 'relative' },
+  badge: { position: 'absolute', right: -4, top: -4, backgroundColor: 'red', borderRadius: 10, width: 20, height: 20, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#fff' },
+  badgeText: { color: 'white', fontSize: 10, fontWeight: 'bold' },
+  scrollContainer: { paddingHorizontal: 20, paddingBottom: 40 },
+  welcomeBanner: { backgroundColor: '#153c2a', borderRadius: 10, padding: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, elevation: 3, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 6, shadowOffset: { width: 0, height: 3 } },
+  welcomeTextContainer: { flex: 1, paddingRight: 12 },
+  welcomeSubText: { fontSize: 23, color: '#ffffff', fontWeight: '400', marginBottom: 4 },
+  welcomeUserName: { fontSize: 25, fontWeight: '900', color: '#FFFFFF' },
+  welcomeAvatarCircle: { width: 75, height: 75, borderRadius: 37.5, backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center', overflow: 'hidden', borderWidth: 3, borderColor: '#FFF' },
+  avatarImage: { width: '100%', height: '100%', resizeMode: 'cover' },
+  avatarInitials: { fontSize: 30, fontWeight: '900', color: '#153c2a' },
+  statsContainer: { marginBottom: 20 },
+  statCard: { backgroundColor: '#FFFFFF', borderRadius: 10, padding: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, borderWidth: 1, borderColor: '#F1F5F9' },
+  statLeft: { flexDirection: 'row', alignItems: 'center' },
+  statIconBox: { width: 40, height: 40, borderRadius: 10, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center', marginRight: 15 },
+  statLabel: { fontSize: 15, color: '#000', fontWeight: '600' },
+  statNumber: { fontSize: 25, fontWeight: '900', color: '#153c2a' },
+  sectionContainer: { borderRadius: 10, padding: 16, marginBottom: 20 },
+  sectionHeadingRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
+  sectionHeaderTitle: { fontSize: 16, fontWeight: '900', color: '#000', marginLeft: 8 },
+  viewAllText: { fontSize: 13, fontWeight: '800', color: '#153c2a' }, 
+  quickLinksGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
+  quickLinkCard: { width: (width - 40 - 32 - 16) / 3, backgroundColor: '#F4F7F6', borderRadius: 10, paddingVertical: 15, paddingHorizontal: 5, alignItems: 'center', marginBottom: 10, borderWidth: 1, borderColor: '#E2E8F0' },
+  quickLinkText: { fontSize: 13, fontWeight: '700', textAlign: 'center' },
+  performanceCard: { backgroundColor: '#F4F7F6', borderRadius: 10, padding: 16, flexDirection: 'row', alignItems: 'center', marginBottom: 12, borderWidth: 1, borderColor: '#E2E8F0' },
+  perfAvatarCircle: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#C5DEC9', justifyContent: 'center', alignItems: 'center', marginRight: 15 },
+  perfAvatarInitials: { fontSize: 20, fontWeight: '800', color: '#153c2a' },
+  perfInfo: { flex: 1, marginRight: 10 },
+  perfName: { fontSize: 18, fontWeight: '800' },
+  perfMeta: { fontSize: 13, color: '#000', fontWeight: '600', marginTop: 2, marginBottom: 6 },
+  progressBarBg: { height: 6, backgroundColor: '#D1D5DB', borderRadius: 3, width: '100%' },
+  progressBarFill: { height: '100%', backgroundColor: '#10B981', borderRadius: 3 },
+  perfScore: { fontSize: 15, fontWeight: '900', color: '#10B981' },
+  emptyText: { textAlign: 'center', color: '#64748B', marginVertical: 10, fontStyle: 'italic' },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  modalCard: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, maxHeight: '85%' },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  modalTitle: { fontSize: 25, fontWeight: '900', color: '#153c2a' },
+  closeBtn: { padding: 4, backgroundColor: '#F1F5F9', borderRadius: 20 },
+  notifItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
+  notifIconBox: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#E7F5EE', justifyContent: 'center', alignItems: 'center', marginRight: 16 },
+  notifContent: { flex: 1 },
+  notifText: { fontSize: 18, fontWeight: '700', color: '#1E293B', lineHeight: 20 },
+  notifTime: { fontSize: 13, color: '#94A3B8', fontWeight: '500', marginTop: 4 },
+  eventItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
+  eventColorIndicator: { width: 12, height: 12, borderRadius: 6, marginRight: 14 },
+  eventContent: { flex: 1, paddingRight: 10 },
+  eventTitle: { fontSize: 16, fontWeight: '800', color: '#1E293B', marginBottom: 4 },
+  eventDate: { fontSize: 13, color: '#64748B', fontWeight: '600' },
+  eventTypeBadge: { backgroundColor: '#F1F5F9', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  eventTypeText: { fontSize: 9, fontWeight: '900', color: '#64748B', textTransform: 'uppercase' },
   calendarControlsRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
   calendarNavBtn: { padding: 8, backgroundColor: '#F1F5F9', borderRadius: 8 },
   calendarMonthText: { fontSize: 18, fontWeight: '800', color: '#153c2a' },
   daysOfWeekRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
   dayOfWeekText: { width: '14.28%', textAlign: 'center', fontSize: 12, fontWeight: '800', color: '#64748B' },
   daysGridContainer: { flexDirection: 'row', flexWrap: 'wrap' },
-  dayCell: { 
-    width: '14.28%', 
-    height: 50, 
-    justifyContent: 'flex-start', 
-    alignItems: 'center', 
-    marginVertical: 2, 
-    borderRadius: 10, 
-    paddingTop: 8 
-  },
+  dayCell: { width: '14.28%', height: 50, justifyContent: 'flex-start', alignItems: 'center', marginVertical: 2, borderRadius: 10, paddingTop: 8 },
   cellSelected: { backgroundColor: '#153c2a' },
   dayText: { fontSize: 14, fontWeight: '700', color: '#0F172A' },
   cellTextSelected: { color: '#FFFFFF', fontWeight: '900' },
   dotsRow: { flexDirection: 'row', marginTop: 4, gap: 3 },
   dot: { width: 5, height: 5, borderRadius: 2.5 },
-  
   legendContainer: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 15, paddingTop: 15, borderTopWidth: 1, borderTopColor: '#F1F5F9', gap: 10 },
   legendItem: { flexDirection: 'row', alignItems: 'center' },
   legendDot: { width: 10, height: 10, borderRadius: 5, marginRight: 6 },
   legendText: { fontSize: 11, color: '#64748B', fontWeight: '700', textTransform: 'uppercase' },
-
   selectedEventsContainer: { marginTop: 20, flex: 1 },
   selectedDateTitle: { fontSize: 15, fontWeight: '800', color: '#1E293B', marginBottom: 10 },
 });

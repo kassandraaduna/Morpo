@@ -66,7 +66,9 @@ export default function StudentHomepage({ navigation }) {
   const [bookmarks, setBookmarks] = useState({ lessons: [], models: [], scans: [] });
   const [usersMap, setUsersMap] = useState({});
   
-  // Calendar States
+  // Modals & Calendar States
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [notifications, setNotifications] = useState([]);
   const [showCalendar, setShowCalendar] = useState(false);
   const [calendarEvents, setCalendarEvents] = useState([]);
   const today = new Date();
@@ -95,7 +97,6 @@ export default function StudentHomepage({ navigation }) {
               headers: { Authorization: token ? `Bearer ${token}` : '' }
             };
 
-            // Silently sync latest user data
             try {
                 const userRes = await api.get(`/meds/${currentUser._id}`, config).catch(() => api.get(`/admin/users/${currentUser._id}`, config));
                 const updatedUser = userRes.data?.data || userRes.data;
@@ -108,10 +109,9 @@ export default function StudentHomepage({ navigation }) {
                 console.log("Failed to sync latest user data:", err);
             }
             
-            // THE FIX: Fetch attempts from ALL known history endpoints universally to guarantee nothing is missed.
             const [
                 usersRes, syRes, lessonsRes, remedialRes, scansRes, bookmarksRaw, calRes, assessRes, 
-                officialHistoryRes, unifiedHistoryRes, recentLessonsRaw
+                officialHistoryRes, unifiedHistoryRes, recentLessonsRaw, readNotifsRaw
             ] = await Promise.all([
                 api.get('/admin/users', config).catch(() => api.get('/getMed', config).catch(() => ({ data: [] }))),
                 api.get('/admin/academic-settings/school-years', config).catch(() => ({ data: {} })),
@@ -123,39 +123,37 @@ export default function StudentHomepage({ navigation }) {
                 api.get(`/assessments?studentId=${currentUser._id}&_t=${Date.now()}`, config).catch(() => ({ data: [] })),
                 api.get(`/assessments/history/${currentUser._id}?_t=${Date.now()}`, config).catch(() => ({ data: [] })),
                 api.get(`/student/${currentUser._id}/assessment-history?_t=${Date.now()}`, config).catch(() => ({ data: [] })),
-                AsyncStorage.getItem(`recent_lessons_${currentUser._id}`).catch(() => null)
+                AsyncStorage.getItem(`recent_lessons_${currentUser._id}`).catch(() => null),
+                AsyncStorage.getItem('read_notifs').catch(() => null) // THE FIX: Fetch read status
             ]);
 
+            const readNotifs = readNotifsRaw ? JSON.parse(readNotifsRaw) : [];
             if (bookmarksRaw) setBookmarks(JSON.parse(bookmarksRaw));
             
-            // =========================================================================
-            // THE FIX: UNIVERSAL CHRONOLOGICAL SORTING FOR LATEST ATTEMPT
-            // =========================================================================
             let allOfficialAttempts = [];
 
-            // 1. Extract from the general assessments array
             const allAssessments = extractArray(assessRes.data);
             allAssessments.forEach(a => {
                 if (!a.isPracticeOnly && a.latestAttempt && a.latestAttempt.score !== undefined) {
                     allOfficialAttempts.push({
+                        _id: a.latestAttempt._id || a._id, // Store ID for notification tracking
                         title: a.title || 'Assessment',
                         score: a.latestAttempt.score,
                         total: a.latestAttempt.total || a.questions?.length || 10,
                         percent: a.latestAttempt.percent,
                         feedback: a.latestAttempt.feedback,
-                        // Ensure we strictly extract the attempt's time, not the assessment's update time!
                         timestamp: new Date(a.latestAttempt.submittedAt || a.latestAttempt.createdAt || a.latestAttempt.updatedAt || 0).getTime()
                     });
                 }
             });
 
-            // 2. Extract from the explicit official history endpoints
             const extractFromHistory = (historyData) => {
                 const historyArray = extractArray(historyData?.history || historyData?.data || historyData);
                 historyArray.forEach(att => {
                     const isPractice = att.isPracticeOnly || att.assessment?.isPracticeOnly;
                     if (!isPractice && att.score !== undefined) {
                         allOfficialAttempts.push({
+                            _id: att._id || att.assessment?._id,
                             title: att.assessment?.title || att.title || 'Assessment',
                             score: att.score,
                             total: att.total || 10,
@@ -190,9 +188,7 @@ export default function StudentHomepage({ navigation }) {
             } else {
                 setLatestQuiz(null);
             }
-            // =========================================================================
 
-            // 2. MAP USERS FOR MODIFIED BY
             const allUsers = Array.isArray(usersRes.data) ? usersRes.data : (usersRes.data?.data || []);
             const uMap = {};
             allUsers.forEach(u => {
@@ -200,7 +196,6 @@ export default function StudentHomepage({ navigation }) {
             });
             setUsersMap(uMap);
 
-            // 3. POPULATE CALENDAR
             let plottedEvents = [];
             const events = extractArray(calRes.data?.events || calRes.data);
             events.forEach(ev => {
@@ -229,7 +224,6 @@ export default function StudentHomepage({ navigation }) {
             plottedEvents.sort((a, b) => a.date - b.date);
             setCalendarEvents(plottedEvents);
 
-            // 4. PARSE RECENT LESSONS
             const syContext = syRes.data?.context || {};
             const activeSyId = syContext.activeSchoolYearId;
             const activeTermKey = syContext.activeTermKey;
@@ -273,8 +267,80 @@ export default function StudentHomepage({ navigation }) {
             });
 
             setSuggestedLessons(combinedLessons); 
-            setScans(extractArray(scansRes.data));
             
+            const rawScans = extractArray(scansRes.data);
+            setScans(rawScans);
+            
+            // =========================================================
+            // GENERATE STUDENT NOTIFICATIONS DYNAMICALLY (STABLE IDS)
+            // =========================================================
+            let generatedNotifs = [];
+
+            if (allOfficialAttempts.length > 0) {
+                const latest = allOfficialAttempts[0];
+                generatedNotifs.push({
+                    _id: `score-${latest._id}`, // Stable ID
+                    type: 'assessment',
+                    message: `Score received: ${latest.score} on ${latest.title}`,
+                    createdAt: new Date(latest.timestamp).toISOString(),
+                    isRead: false
+                });
+            }
+
+            if (rawScans.length > 0) {
+                generatedNotifs.push({
+                    _id: `scan-${rawScans[0]._id}`, // Stable ID
+                    type: 'scan',
+                    message: `New AI scan saved: ${rawScans[0].classification || 'Unknown'}`,
+                    createdAt: rawScans[0].createdAt || new Date().toISOString(),
+                    isRead: false
+                });
+            }
+
+            if (plottedEvents.length > 0) {
+                generatedNotifs.push({
+                    _id: `cal-${plottedEvents[0].id}`, // Stable ID
+                    type: 'calendar',
+                    message: `Upcoming event: ${plottedEvents[0].title}`,
+                    createdAt: new Date().toISOString(),
+                    isRead: false
+                });
+            }
+
+            const officialAssessments = extractArray(assessRes.data).filter(a => a.status !== 'draft' && !a.isArchived);
+            if (officialAssessments.length > 0) {
+                const newestAss = [...officialAssessments].sort((a,b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())[0];
+                generatedNotifs.push({
+                    _id: `new-ass-${newestAss._id}`, // Stable ID
+                    type: 'assessment',
+                    message: `New assessment assigned: ${newestAss.title}`,
+                    createdAt: newestAss.createdAt || newestAss.updatedAt || new Date().toISOString(),
+                    isRead: false
+                });
+            }
+
+            if (combinedLessons.length > 0) {
+                const sortedByNew = [...combinedLessons].sort((a,b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+                const newestLesson = sortedByNew[0];
+                generatedNotifs.push({
+                    _id: `lesson-${newestLesson._id}`, // Stable ID
+                    type: 'lesson',
+                    message: `New material available: ${newestLesson.title}`,
+                    createdAt: newestLesson.createdAt || newestLesson.updatedAt || new Date().toISOString(),
+                    isRead: false
+                });
+            }
+
+            generatedNotifs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+            
+            // THE FIX: Cross-reference with AsyncStorage to mark existing reads
+            const mappedNotifs = generatedNotifs.map(n => ({
+                ...n,
+                isRead: readNotifs.includes(n._id)
+            }));
+            
+            setNotifications(mappedNotifs);
+
         } catch (error) {
             console.error("Dashboard Fetch Error:", error);
         } finally {
@@ -287,6 +353,37 @@ export default function StudentHomepage({ navigation }) {
       loadDashboardData();
     }, [])
   );
+
+  // THE FIX: Mark individual notification as read
+  const handleMarkAsRead = async (id) => {
+    try {
+        const raw = await AsyncStorage.getItem('read_notifs');
+        const readNotifs = raw ? JSON.parse(raw) : [];
+        if (!readNotifs.includes(id)) {
+            readNotifs.push(id);
+            await AsyncStorage.setItem('read_notifs', JSON.stringify(readNotifs));
+        }
+        setNotifications(prev => prev.map(n => n._id === id ? { ...n, isRead: true } : n));
+    } catch (e) {
+        console.error('Failed to mark read', e);
+    }
+  };
+
+  // THE FIX: Mark all notifications as read
+  const handleMarkAllAsRead = async () => {
+    try {
+        const raw = await AsyncStorage.getItem('read_notifs');
+        const readNotifs = raw ? JSON.parse(raw) : [];
+        notifications.forEach(n => {
+            if (!readNotifs.includes(n._id)) readNotifs.push(n._id);
+        });
+        await AsyncStorage.setItem('read_notifs', JSON.stringify(readNotifs));
+        setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+        toastSuccess('All notifications marked as read.');
+    } catch (e) {
+        console.error('Failed to mark all read', e);
+    }
+  };
 
   const handleToggleBookmark = async (itemId, type) => {
         try {
@@ -345,6 +442,35 @@ export default function StudentHomepage({ navigation }) {
         } finally {
             setIsDownloading(false);
         }
+  };
+
+  // INTERACTIVE ROUTING FOR STUDENT NOTIFICATIONS
+  const renderNotifItem = ({ item }) => {
+    const handlePress = async () => {
+        await handleMarkAsRead(item._id); // Clear the red dot instantly
+        setShowNotifications(false); 
+        
+        if (item.type === 'scan') navigation.navigate('ScanHistory');
+        else if (item.type === 'assessment') navigation.navigate('Learn', { initialTab: 'Assessments' });
+        else if (item.type === 'lesson') navigation.navigate('Learn', { initialTab: 'Lessons' });
+        else if (item.type === 'calendar') setShowCalendar(true); 
+    };
+
+    return (
+        <TouchableOpacity style={localStyles.notifItem} onPress={handlePress} activeOpacity={0.7}>
+            <View style={[localStyles.notifIconBox, !item.isRead && { backgroundColor: '#C5DEC9' }]}>
+                <Ionicons 
+                    name={item.type === 'scan' ? 'scan' : item.type === 'calendar' ? 'calendar' : item.type === 'assessment' ? 'clipboard' : item.type === 'lesson' ? 'book' : 'notifications'} 
+                    size={20} 
+                    color="#153c2a" 
+                />
+            </View>
+            <View style={localStyles.notifContent}>
+                <Text style={[localStyles.notifText, !item.isRead && { fontWeight: '900' }]}>{item.message}</Text>
+                <Text style={localStyles.notifTime}>{formatDate(item.createdAt)}</Text>
+            </View>
+        </TouchableOpacity>
+    );
   };
 
   // Calendar Navigation & Rendering Helpers
@@ -455,6 +581,7 @@ export default function StudentHomepage({ navigation }) {
   const recentLessonsList = suggestedLessons.slice(0, 5);
   const hasValidAssessment = latestQuiz && latestQuiz.score !== undefined && latestQuiz.score !== null;
   const selectedEvents = getSelectedEvents();
+  const unreadNotifs = notifications.filter(n => !n.isRead).length;
 
   const legendsMap = {};
   calendarEvents.forEach(e => { legendsMap[e.type] = e.color; });
@@ -473,10 +600,15 @@ export default function StudentHomepage({ navigation }) {
           </TouchableOpacity>
           <TouchableOpacity 
             style={localStyles.notificationBell} 
-            onPress={() => navigation.navigate('Bookmarks', { initialTab: 'Notifications' })}
+            onPress={() => setShowNotifications(true)}
             activeOpacity={0.7}
           >
             <Ionicons name="notifications" size={22} color="#153c2a" />
+            {unreadNotifs > 0 && (
+              <View style={localStyles.badge}>
+                <Text style={localStyles.badgeText}>{unreadNotifs}</Text>
+              </View>
+            )}
           </TouchableOpacity>
         </View>
       </View>
@@ -771,7 +903,8 @@ export default function StudentHomepage({ navigation }) {
               {selectedScan && (
                   <View ref={printRef} collapsable={false} style={localStyles.exportCard}>
                       <View style={localStyles.exportBrandRow}>
-                          <Text style={localStyles.exportBrandText}>MyphoAI Analysis</Text>
+                          <Ionicons name="scan-circle" size={24} color="#153c2a" />
+                          <Text style={localStyles.exportBrandText}>MyphoLens AI Analysis</Text>
                       </View>
                       <Image 
                           source={{ uri: toAbsUrl(selectedScan.imageUrl) }} 
@@ -787,6 +920,39 @@ export default function StudentHomepage({ navigation }) {
           </View>
       </Modal>
 
+      {/* THE FIX: STUDENT NOTIFICATIONS MODAL (WITH MARK ALL AS READ) */}
+      <Modal visible={showNotifications} transparent animationType="fade" onRequestClose={() => setShowNotifications(false)}>
+        <View style={localStyles.modalOverlay}>
+          <View style={localStyles.modalCardContainer}>
+            <View style={localStyles.modalHeader}>
+              <Text style={localStyles.modalTitleText}>Notifications</Text>
+              
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <TouchableOpacity onPress={handleMarkAllAsRead} style={localStyles.closeModalBtn}>
+                    <Ionicons name="checkmark-done" size={24} color="#153c2a" />
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => setShowNotifications(false)} style={localStyles.closeModalBtn}>
+                    <Ionicons name="close" size={24} color="#153c2a" />
+                  </TouchableOpacity>
+              </View>
+
+            </View>
+            
+            {notifications.length === 0 ? (
+              <Text style={localStyles.emptyText}>You have no new notifications.</Text>
+            ) : (
+              <FlatList
+                data={notifications}
+                keyExtractor={(item, index) => item._id || index.toString()}
+                showsVerticalScrollIndicator={false}
+                renderItem={renderNotifItem}
+              />
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* ACADEMIC CALENDAR MODAL */}
       <Modal visible={showCalendar} transparent animationType="fade" onRequestClose={() => setShowCalendar(false)}>
         <View style={localStyles.modalOverlay}>
           <View style={[localStyles.modalCardContainer, { height: '85%' }]}>
@@ -853,7 +1019,9 @@ const localStyles = StyleSheet.create({
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   topHeaderBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: Platform.OS === 'ios' ? 60 : 40, paddingBottom: 10, backgroundColor: 'transparent' },
   headerTitle: { fontSize: 25, fontWeight: '600', color: '#153c2a' },
-  notificationBell: { width: 45, height: 45, borderRadius: 22.5, backgroundColor: '#EAEFEB', justifyContent: 'center', alignItems: 'center' },
+  notificationBell: { position: 'relative', width: 45, height: 45, borderRadius: 22.5, backgroundColor: '#EAEFEB', justifyContent: 'center', alignItems: 'center' },
+  badge: { position: 'absolute', right: -4, top: -4, backgroundColor: 'red', borderRadius: 10, width: 20, height: 20, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: '#fff' },
+  badgeText: { color: 'white', fontSize: 10, fontWeight: 'bold' },
   scrollContainer: { paddingHorizontal: 20, paddingTop: 10 },
   welcomeBanner: { backgroundColor: '#153c2a', borderRadius: 10, padding: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, elevation: 3, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 6, shadowOffset: { width: 0, height: 3 } },
   welcomeTextContainer: { flex: 1, paddingRight: 12 },
@@ -897,23 +1065,30 @@ const localStyles = StyleSheet.create({
   lessonCardSub: { fontSize: 13, color: '#64748B', fontWeight: '500' },
   
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' },
-  modalCardContainer: { backgroundColor: '#fff', borderTopLeftRadius: 10, borderTopRightRadius: 10, padding: 24, maxHeight: '85%' },
+  modalCardContainer: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, maxHeight: '85%' },
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
   modalTitleText: { fontSize: 25, fontWeight: '900', color: '#153c2a' },
   closeBtn: { position: 'absolute', top: 15, right: 15, zIndex: 10 },
-  closeModalBtn: { padding: 4, backgroundColor: '#F1F5F9', borderRadius: 10 },
-
+  closeModalBtn: { padding: 4, backgroundColor: '#F1F5F9', borderRadius: 20 },
+  
+  // White Report Card Modal Layout from Dataset Library & Scan History
   fsModalBackground: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center' },
   fsModalHeader: { position: 'absolute', top: Platform.OS === 'ios' ? 50 : 30, left: 0, right: 0, flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 20, zIndex: 10 },
   fsIconButton: { backgroundColor: 'rgba(255,255,255,0.2)', padding: 10, borderRadius: 30 },
-  exportCard: { backgroundColor: '#FFFFFF', width: '85%', borderRadius: 10, overflow: 'hidden', padding: 20, alignItems: 'center', elevation: 5, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 15 },
+  exportCard: { backgroundColor: '#FFFFFF', width: '85%', borderRadius: 24, overflow: 'hidden', padding: 20, alignItems: 'center', elevation: 5, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 15 },
   exportBrandRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 15, gap: 6 },
   exportBrandText: { fontSize: 14, fontWeight: '800', color: '#153c2a', textTransform: 'uppercase', letterSpacing: 0.5 },
-  exportImage: { width: '100%', height: 320, borderRadius: 10, resizeMode: 'cover', backgroundColor: '#F1F5F9', marginBottom: 20 },
-  exportData: { width: '100%', backgroundColor: '#F8FAFC', padding: 15, borderRadius: 10, borderWidth: 1, borderColor: '#E2E8F0', alignItems: 'center' },
+  exportImage: { width: '100%', height: 320, borderRadius: 16, resizeMode: 'cover', backgroundColor: '#F1F5F9', marginBottom: 20 },
+  exportData: { width: '100%', backgroundColor: '#F8FAFC', padding: 15, borderRadius: 16, borderWidth: 1, borderColor: '#E2E8F0', alignItems: 'center' },
   exportTitle: { fontSize: 22, fontWeight: '900', color: '#1E293B', marginBottom: 6, textAlign: 'center' },
   exportScore: { fontSize: 15, fontWeight: '800', color: '#10B981', marginBottom: 6 },
   exportDate: { fontSize: 12, fontWeight: '600', color: '#64748B' },
+
+  notifItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
+  notifIconBox: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#E7F5EE', justifyContent: 'center', alignItems: 'center', marginRight: 16 },
+  notifContent: { flex: 1 },
+  notifText: { fontSize: 18, fontWeight: '700', color: '#1E293B', lineHeight: 20 },
+  notifTime: { fontSize: 13, color: '#94A3B8', fontWeight: '500', marginTop: 4 },
 
   calendarControlsRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
   calendarNavBtn: { padding: 8, backgroundColor: '#F1F5F9', borderRadius: 8 },

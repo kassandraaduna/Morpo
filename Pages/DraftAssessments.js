@@ -278,7 +278,7 @@ export default function DraftAssessments({ navigation }) {
           >
             <Ionicons name="arrow-back" size={24} color="#FFF" />
           </TouchableOpacity>
-          <View>
+          <View style={localStyles.centered}>
             <Text style={localStyles.title}>Assessment Drafts</Text>
             <Text style={localStyles.subtitle}>
               Configure rules, schedule, and publish saved drafts
@@ -365,15 +365,16 @@ const localStyles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: Platform.OS === 'ios' ? 60 : 40,
     paddingBottom: 25,
+    borderBottomLeftRadius: 10,
+    borderBottomRightRadius: 10,
   },
   headerRow: { flexDirection: 'row', alignItems: 'center' },
-  title: { fontSize: 22, fontWeight: '900', color: '#fff' },
+  title: { fontSize: 25, fontWeight: '900', color: '#fff', marginTop: 10 },
   subtitle: { fontSize: 13, color: '#d1fae5', marginTop: 2 },
   centered: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 50,
   },
   listContent: { padding: 16, paddingBottom: 80 },
   centeredEmpty: {
@@ -389,7 +390,7 @@ const localStyles = StyleSheet.create({
   },
   emptySub: { fontSize: 13, color: '#94A3B8', marginTop: 4 },
   card: {
-    borderRadius: 16,
+    borderRadius: 10,
     padding: 16,
     marginBottom: 14,
     borderWidth: 1,

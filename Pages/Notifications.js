@@ -1,7 +1,7 @@
 import React, { useContext, useCallback } from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { ThemeContext } from '../Pages/src/context/ThemeContext'
+import { ThemeContext } from '../Pages/src/context/ThemeContext'; // Adjust path if necessary
 
 const formatDate = (dateString) => {
   if (!dateString) return '';
@@ -12,36 +12,36 @@ const formatDate = (dateString) => {
 export default function Notifications({ route, navigation }) {
   const { theme } = useContext(ThemeContext);
 
+  // Safely grab the notifications passed from previous screens
   const notifications = route.params?.notifications || [];
 
-  const renderNotifItem = useCallback(({ item }) => (
-    <View style={localStyles.notifItem}>
-      <View style={[localStyles.notifIconBox, !item.isRead && { backgroundColor: '#C5DEC9' }]}>
-        <Ionicons 
-          name={item.type === 'dataset' ? 'cube-outline' : item.type === 'calendar' ? 'calendar-outline' : item.type === 'assessment' ? 'clipboard-outline' : 'notifications-outline'} 
-          size={20} 
-          color="#153c2a" 
-        />
-      </View>
-      <View style={localStyles.notifContent}>
-        <Text style={[localStyles.notifText, !item.isRead && { fontWeight: '900' }]}>{item.message}</Text>
-        <Text style={localStyles.notifTime}>{formatDate(item.createdAt)}</Text>
-      </View>
-    </View>
-  ), []);
+  // THE FIX: Makes items clickable and routes them dynamically based on type
+  const renderNotifItem = useCallback(({ item }) => {
+    const handlePress = () => {
+        if (item.type === 'dataset') navigation.navigate('DatasetLibrary');
+        else if (item.type === 'scan') navigation.navigate('ScanHistory');
+        else if (item.type === 'assessment') navigation.navigate('Learn', { initialTab: 'Assessments' });
+        else if (item.type === 'lesson') navigation.navigate('Learn', { initialTab: 'Lessons' });
+        else if (item.type === 'assignment') navigation.navigate('StudentMonitoring');
+        else if (item.type === 'calendar') navigation.goBack(); 
+    };
 
-  const renderEventItem = useCallback(({ item }) => (
-    <View style={localStyles.eventItem}>
-      <View style={[localStyles.eventColorIndicator, { backgroundColor: item.color }]} />
-      <View style={localStyles.eventContent}>
-        <Text style={localStyles.eventTitle}>{item.title}</Text>
-        <Text style={localStyles.eventDate}>{formatDate(item.date)}</Text>
-      </View>
-      <View style={localStyles.eventTypeBadge}>
-        <Text style={localStyles.eventTypeText}>{item.type}</Text>
-      </View>
-    </View>
-  ), []);
+    return (
+      <TouchableOpacity style={styles.notifItem} onPress={handlePress} activeOpacity={0.7}>
+        <View style={[styles.notifIconBox, !item.isRead && { backgroundColor: '#C5DEC9' }]}>
+          <Ionicons 
+            name={item.type === 'dataset' ? 'cube-outline' : item.type === 'scan' ? 'scan-outline' : item.type === 'calendar' ? 'calendar-outline' : item.type === 'assessment' ? 'clipboard-outline' : item.type === 'lesson' ? 'book-outline' : 'notifications-outline'} 
+            size={20} 
+            color="#153c2a" 
+          />
+        </View>
+        <View style={styles.notifContent}>
+          <Text style={[styles.notifText, !item.isRead && { fontWeight: '900' }]}>{item.message}</Text>
+          <Text style={styles.notifTime}>{formatDate(item.createdAt)}</Text>
+        </View>
+      </TouchableOpacity>
+    );
+  }, [navigation]);
 
   return (
     <View style={[styles.container, { backgroundColor: theme?.bg || '#F4F7F6' }]}>
@@ -62,16 +62,13 @@ export default function Notifications({ route, navigation }) {
           <Text style={styles.emptyText}>You have no new notifications.</Text>
         </View>
       ) : (
-<FlatList
-  data={calendarEvents}
-  keyExtractor={(item) => item.id.toString()}
-  showsVerticalScrollIndicator={false}
-  renderItem={renderEventItem}
-  initialNumToRender={10}          // Limits initial paint to 10 items
-  maxToRenderPerBatch={10}         // Only loads 10 at a time while scrolling
-  windowSize={5}                   // Reduces memory usage of off-screen items
-  removeClippedSubviews={true}     // Unmounts items that leave the screen
-/>
+        <FlatList
+          data={notifications} // THE FIX: Rendering notifications instead of calendar events
+          keyExtractor={(item, index) => item._id?.toString() || index.toString()}
+          showsVerticalScrollIndicator={false}
+          renderItem={renderNotifItem}
+          contentContainerStyle={styles.listContainer}
+        />
       )}
     </View>
   );
@@ -92,7 +89,7 @@ const styles = StyleSheet.create({
   },
   backBtn: { padding: 4 },
   headerTitle: { fontSize: 20, fontWeight: '900', color: '#153c2a' },
-  listContainer: { padding: 20 },
+  listContainer: { padding: 20, paddingBottom: 60 },
   emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', marginTop: 100 },
   emptyText: { fontSize: 16, color: '#64748B', marginTop: 16, fontWeight: '600' },
   notifItem: {

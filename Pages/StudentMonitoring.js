@@ -163,7 +163,7 @@ const localStyles = StyleSheet.create({
     headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 20, position: 'relative' },
     backBtn: { position: 'absolute', left: 0, zIndex: 10 },
     headerTextContainer: { alignItems: 'center', paddingHorizontal: 35 },
-    title: { fontSize: 22, fontWeight: '900', color: '#fff', textAlign: 'center' },
+    title: { fontSize: 25, fontWeight: '900', color: '#fff', textAlign: 'center' },
     subtitle: { fontSize: 13, color: '#d1fae5', marginTop: 2, textAlign: 'center' },
     searchBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', paddingHorizontal: 15, height: 45, borderRadius: 10 },
     searchInput: { flex: 1, marginLeft: 10, fontSize: 14, fontWeight: '600', color: '#334155' },
