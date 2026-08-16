@@ -12,7 +12,6 @@ const getInitials = (fname, lname) => {
   return `${f}${l}` || 'U';
 };
 
-// PREVENTS MOBILE CACHING WHEN SYNCING FROM WEB
 const getAvatarUri = (url, u) => {
   if (!url) return null;
   if (url.startsWith('data:image') || url.startsWith('file:')) return url;
@@ -32,7 +31,6 @@ export default function Profile({ navigation }) {
         setUser(parsedUser);
 
         try {
-          // Immediately fetch fresh DB data so web updates reflect here
           const res = await api.get(`/meds/${parsedUser._id}`);
           const updatedUser = res.data?.data || res.data;
           

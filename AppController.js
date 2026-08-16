@@ -84,7 +84,7 @@ export default function AppController() {
         <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} options={{ headerShown: false }}/>
         <Stack.Screen name="StudentBottomTab" component={StudentBottomTab} />
         <Stack.Screen name="EditProfile" component={EditProfile} options={{ headerShown: false }}/>
-        <Stack.Screen name="Termms" component={Terms} options={{ headerShown: false }}/>
+        <Stack.Screen name="Terms" component={Terms} options={{ headerShown: false }}/>
         <Stack.Screen name="Privacy" component={Privacy} options={{ headerShown: false }}/>
         <Stack.Screen name="ChangePassword" component={ChangePassword} options={{ headerShown: false }}/>
         <Stack.Screen name="FAQs" component={FAQs} options={{ headerShown: false }}/>
