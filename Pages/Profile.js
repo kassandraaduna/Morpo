@@ -1,7 +1,8 @@
-import React, { useEffect, useState, useContext } from 'react';
+import React, { useState, useContext, useCallback } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, Switch, Image, StyleSheet, Platform, StatusBar } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import ConfirmSheet from './src/components/ConfirmSheet';
 import { ThemeContext } from './src/context/ThemeContext';
 import api, { toAbsUrl } from './src/services/api';
@@ -23,31 +24,31 @@ export default function Profile({ navigation }) {
   const [confirmLogout, setConfirmLogout] = useState(false);
   const { theme, darkMode, toggleTheme } = useContext(ThemeContext);
 
-  useEffect(() => {
-    const loadUser = async () => {
-      const rawUser = await AsyncStorage.getItem('user');
-      if (rawUser) {
-        const parsedUser = JSON.parse(rawUser);
-        setUser(parsedUser);
+  const loadUser = useCallback(async () => {
+    const rawUser = await AsyncStorage.getItem('user');
+    if (rawUser) {
+      const parsedUser = JSON.parse(rawUser);
+      setUser(parsedUser);
 
-        try {
-          const res = await api.get(`/meds/${parsedUser._id}`);
-          const updatedUser = res.data?.data || res.data;
-          
-          if (updatedUser) {
-            setUser(updatedUser);
-            await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
-          }
-        } catch (err) {
-          console.log("Failed to sync latest user data", err);
+      try {
+        const res = await api.get(`/meds/${parsedUser._id}`);
+        const updatedUser = res.data?.data || res.data;
+        
+        if (updatedUser) {
+          setUser(updatedUser);
+          await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
         }
+      } catch (err) {
+        console.log("Failed to sync latest user data", err);
       }
-    };
-    
-    loadUser();
-    const unsubscribe = navigation.addListener('focus', loadUser);
-    return unsubscribe;
-  }, [navigation]);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadUser();
+    }, [loadUser])
+  );
 
   if (!user) return null;
 

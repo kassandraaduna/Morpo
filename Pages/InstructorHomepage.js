@@ -9,15 +9,16 @@ import {
   Dimensions, 
   ActivityIndicator,
   Modal,
-  FlatList, DeviceEventEmitter, Image,
+  FlatList, Image,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { ThemeContext } from './src/context/ThemeContext';
-import { CommonActions } from '@react-navigation/native';
-import api, {toAbsUrl} from './src/services/api';
+import api, { toAbsUrl } from './src/services/api';
 
 const { width } = Dimensions.get('window');
+
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 const getInitials = (name) => {
   if (!name) return 'I';
@@ -61,6 +62,13 @@ export default function InstructorHomepage({ navigation }) {
   const [notifications, setNotifications] = useState([]);
   const [calendarEvents, setCalendarEvents] = useState([]);
 
+  // Calendar State
+  const today = new Date();
+  const initDateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const [calendarMonth, setCalendarMonth] = useState(today.getMonth());
+  const [calendarYear, setCalendarYear] = useState(today.getFullYear());
+  const [selectedDateStr, setSelectedDateStr] = useState(initDateStr);
+
   const loadInstructorData = async () => {
     try {
       setLoading(true);
@@ -100,11 +108,8 @@ export default function InstructorHomepage({ navigation }) {
         fetchedStudents = allUsers.filter(u => {
           const roleStr = extractValue(u.role);
           const isStudent = roleStr.toLowerCase() === 'student' || roleStr.toLowerCase() === 'user';
-          
           const studentSection = normalizeSection(u.section);
-          const hasMatchingSection = uniqueSections.has(studentSection);
-          
-          return isStudent && hasMatchingSection;
+          return isStudent && uniqueSections.has(studentSection);
         });
       } catch (err) {
         console.warn("Failed to fetch students from /admin/users:", err.message);
@@ -295,6 +300,88 @@ export default function InstructorHomepage({ navigation }) {
     </View>
   ), []);
 
+  // Calendar Logic
+  const handlePrevMonth = () => {
+    if (calendarMonth === 0) {
+      setCalendarMonth(11);
+      setCalendarYear(y => y - 1);
+    } else {
+      setCalendarMonth(m => m - 1);
+    }
+  };
+
+  const handleNextMonth = () => {
+    if (calendarMonth === 11) {
+      setCalendarMonth(0);
+      setCalendarYear(y => y + 1);
+    } else {
+      setCalendarMonth(m => m + 1);
+    }
+  };
+
+  const getSelectedEvents = () => {
+    if (!selectedDateStr) return [];
+    const [y, m, d] = selectedDateStr.split('-').map(Number);
+    return calendarEvents.filter(ev => {
+      const evDt = new Date(ev.date);
+      return evDt.getFullYear() === y && evDt.getMonth() === m - 1 && evDt.getDate() === d;
+    });
+  };
+
+  const renderCalendarGrid = () => {
+    const daysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
+    const firstDay = new Date(calendarYear, calendarMonth, 1).getDay();
+
+    const days = [];
+    for (let i = 0; i < firstDay; i++) {
+      days.push(<View key={`empty-${i}`} style={localStyles.dayCell} />);
+    }
+
+    for (let i = 1; i <= daysInMonth; i++) {
+      const yyyy = calendarYear;
+      const mm = String(calendarMonth + 1).padStart(2, '0');
+      const dd = String(i).padStart(2, '0');
+      const cellDateKey = `${yyyy}-${mm}-${dd}`;
+
+      const isSelected = selectedDateStr === cellDateKey;
+
+      const dayEvents = calendarEvents.filter(ev => {
+        const evDt = new Date(ev.date);
+        return evDt.getFullYear() === yyyy && evDt.getMonth() === calendarMonth && evDt.getDate() === i;
+      });
+
+      const colors = [...new Set(dayEvents.map(e => e.color))].slice(0, 3);
+
+      days.push(
+        <TouchableOpacity 
+          key={`day-${i}`} 
+          style={[localStyles.dayCell, isSelected && localStyles.cellSelected]}
+          onPress={() => setSelectedDateStr(cellDateKey)}
+        >
+          <Text style={[localStyles.dayText, isSelected && localStyles.cellTextSelected]}>{i}</Text>
+          <View style={localStyles.dotsRow}>
+            {colors.map((c, idx) => (
+              <View key={idx} style={[localStyles.dot, { backgroundColor: c }]} />
+            ))}
+          </View>
+        </TouchableOpacity>
+      );
+    }
+
+    return (
+      <View>
+        <View style={localStyles.daysOfWeekRow}>
+          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d, idx) => (
+            <Text key={idx} style={localStyles.dayOfWeekText}>{d}</Text>
+          ))}
+        </View>
+        <View style={localStyles.daysGridContainer}>
+          {days}
+        </View>
+      </View>
+    );
+  };
+
   if (!user || loading) {
     return (
       <View style={[localStyles.centered, { backgroundColor: theme?.bg || '#F4F7F6' }]}>
@@ -305,6 +392,12 @@ export default function InstructorHomepage({ navigation }) {
 
   const fullName = `${user.fname || ''} ${user.lname || ''}`.trim() || 'Instructor';
   const unreadNotifs = notifications.filter(n => !n.isRead).length;
+  const selectedEvents = getSelectedEvents();
+  
+  // Extract Dynamic Legends
+  const legendsMap = {};
+  calendarEvents.forEach(e => { legendsMap[e.type] = e.color; });
+  const legendEntries = Object.keys(legendsMap).map(type => ({ type, color: legendsMap[type] }));
 
   return (
     <View style={[localStyles.container, { backgroundColor: theme?.bg || '#F4F7F6' }]}>
@@ -485,7 +578,7 @@ export default function InstructorHomepage({ navigation }) {
 
       </ScrollView>
 
-      {/* NOTIFICATIONS MODAL (Fade Animation) */}
+      {/* NOTIFICATIONS MODAL */}
       <Modal visible={showNotifications} transparent animationType="fade" onRequestClose={() => setShowNotifications(false)}>
         <View style={localStyles.modalOverlay}>
           <View style={localStyles.modalCard}>
@@ -514,31 +607,60 @@ export default function InstructorHomepage({ navigation }) {
         </View>
       </Modal>
 
-      {/* ACADEMIC CALENDAR MODAL (Fade Animation) */}
       <Modal visible={showCalendar} transparent animationType="fade" onRequestClose={() => setShowCalendar(false)}>
         <View style={localStyles.modalOverlay}>
-          <View style={localStyles.modalCard}>
+          <View style={[localStyles.modalCard, { height: '85%' }]}>
             <View style={localStyles.modalHeader}>
-              <Text style={localStyles.modalTitle}>Academic Calendar</Text>
+              <Text style={localStyles.modalTitle}>Calendar</Text>
               <TouchableOpacity onPress={() => setShowCalendar(false)} style={localStyles.closeBtn}>
                 <Ionicons name="close" size={24} color="#153c2a" />
               </TouchableOpacity>
             </View>
             
-            {calendarEvents.length === 0 ? (
-              <Text style={localStyles.emptyText}>No upcoming events found.</Text>
-            ) : (
-              <FlatList
-                data={calendarEvents}
-                keyExtractor={(item) => item.id.toString()}
-                showsVerticalScrollIndicator={false}
-                renderItem={renderEventItem}
-                initialNumToRender={10}
-                maxToRenderPerBatch={10}
-                windowSize={5}
-                removeClippedSubviews={true}
-              />
+            {/* Calendar Controls */}
+            <View style={localStyles.calendarControlsRow}>
+              <TouchableOpacity onPress={handlePrevMonth} style={localStyles.calendarNavBtn}>
+                <Ionicons name="chevron-back" size={20} color="#153c2a" />
+              </TouchableOpacity>
+              <Text style={localStyles.calendarMonthText}>{MONTH_NAMES[calendarMonth]} {calendarYear}</Text>
+              <TouchableOpacity onPress={handleNextMonth} style={localStyles.calendarNavBtn}>
+                <Ionicons name="chevron-forward" size={20} color="#153c2a" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Grid */}
+            {renderCalendarGrid()}
+
+            {/* Legends */}
+            {legendEntries.length > 0 && (
+              <View style={localStyles.legendContainer}>
+                {legendEntries.map((legend, idx) => (
+                  <View key={idx} style={localStyles.legendItem}>
+                    <View style={[localStyles.legendDot, { backgroundColor: legend.color }]} />
+                    <Text style={localStyles.legendText}>{legend.type}</Text>
+                  </View>
+                ))}
+              </View>
             )}
+
+            {/* Events for Selected Date */}
+            <View style={localStyles.selectedEventsContainer}>
+              <Text style={localStyles.selectedDateTitle}>
+                Events on {new Date(selectedDateStr).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+              </Text>
+              {selectedEvents.length === 0 ? (
+                <Text style={localStyles.emptyText}>No events scheduled for this day.</Text>
+              ) : (
+                <FlatList
+                  data={selectedEvents}
+                  keyExtractor={(item) => item.id.toString()}
+                  showsVerticalScrollIndicator={false}
+                  renderItem={renderEventItem}
+                  removeClippedSubviews={true}
+                />
+              )}
+            </View>
+            
           </View>
         </View>
       </Modal>
@@ -848,13 +970,14 @@ const localStyles = StyleSheet.create({
     marginTop: 4 
   },
 
+  // Event List Item below Calendar
   eventItem: { 
     flexDirection: 'row', 
     alignItems: 'center', 
     paddingVertical: 14,
     borderBottomWidth: 1, 
     borderBottomColor: '#F1F5F9' 
-    },
+  },
   eventColorIndicator: { 
     width: 12, 
     height: 12, 
@@ -866,7 +989,7 @@ const localStyles = StyleSheet.create({
     paddingRight: 10 
   },
   eventTitle: { 
-    fontSize: 18, 
+    fontSize: 16, 
     fontWeight: '800', 
     color: '#1E293B', 
     marginBottom: 4 
@@ -887,5 +1010,35 @@ const localStyles = StyleSheet.create({
     fontWeight: '900', 
     color: '#64748B', 
     textTransform: 'uppercase' 
-  }
+  },
+
+  // Calendar Grid Styles
+  calendarControlsRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
+  calendarNavBtn: { padding: 8, backgroundColor: '#F1F5F9', borderRadius: 8 },
+  calendarMonthText: { fontSize: 18, fontWeight: '800', color: '#153c2a' },
+  daysOfWeekRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
+  dayOfWeekText: { width: '14.28%', textAlign: 'center', fontSize: 12, fontWeight: '800', color: '#64748B' },
+  daysGridContainer: { flexDirection: 'row', flexWrap: 'wrap' },
+  dayCell: { 
+    width: '14.28%', 
+    height: 50, 
+    justifyContent: 'flex-start', 
+    alignItems: 'center', 
+    marginVertical: 2, 
+    borderRadius: 10, 
+    paddingTop: 8 
+  },
+  cellSelected: { backgroundColor: '#153c2a' },
+  dayText: { fontSize: 14, fontWeight: '700', color: '#0F172A' },
+  cellTextSelected: { color: '#FFFFFF', fontWeight: '900' },
+  dotsRow: { flexDirection: 'row', marginTop: 4, gap: 3 },
+  dot: { width: 5, height: 5, borderRadius: 2.5 },
+  
+  legendContainer: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 15, paddingTop: 15, borderTopWidth: 1, borderTopColor: '#F1F5F9', gap: 10 },
+  legendItem: { flexDirection: 'row', alignItems: 'center' },
+  legendDot: { width: 10, height: 10, borderRadius: 5, marginRight: 6 },
+  legendText: { fontSize: 11, color: '#64748B', fontWeight: '700', textTransform: 'uppercase' },
+
+  selectedEventsContainer: { marginTop: 20, flex: 1 },
+  selectedDateTitle: { fontSize: 15, fontWeight: '800', color: '#1E293B', marginBottom: 10 },
 });

@@ -11,11 +11,9 @@ const formatDate = (dateString) => {
 
 export default function Notifications({ route, navigation }) {
   const { theme } = useContext(ThemeContext);
-  
-  // Safely grab the notifications passed from the Homepage
+
   const notifications = route.params?.notifications || [];
 
-    // Add this above your return() statement
   const renderNotifItem = useCallback(({ item }) => (
     <View style={localStyles.notifItem}>
       <View style={[localStyles.notifIconBox, !item.isRead && { backgroundColor: '#C5DEC9' }]}>

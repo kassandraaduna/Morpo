@@ -42,6 +42,31 @@ export default function LessonStudent({ route, navigation }) {
   };
 
   useEffect(() => {
+        const trackRecentLesson = async () => {
+            const targetId = lessonId || personalizedLesson?._id;
+            if (!targetId) return;
+
+            try {
+                const rawUser = await AsyncStorage.getItem('user');
+                if (!rawUser) return;
+                const user = JSON.parse(rawUser);
+
+                const recentKey = `recent_lessons_${user._id}`;
+                const recentRaw = await AsyncStorage.getItem(recentKey);
+                let recentMap = recentRaw ? JSON.parse(recentRaw) : {};
+
+                // Update the exact timestamp for this specific lesson
+                recentMap[targetId] = Date.now();
+                await AsyncStorage.setItem(recentKey, JSON.stringify(recentMap));
+            } catch (e) {
+                console.log("Failed to track recent lesson", e);
+            }
+        };
+
+        trackRecentLesson();
+  }, [lessonId, personalizedLesson]);
+
+  useEffect(() => {
     AsyncStorage.getItem('user').then(u => {
         if(u) setCurrentUser(JSON.parse(u));
     });

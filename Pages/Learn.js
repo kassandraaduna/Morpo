@@ -58,6 +58,7 @@ export default function Learn({ navigation, route }) {
     const [assessments, setAssessments] = useState([]);
     const [filteredData, setFilteredData] = useState([]);
     const [bookmarks, setBookmarks] = useState({ lessons: [], models: [], scans: [] });
+    const [usersMap, setUsersMap] = useState({}); // NEW: Fast lookup dictionary for user names
 
     const [showAssessmentMenu, setShowAssessmentMenu] = useState(false);
     const [itemToArchive, setItemToArchive] = useState({ id: null, type: null });
@@ -104,6 +105,13 @@ export default function Learn({ navigation, route }) {
                 .filter(u => u && (u._id || u.id))
                 .map(u => [u._id || u.id, u])
             ).values());
+
+            // THE FIX: Populate the users dictionary for O(1) lookups
+            const uMap = {};
+            usersData.forEach(u => { 
+                if (u._id || u.id) uMap[String(u._id || u.id)] = u; 
+            });
+            setUsersMap(uMap);
 
             const rawLessons = extractArray(lessonsRes.data);
             const rawRemedial = extractArray(remedialRes.data);
@@ -280,9 +288,23 @@ const confirmArchive = async () => {
     const renderLessonItem = ({ item }) => {
         const isRemedial = activeTab === 'Remedial Lessons';
         const isBookmarked = bookmarks?.lessons?.includes(item._id || item.id);
-        const modifierName = item.modifiedBy ? `${item.modifiedBy.fname} ${item.modifiedBy.lname}` : 'Instructor';
-        const dateStr = new Date(item.updatedAt || item.createdAt).toLocaleDateString();
         const isInstructor = String(user?.role).toLowerCase() === 'instructor';
+        const dateStr = new Date(item.updatedAt || item.createdAt).toLocaleDateString();
+
+        // THE FIX: Properly resolve the ID to the user's name
+        let modifierName = 'Instructor';
+        if (!isRemedial) {
+            const modId = getUserId(item.modifiedBy) || getUserId(item.createdBy);
+            const modUser = modId ? usersMap[String(modId)] : null;
+
+            if (modUser && modUser.fname) {
+                modifierName = `${modUser.fname} ${modUser.lname}`.trim();
+            } else if (typeof item.modifiedBy === 'object' && item.modifiedBy?.fname) {
+                modifierName = `${item.modifiedBy.fname} ${item.modifiedBy.lname}`.trim();
+            } else if (typeof item.createdBy === 'object' && item.createdBy?.fname) {
+                modifierName = `${item.createdBy.fname} ${item.createdBy.lname}`.trim();
+            }
+        }
         
         return (
             <TouchableOpacity
@@ -297,7 +319,9 @@ const confirmArchive = async () => {
                 </View>
                 <View style={localStyles.itemInfo}>
                     <Text style={[localStyles.itemTitle, { color: theme?.text || '#000' }]} numberOfLines={1}>{item.title}</Text>
-                    <Text style={localStyles.itemSubtitle} numberOfLines={1}>Modified by {modifierName}</Text>
+                    <Text style={localStyles.itemSubtitle} numberOfLines={1}>
+                        {isRemedial ? 'Personalized AI Content' : `Modified by ${modifierName}`}
+                    </Text>
                     <Text style={localStyles.itemMeta}>Last updated: {dateStr}</Text>
                 </View>
 
@@ -371,7 +395,7 @@ const confirmArchive = async () => {
 
                         <TouchableOpacity
                             style={[localStyles.actionBtn, {marginLeft: 8 }]}
-                            onPress={() => triggerArchiveAssessment(item)}
+                            onPress={() => triggerArchiveAssessment(item._id || item.id)}
                         >
                             <Ionicons name="archive" size={20} color="#ff8800" />
                         </TouchableOpacity>
@@ -677,7 +701,7 @@ const confirmArchive = async () => {
             >
                 <View style={localStyles.modalOverlay}>
                     <View style={localStyles.modalContainer}>
-                        <Text style={localStyles.modalTitle}>Archive Lesson</Text>
+                        <Text style={localStyles.modalTitle}>Archive {itemToArchive?.type === 'lesson' ? 'Lesson' : 'Assessment'}</Text>
                         <Text style={localStyles.modalMessage}>
                             Are you sure you want to move this to your archive list?
                         </Text>

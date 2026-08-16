@@ -1,119 +1,48 @@
-import React, { useContext, useEffect, useRef } from 'react';
-import { Modal, View, Text, TouchableOpacity, Animated, Dimensions, Pressable,} from 'react-native';
-import { BlurView } from 'expo-blur';
-import { Platform, StyleSheet } from 'react-native';
-import styles from '../styles/Styles';
+import React, { useContext } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, Modal } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { ThemeContext } from '../context/ThemeContext';
 
-const { height } = Dimensions.get('window');
+export default function ConfirmSheet({ visible, title, message, confirmText = 'Confirm', cancelText = 'Cancel', danger = false, onConfirm, onCancel }) {
+  const { theme } = useContext(ThemeContext);
 
-export default function ConfirmSheet({
-    visible,
-    title,
-    message,
-    confirmText = 'Confirm',
-    cancelText = 'Cancel',
-    onConfirm,
-    onCancel,
-    danger = false,
-    }) {
-    const { theme, darkMode } = useContext(ThemeContext);
-
-    const slideAnim = useRef(new Animated.Value(height)).current;
-
-    useEffect(() => {
-        Animated.timing(slideAnim, {
-        toValue: visible ? 0 : height,
-        duration: visible ? 260 : 200,
-        useNativeDriver: true,
-        }).start();
-    }, [visible]);
-
-    return (
-        <Modal
-        transparent
-        visible={visible}
-        animationType="none"
-        onRequestClose={onCancel}
-        >
-        <View style={{ flex: 1 }}>
-            <Pressable
-            style={{ flex: 1 }}
-            onPress={onCancel}
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+      <View style={styles.modalOverlay}>
+        <View style={[styles.modalCard, { backgroundColor: theme?.card || '#FFF' }]}>
+          <View style={[styles.modalIconCircle, { backgroundColor: danger ? '#FEF2F2' : '#E7F5EE' }]}>
+            <Ionicons name={danger ? 'warning' : 'help'} size={28} color={danger ? '#EF4444' : '#153c2a'} />
+          </View>
+          <Text style={[styles.modalTitle, { color: theme?.text || '#1E293B' }]}>{title}</Text>
+          <Text style={styles.modalMessage}>{message}</Text>
+          
+          <View style={styles.modalBtnRow}>
+            <TouchableOpacity style={styles.modalCancelBtn} onPress={onCancel}>
+              <Text style={styles.modalCancelText}>{cancelText}</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={[styles.modalConfirmBtn, { backgroundColor: danger ? '#EF4444' : '#153c2a' }]} 
+              onPress={onConfirm}
             >
-            <BlurView
-                intensity={darkMode ? 100 : 100}
-                tint={darkMode ? 'dark' : 'light'}
-                style={{ flex: 1 }}
-            />
-            </Pressable>
-
-            <Animated.View
-                style={[
-                    styles.confirmSheet,
-                    {
-                    backgroundColor: theme.search,
-                    transform: [{ translateY: slideAnim }],
-                    shadowColor: '#000',
-                    shadowOffset: { width: 0, height: -6 },
-                    shadowOpacity: 1,
-                    shadowRadius: 25,
-                    elevation: 10,
-                    },
-                ]}
-            >
-            <Text
-                style={[
-                styles.confirmTitle,
-                { color: theme.text },
-                ]}
-            >
-                {title}
-            </Text>
-
-            <Text
-                style={[
-                styles.confirmMessage,
-                { color: theme.subText },
-                ]}
-            >
-                {message}
-            </Text>
-
-            <View style={styles.confirmActions}>
-                <TouchableOpacity
-                style={styles.confirmCancel}
-                onPress={onCancel}
-                >
-                <Text
-                    style={[
-                    styles.confirmCancelText,
-                    { color: theme.subText },
-                    ]}
-                >
-                    {cancelText}
-                </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                style={[
-                    styles.confirmConfirm,
-                    danger && styles.confirmDanger,
-                ]}
-                onPress={onConfirm}
-                >
-                <Text
-                    style={[
-                    styles.confirmConfirmText,
-                    { color: danger ? '#FFF' : theme.text },
-                    ]}
-                >
-                    {confirmText}
-                </Text>
-                </TouchableOpacity>
-            </View>
-            </Animated.View>
+              <Text style={styles.modalConfirmText}>{confirmText}</Text>
+            </TouchableOpacity>
+          </View>
         </View>
-        </Modal>
-    );
+      </View>
+    </Modal>
+  );
 }
+
+const styles = StyleSheet.create({
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  modalCard: { width: '100%', maxWidth: 340, padding: 25, borderRadius: 10, alignItems: 'center', elevation: 10 },
+  modalIconCircle: { width: 55, height: 55, borderRadius: 27.5, justifyContent: 'center', alignItems: 'center', marginBottom: 15 },
+  modalTitle: { fontSize: 18, fontWeight: '900', marginBottom: 8, textAlign: 'center' },
+  modalMessage: { fontSize: 13, color: '#64748B', textAlign: 'center', marginBottom: 25, fontWeight: '600', lineHeight: 18 },
+  modalBtnRow: { flexDirection: 'row', gap: 12, width: '100%' },
+  modalCancelBtn: { flex: 1, paddingVertical: 14, borderRadius: 10, backgroundColor: '#F1F5F9', alignItems: 'center' },
+  modalCancelText: { fontWeight: '800', color: '#64748B', fontSize: 13 },
+  modalConfirmBtn: { flex: 1, paddingVertical: 14, borderRadius: 10, alignItems: 'center' },
+  modalConfirmText: { fontWeight: '800', color: '#FFF', fontSize: 13 }
+});

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useContext } from 'react';
+import React, { useEffect, useState, useContext, useCallback } from 'react';
 import { View, Text, TextInput, ScrollView, TouchableOpacity, ActivityIndicator, Image, StyleSheet, Platform, StatusBar, KeyboardAvoidingView, Modal } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';

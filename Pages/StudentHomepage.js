@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useContext, useRef } from 'react';
+import React, { useState, useEffect, useContext, useRef, useCallback } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, Image, Modal, Alert, StyleSheet, Platform, StatusBar, Dimensions, ActivityIndicator } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import api, { toAbsUrl } from './src/services/api';
 import { ThemeContext } from './src/context/ThemeContext';
 import { captureRef } from 'react-native-view-shot';
@@ -23,6 +24,29 @@ const getAvatarUri = (url, u) => {
   return `${toAbsUrl(url)}?v=${u?.updatedAt || '1'}`;
 };
 
+const extractArray = (resData) => {
+    if (!resData) return [];
+    if (Array.isArray(resData)) return resData;
+    if (typeof resData === 'object') {
+        if (Array.isArray(resData.data) && resData.data.length > 0) return resData.data;
+        if (resData.data?.data && Array.isArray(resData.data.data)) return resData.data.data;
+        for (const key in resData) {
+            if (Array.isArray(resData[key]) && resData[key].length > 0) return resData[key];
+        }
+    }
+    return [];
+};
+
+const getUserId = (field) => {
+    if (!field) return null;
+    if (typeof field === 'string') return field.trim();
+    if (typeof field === 'object') {
+        if (field._id) return String(field._id).trim();
+        if (field.id) return String(field.id).trim();
+    }
+    return null;
+};
+
 export default function StudentHomepage({ navigation }) {
   const [user, setUser] = useState(null);
   const [scans, setScans] = useState([]);
@@ -32,6 +56,7 @@ export default function StudentHomepage({ navigation }) {
   const [suggestedLessons, setSuggestedLessons] = useState([]);
   const [loading, setLoading] = useState(true);
   const [bookmarks, setBookmarks] = useState({ lessons: [], models: [], scans: [] });
+  const [usersMap, setUsersMap] = useState({});
   const { theme } = useContext(ThemeContext);
   const printRef = useRef();
 
@@ -39,18 +64,19 @@ export default function StudentHomepage({ navigation }) {
         try { 
             setLoading(true);
             const rawUser = await AsyncStorage.getItem('user'); 
-            if (!rawUser) return; 
+            if (!rawUser) {
+                setLoading(false);
+                return;
+            }
             
             let currentUser = JSON.parse(rawUser); 
-            // 1. Instantly set local user so the UI doesn't look empty
             setUser(currentUser);
 
-            // 2. THE FIX: Silently sync the latest user data (including avatar) from the backend
             try {
-                const userRes = await api.get(`/meds/${currentUser._id}`);
+                const userRes = await api.get(`/meds/${currentUser._id}`).catch(() => api.get(`/admin/users/${currentUser._id}`));
                 const updatedUser = userRes.data?.data || userRes.data;
                 if (updatedUser) {
-                    currentUser = updatedUser; // Update the reference for the upcoming Promise.all
+                    currentUser = updatedUser;
                     setUser(currentUser);
                     await AsyncStorage.setItem('user', JSON.stringify(currentUser));
                 }
@@ -58,29 +84,77 @@ export default function StudentHomepage({ navigation }) {
                 console.log("Failed to sync latest user data:", err);
             }
             
-            // 3. Fetch necessary dashboard data in parallel
-            const [usersRes, syRes, lessonsRes, remedialRes, scansRes, bookmarksRaw] = await Promise.all([
-                api.get('/admin/users').catch(() => api.get('/getMed').catch(() => ({ data: [] }))), // Fallback routing for users
+            // THE FIX: Fetch explicit attempt logs using the CORRECT backend endpoint: `/student/:studentId/assessment-history`[cite: 11]
+            const [usersRes, syRes, lessonsRes, remedialRes, scansRes, assessmentsRes, historyRes, bookmarksRaw, recentLessonsRaw] = await Promise.all([
+                api.get('/admin/users').catch(() => api.get('/getMed').catch(() => ({ data: [] }))),
                 api.get('/admin/academic-settings/school-years').catch(() => ({ data: {} })),
-                api.get('/lessons').catch(() => ({ data: { data: [] } })),
-                api.get(`/ai/personalized-lessons/${currentUser._id}`).catch(() => ({ data: { data: [] } })),
-                api.get(`/scan/history/${currentUser._id}`).catch(() => ({ data: { data: [] } })),
-                AsyncStorage.getItem('studentBookmarks_v1').catch(() => null)
+                api.get('/lessons').catch(() => ({ data: [] })),
+                api.get(`/ai/personalized-lessons/${currentUser._id}`).catch(() => ({ data: [] })),
+                api.get(`/scan/history/${currentUser._id}`).catch(() => ({ data: [] })),
+                api.get(`/assessments?studentId=${currentUser._id}&_t=${Date.now()}`).catch(() => ({ data: [] })),
+                api.get(`/student/${currentUser._id}/assessment-history?_t=${Date.now()}`).catch(() => ({ data: [] })),
+                AsyncStorage.getItem('studentBookmarks_v1').catch(() => null),
+                AsyncStorage.getItem(`recent_lessons_${currentUser._id}`).catch(() => null)
             ]);
 
             if (bookmarksRaw) setBookmarks(JSON.parse(bookmarksRaw));
 
-            // 1. Extract Active School Year and Term Context
+            const allUsers = Array.isArray(usersRes.data) ? usersRes.data : (usersRes.data?.data || []);
+            const uMap = {};
+            allUsers.forEach(u => {
+                if (u._id || u.id) uMap[String(u._id || u.id)] = u;
+            });
+            setUsersMap(uMap);
+
+            const recentLessonsMap = recentLessonsRaw ? JSON.parse(recentLessonsRaw) : {};
+
+            // THE FIX: Process direct history logs first
+            const rawHistory = extractArray(historyRes.data?.history || historyRes.data?.data || historyRes.data);
+            
+            if (rawHistory.length > 0) {
+                rawHistory.sort((a, b) => new Date(b.createdAt || b.updatedAt || 0).getTime() - new Date(a.createdAt || a.updatedAt || 0).getTime());
+                const latest = rawHistory[0];
+                setLatestQuiz({
+                    title: latest.assessment?.title || latest.title || 'Assessment',
+                    submittedAt: latest.createdAt || latest.updatedAt || new Date().toISOString(),
+                    score: latest.score || 0,
+                    total: latest.total || 10,
+                    percent: latest.percent || 0,
+                    feedback: latest.feedback || (latest.percent >= 70 ? 'Passed' : 'Needs Review')
+                });
+            } else {
+                // Fallback Logic
+                const allAssessments = extractArray(assessmentsRes.data);
+                const completedAssessments = allAssessments.filter(a => a.latestAttempt && a.latestAttempt.score !== undefined);
+                
+                completedAssessments.sort((a, b) => {
+                    const timeA = new Date(a.latestAttempt.createdAt || a.updatedAt || 0).getTime();
+                    const timeB = new Date(b.latestAttempt.createdAt || b.updatedAt || 0).getTime();
+                    return timeB - timeA;
+                });
+
+                if (completedAssessments.length > 0) {
+                    const latest = completedAssessments[0];
+                    setLatestQuiz({
+                        title: latest.title || 'Assessment',
+                        submittedAt: latest.latestAttempt.createdAt || latest.updatedAt || new Date().toISOString(),
+                        score: latest.latestAttempt.score || 0,
+                        total: latest.latestAttempt.total || latest.questions?.length || 10,
+                        percent: latest.latestAttempt.percent || 0,
+                        feedback: latest.latestAttempt.feedback || (latest.latestAttempt.percent >= 70 ? 'Passed' : 'Needs Review')
+                    });
+                } else {
+                    setLatestQuiz(null);
+                }
+            }
+
             const syContext = syRes.data?.context || {};
             const activeSyId = syContext.activeSchoolYearId;
             const activeTermKey = syContext.activeTermKey;
 
-            // 2. Identify Instructors actively assigned to the student's Year Level & Section for the active Term
-            const allUsers = Array.isArray(usersRes.data) ? usersRes.data : [];
             const assignedInstructorIds = allUsers.filter(u => {
                 if (String(u.role).toLowerCase() !== 'instructor') return false;
                 const assignments = Array.isArray(u.instructorAssignments) ? u.instructorAssignments : [];
-                
                 return assignments.some(a => 
                     String(a.schoolYearId) === String(activeSyId) &&
                     (a.termKey === 'all' || a.termKey === activeTermKey) &&
@@ -89,35 +163,46 @@ export default function StudentHomepage({ navigation }) {
                 );
             }).map(u => String(u._id));
 
-            // 3. Filter normal lessons: Must not be archived AND must be uploaded by an assigned instructor
-            const rawLessons = lessonsRes.data?.data || [];
+            const rawLessons = extractArray(lessonsRes.data);
             const validLessons = rawLessons.filter(l => {
+                if (l.isArchived) return false;
                 const creatorId = typeof l.createdBy === 'object' ? l.createdBy?._id : l.createdBy;
-                return !l.isArchived && assignedInstructorIds.includes(String(creatorId));
+                return !creatorId || assignedInstructorIds.length === 0 || assignedInstructorIds.includes(String(creatorId));
             });
 
-            // 4. Combine with personalized remedial lessons
-            const rawRemedial = remedialRes.data?.data || [];
+            const rawRemedial = extractArray(remedialRes.data);
             const combinedLessons = [
                 ...validLessons.map(l => ({ ...l, type: 'normal' })),
-                ...rawRemedial.map(l => ({ ...l, type: 'remedial', title: `Remedial: ${l.topic}`, updatedAt: l.createdAt }))
+                ...rawRemedial.map(l => ({ ...l, type: 'remedial', title: l.title || `Remedial: ${l.topic || 'Lesson'}`, updatedAt: l.createdAt || l.updatedAt }))
             ];
 
-            // 5. Sort by most recent activity
+            combinedLessons.forEach(l => {
+                l.lastAccessedAt = recentLessonsMap[l._id] || 0;
+            });
+
             combinedLessons.sort((a, b) => {
-                const dateA = new Date(a.lastAccessedAt || a.updatedAt || a.createdAt).getTime();
-                const dateB = new Date(b.lastAccessedAt || b.updatedAt || b.createdAt).getTime();
+                if (a.lastAccessedAt > 0 || b.lastAccessedAt > 0) {
+                    return b.lastAccessedAt - a.lastAccessedAt;
+                }
+                const dateA = new Date(a.updatedAt || a.createdAt || 0).getTime();
+                const dateB = new Date(b.updatedAt || b.createdAt || 0).getTime();
                 return dateB - dateA;
             });
 
             setSuggestedLessons(combinedLessons); 
-            setScans(scansRes.data?.data || []);
-            setLoading(false);
+            setScans(extractArray(scansRes.data));
         } catch (error) {
             console.error("Dashboard Fetch Error:", error);
+        } finally {
             setLoading(false);
         }
     };
+
+  useFocusEffect(
+    useCallback(() => {
+      loadDashboardData();
+    }, [])
+  );
 
   const handleToggleBookmark = async (itemId, type) => {
         try {
@@ -178,12 +263,6 @@ export default function StudentHomepage({ navigation }) {
         }
   };
 
-  useEffect(() => {
-    loadDashboardData();
-    const unsubscribe = navigation.addListener('focus', loadDashboardData);
-    return unsubscribe;
-  }, [navigation]);
-
   if (!user || loading) {
     return (
       <View style={[localStyles.centered, { backgroundColor: theme?.bg || '#F8F9FA' }]}>
@@ -237,7 +316,7 @@ export default function StudentHomepage({ navigation }) {
         <View style={localStyles.quickLinksGrid}>
           <TouchableOpacity 
             style={[localStyles.quickLinkCard, { backgroundColor: theme?.card || '#FFFFFF' }]} 
-            onPress={() => navigation.navigate('Learn', { initialTab: 'lessons' })}
+            onPress={() => navigation.navigate('Learn', { initialTab: 'Lessons' })}
             activeOpacity={0.8}
           >
             <View style={localStyles.quickLinkIconBox}>
@@ -248,7 +327,7 @@ export default function StudentHomepage({ navigation }) {
 
           <TouchableOpacity 
             style={[localStyles.quickLinkCard, { backgroundColor: theme?.card || '#FFFFFF' }]} 
-            onPress={() => navigation.navigate('Learn', { initialTab: 'models' })}
+            onPress={() => navigation.navigate('Learn', { initialTab: '3D Models' })}
             activeOpacity={0.8}
           >
             <View style={localStyles.quickLinkIconBox}>
@@ -326,7 +405,7 @@ export default function StudentHomepage({ navigation }) {
                                   {scan.classification || 'Unknown'}
                               </Text>
                               <Text style={localStyles.recentScanSubtitle}>
-                                  {Number(scan.confidence).toFixed(1)}% Accuracy Score
+                                  {Number(scan.confidence || 0).toFixed(1)}% Accuracy Score
                               </Text>
                               <Text style={localStyles.recentScanMeta}>
                                   {dateStr} • {timeStr}
@@ -373,7 +452,7 @@ export default function StudentHomepage({ navigation }) {
               </Text>
             </View>
             <View style={localStyles.assessmentContentRight}>
-              <Text style={[localStyles.scoreFractionText, { color: theme?.text || '#1A1A1A' }]}>
+              <Text style={[localStyles.scoreFractionText, { color: latestQuiz.percent >= 70 ? '#10B981' : '#EF4444' }]}>
                 {`${latestQuiz.score} / ${latestQuiz.total || 10}`}
               </Text>
               <TouchableOpacity onPress={() => navigation.navigate('Assessments')}>
@@ -404,9 +483,24 @@ export default function StudentHomepage({ navigation }) {
           {recentLessonsList.length > 0 ? (
                 recentLessonsList.map((lesson, index) => {
                     const isRemedial = lesson.type === 'remedial';
-                    const modifierName = lesson.modifiedBy ? `${lesson.modifiedBy.fname} ${lesson.modifiedBy.lname}` : 'System';
                     const dateStr = new Date(lesson.lastAccessedAt || lesson.updatedAt || lesson.createdAt).toLocaleDateString();
                     const isBookmarked = bookmarks?.lessons?.includes(lesson._id);
+
+                    let modifierName = 'Instructor';
+                    if (!isRemedial) {
+                        const modId = getUserId(lesson.modifiedBy) || getUserId(lesson.createdBy);
+                        const modUser = modId ? usersMap[String(modId)] : null;
+
+                        if (modUser && modUser.fname) {
+                            modifierName = `${modUser.fname} ${modUser.lname}`.trim();
+                        } else if (typeof lesson.modifiedBy === 'object' && lesson.modifiedBy?.fname) {
+                            modifierName = `${lesson.modifiedBy.fname} ${lesson.modifiedBy.lname}`.trim();
+                        } else if (typeof lesson.createdBy === 'object' && lesson.createdBy?.fname) {
+                            modifierName = `${lesson.createdBy.fname} ${lesson.createdBy.lname}`.trim();
+                        }
+                    } else {
+                        modifierName = 'System';
+                    }
 
                     return (
                         <TouchableOpacity 
@@ -458,51 +552,44 @@ export default function StudentHomepage({ navigation }) {
         <View style={{ height: 40 }} />
       </ScrollView>
 
-      <Modal visible={!!selectedScan} transparent={true} animationType="fade">
-                <View style={localStyles.modalOverlay}>
-                    <View style={localStyles.modalContent}>
-                        <TouchableOpacity onPress={() => setSelectedScan(null)} style={localStyles.closeBtn}>
-                            <Ionicons name="close-circle" size={32} color="#153c2a" />
-                        </TouchableOpacity>
-                        
-                          {selectedScan && (
-                            <>
-                                <View 
-                                    ref={printRef} 
-                                    collapsable={false} 
-                                    style={localStyles.printContainer}
-                                >
-                                    <Image 
-                                        source={{ uri: toAbsUrl(selectedScan.imageUrl) }} 
-                                        style={localStyles.fullImage} 
-                                        resizeMode="contain" 
-                                    />
-                                    
-                                    <View style={localStyles.metadataBox}>
-                                        <Text style={localStyles.metaTitle}>{selectedScan.classification}</Text>
-                                        <Text style={localStyles.metaSub}>{Number(selectedScan.confidence).toFixed(1)}% Confidence</Text>
-                                        <Text style={localStyles.metaSub}>{new Date(selectedScan.createdAt).toLocaleString()}</Text>
-                                    </View>
-                                </View>
-                                
-                                <TouchableOpacity 
-                                    style={localStyles.downloadBtn} 
-                                    onPress={handleDownload} 
-                                    disabled={isDownloading}
-                                >
-                                    {isDownloading ? (
-                                        <ActivityIndicator color="#fff" />
-                                    ) : (
-                                        <>
-                                            <Ionicons name="download-outline" size={20} color="#fff" style={{ marginRight: 8 }} />
-                                            <Text style={localStyles.downloadBtnText}>Download Image</Text>
-                                        </>
-                                    )}
-                                </TouchableOpacity>
-                            </>
-                        )}
-                    </View>
-                </View>
+      {/* THE FIX: Replaced generic modal with the official White Report Card UI */}
+      <Modal visible={!!selectedScan} transparent={true} animationType="fade" onRequestClose={() => setSelectedScan(null)}>
+          <View style={localStyles.fsModalBackground}>
+              <View style={localStyles.fsModalHeader}>
+                  <TouchableOpacity onPress={() => setSelectedScan(null)} style={localStyles.fsIconButton}>
+                      <Ionicons name="close" size={28} color="#fff" />
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity 
+                      onPress={handleDownload} 
+                      style={localStyles.fsIconButton}
+                      disabled={isDownloading}
+                  >
+                      {isDownloading ? (
+                          <ActivityIndicator color="#fff" size="small" />
+                      ) : (
+                          <Ionicons name="download-outline" size={26} color="#fff" />
+                      )}
+                  </TouchableOpacity>
+              </View>
+
+              {selectedScan && (
+                  <View ref={printRef} collapsable={false} style={localStyles.exportCard}>
+                      <View style={localStyles.exportBrandRow}>
+                          <Text style={localStyles.exportBrandText}>MyphoAI Analysis</Text>
+                      </View>
+                      <Image 
+                          source={{ uri: toAbsUrl(selectedScan.imageUrl) }} 
+                          style={localStyles.exportImage} 
+                      />
+                      <View style={localStyles.exportData}>
+                          <Text style={localStyles.exportTitle} numberOfLines={2}>{selectedScan.classification || 'Unknown'}</Text>
+                          <Text style={localStyles.exportScore}>{Number(selectedScan.confidence || 0).toFixed(1)}% Confidence Match</Text>
+                          <Text style={localStyles.exportDate}>Scanned on {new Date(selectedScan.createdAt).toLocaleString()}</Text>
+                      </View>
+                  </View>
+              )}
+          </View>
       </Modal>
     </View>
   );
@@ -519,14 +606,14 @@ const localStyles = StyleSheet.create({
   welcomeTextContainer: { flex: 1, paddingRight: 12 },
   welcomeSubText: { fontSize: 23, color: '#ffffff', fontWeight: '400', marginBottom: 4 },
   welcomeUserName: { fontSize: 25, fontWeight: '900', color: '#FFFFFF' },
-  welcomeAvatarCircle: { width: 75, height: 75, borderRadius: 37.5, justifyContent: 'center', alignItems: 'center', overflow: 'hidden', borderWidth:3, borderColor: '#153c2a', },
+  welcomeAvatarCircle: { width: 75, height: 75, borderRadius: 37.5, backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
   avatarImage: { width: '100%', height: '100%', resizeMode: 'cover' },
   avatarInitials: { fontSize: 30, fontWeight: '900', color: '#153c2a' },
   sectionHeadingRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10, marginTop: 5 },
   sectionHeaderTitle: { fontSize: 20, fontWeight: '700' },
   quickLinksGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 20 },
   quickLinkCard: { width: (width - 40 - 20) / 3, borderRadius: 10, paddingVertical: 16, paddingHorizontal: 8, alignItems: 'center', marginBottom: 12, borderWidth: 1, borderColor: '#E2E8F0', elevation: 1, shadowColor: '#000', shadowOpacity: 0.02, shadowRadius: 4 },
-  quickLinkIconBox: { width: 70, height: 70, borderRadius: 14, justifyContent: 'center', alignItems: 'center', marginBottom: 8 },
+  quickLinkIconBox: { width: 70, height: 70, borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginBottom: 8 },
   quickLinkText: { fontSize: 13, fontWeight: '700', textAlign: 'center' },
   horizontalScrollBox: { paddingVertical: 4, marginBottom: 16 },
   recentScanCard: { width: 300, borderRadius: 10, padding: 12, flexDirection: 'row', alignItems: 'center', marginRight: 12, borderWidth: 1, borderColor: '#E2E8F0', elevation: 1, marginBottom: 20 },
@@ -555,14 +642,43 @@ const localStyles = StyleSheet.create({
   lessonIconSmallBox: { borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginBottom: 10 },
   lessonCardTitle: { fontSize: 15, fontWeight: '800', marginBottom: 2 },
   lessonCardSub: { fontSize: 13, color: '#64748B', fontWeight: '500' },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', padding: 20 },
-  modalContent: { width: '100%', backgroundColor: '#fff', borderRadius: 20, padding: 20, alignItems: 'center', elevation: 10, position: 'relative' },
-  closeBtn: { position: 'absolute', top: 15, right: 15, zIndex: 10 },
-  fullImage: { width: '100%', height: 300, borderRadius: 15, marginBottom: 20, backgroundColor: '#f1f5f9' },
-  metadataBox: { alignItems: 'center', marginBottom: 20 },
-  metaTitle: { fontSize: 22, fontWeight: '900', color: '#153c2a', marginBottom: 4 },
-  metaSub: { fontSize: 14, color: '#64748B', fontWeight: '600', marginBottom: 2 },
-  downloadBtn: { flexDirection: 'row', backgroundColor: '#153c2a', paddingVertical: 14, paddingHorizontal: 24, borderRadius: 12, alignItems: 'center', width: '100%', justifyContent: 'center' },
-  downloadBtnText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
-  printContainer: { width: '100%', backgroundColor: '#ffffff', padding: 10, borderRadius: 15, alignItems: 'center' },
+
+  fsModalBackground: { flex: 1, backgroundColor: 'rgba(0,0,0,0.85)', justifyContent: 'center', alignItems: 'center' },
+  fsModalHeader: { position: 'absolute', top: Platform.OS === 'ios' ? 50 : 30, left: 0, right: 0, flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 20, zIndex: 10 },
+  fsIconButton: { backgroundColor: 'rgba(255,255,255,0.2)', padding: 10, borderRadius: 30 },
+  
+  exportCard: {
+      backgroundColor: '#FFFFFF',
+      width: '85%',
+      borderRadius: 10,
+      overflow: 'hidden',
+      padding: 20,
+      alignItems: 'center',
+      elevation: 5,
+      shadowColor: '#000',
+      shadowOpacity: 0.2,
+      shadowRadius: 15,
+  },
+  exportBrandRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 15, gap: 6 },
+  exportBrandText: { fontSize: 14, fontWeight: '800', color: '#153c2a', textTransform: 'uppercase', letterSpacing: 0.5 },
+  exportImage: {
+      width: '100%',
+      height: 320,
+      borderRadius: 10,
+      resizeMode: 'cover',
+      backgroundColor: '#F1F5F9',
+      marginBottom: 20,
+  },
+  exportData: {
+      width: '100%',
+      backgroundColor: '#F8FAFC',
+      padding: 15,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: '#E2E8F0',
+      alignItems: 'center',
+  },
+  exportTitle: { fontSize: 23, fontWeight: '900', color: '#153c2a', marginBottom: 6, textAlign: 'center' },
+  exportScore: { fontSize: 15, fontWeight: '800', color: '#10B981', marginBottom: 6 },
+  exportDate: { fontSize: 13, fontWeight: '600', color: '#64748B' }
 });
