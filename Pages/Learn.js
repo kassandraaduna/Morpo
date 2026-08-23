@@ -58,7 +58,7 @@ export default function Learn({ navigation, route }) {
     const [assessments, setAssessments] = useState([]);
     const [filteredData, setFilteredData] = useState([]);
     const [bookmarks, setBookmarks] = useState({ lessons: [], models: [], scans: [] });
-    const [usersMap, setUsersMap] = useState({}); // NEW: Fast lookup dictionary for user names
+    const [usersMap, setUsersMap] = useState({});
 
     const [showAssessmentMenu, setShowAssessmentMenu] = useState(false);
     const [itemToArchive, setItemToArchive] = useState({ id: null, type: null });
@@ -106,7 +106,6 @@ export default function Learn({ navigation, route }) {
                 .map(u => [u._id || u.id, u])
             ).values());
 
-            // THE FIX: Populate the users dictionary for O(1) lookups
             const uMap = {};
             usersData.forEach(u => { 
                 if (u._id || u.id) uMap[String(u._id || u.id)] = u; 
@@ -160,12 +159,16 @@ export default function Learn({ navigation, route }) {
             }
 
             validQuizzes.sort((a, b) => {
-                if (!a.deadlineAt) return 1;
-                if (!b.deadlineAt) return -1;
-                return new Date(a.deadlineAt) - new Date(b.deadlineAt);
+                if (!a.deadlineAt && b.deadlineAt) return 1;
+                if (a.deadlineAt && !b.deadlineAt) return -1;
+
+                if (!a.deadlineAt && !b.deadlineAt) {
+                    return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+                }
+
+                return new Date(b.deadlineAt) - new Date(a.deadlineAt);
             });
 
-            // 2. Group items by their formatted date string (e.g., "Monday, October 12")
             const grouped = validQuizzes.reduce((acc, current) => {
                 const dateStr = current.deadlineAt 
                     ? new Date(current.deadlineAt).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
@@ -256,34 +259,34 @@ export default function Learn({ navigation, route }) {
         }
     };
 
- const triggerArchiveLesson = (id) => {
-    setItemToArchive({ id, type: 'lesson' });
-    setArchiveModalVisible(true);
-};
+    const triggerArchiveLesson = (id) => {
+        setItemToArchive({ id, type: 'lesson' });
+        setArchiveModalVisible(true);
+    };
 
-const triggerArchiveAssessment = (id) => {
-    setItemToArchive({ id, type: 'assessment' });
-    setArchiveModalVisible(true);
-};
+    const triggerArchiveAssessment = (id) => {
+        setItemToArchive({ id, type: 'assessment' });
+        setArchiveModalVisible(true);
+    };
 
-const confirmArchive = async () => {
-    setArchiveModalVisible(false);
-    try {
-        if (itemToArchive.type === 'lesson') {
-            await api.put(`/lessons/${itemToArchive.id}`, { 
-                isArchived: true, 
-                modifiedBy: user?._id 
-            });
-            toastSuccess("Lesson moved to archive");
-        } else if (itemToArchive.type === 'assessment') {
-            await api.put(`/assessments/${itemToArchive.id}/archive`);
-            toastSuccess("Assessment moved to archive");
+    const confirmArchive = async () => {
+        setArchiveModalVisible(false);
+        try {
+            if (itemToArchive.type === 'lesson') {
+                await api.put(`/lessons/${itemToArchive.id}`, { 
+                    isArchived: true, 
+                    modifiedBy: user?._id 
+                });
+                toastSuccess("Lesson moved to archive");
+            } else if (itemToArchive.type === 'assessment') {
+                await api.put(`/assessments/${itemToArchive.id}/archive`);
+                toastSuccess("Assessment moved to archive");
+            }
+            fetchData();
+        } catch (e) {
+            toastError("Archive failed");
         }
-        fetchData(); // Refreshes your list
-    } catch (e) {
-        toastError("Archive failed");
-    }
-};
+    };
 
     const renderLessonItem = ({ item }) => {
         const isRemedial = activeTab === 'Remedial Lessons';
@@ -291,7 +294,6 @@ const confirmArchive = async () => {
         const isInstructor = String(user?.role).toLowerCase() === 'instructor';
         const dateStr = new Date(item.updatedAt || item.createdAt).toLocaleDateString();
 
-        // THE FIX: Properly resolve the ID to the user's name
         let modifierName = 'Instructor';
         if (!isRemedial) {
             const modId = getUserId(item.modifiedBy) || getUserId(item.createdBy);
@@ -351,7 +353,6 @@ const confirmArchive = async () => {
             <TouchableOpacity
                 style={[localStyles.listItemCard, { backgroundColor: theme?.card || '#FFF' }]}
                 onPress={() => {
-                    // Send ALL instructor clicks to the main Assessment view
                     if (isInstructor) {
                         navigation.navigate('AssessmentQuestionsView', { 
                             assessment: item, 
@@ -361,7 +362,6 @@ const confirmArchive = async () => {
                     }
                 }}
             >
-                {/* Dynamically change icon based on delivery mode */}
                 <View style={[localStyles.iconBox, { backgroundColor: '#F8FAFC' }]}>
                     <Ionicons 
                         name={item.deliveryMode === 'external' ? "link" : "document-text"} 

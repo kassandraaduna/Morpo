@@ -19,19 +19,29 @@ import { toastSuccess, toastError } from '../Pages/src/components/ToastMsg';
 import AssessmentSettings from './AssessmentSettings';
 import StudentViewModal from './StudentViewModal';
 
+const emptyQuestion = {
+  format: 'multiple_choice',
+  text: '',
+  points: 1,
+  options: ['', '', '', ''],
+  correctIndex: 0,
+  matchingPairs: [{ left: '', right: '' }, { left: '', right: '' }],
+  acceptedAnswers: [''],
+};
+
+const questionFormats = [
+  { key: 'multiple_choice', label: 'Multiple Choice' },
+  { key: 'true_false', label: 'True / False' },
+  { key: 'matching', label: 'Matching' },
+  { key: 'written', label: 'Written Response' },
+  { key: 'identification', label: 'Identification' }
+];
+
 export default function CreateAssessmentManual({ navigation, route }) {
   const { theme } = useContext(ThemeContext);
   const [title, setTitle] = useState('');
   const [timer, setTimer] = useState('');
-  const [questions, setQuestions] = useState([
-    {
-      format: 'multiple_choice',
-      text: '',
-      points: 1,
-      options: ['', '', '', ''],
-      correctIndex: 0,
-    },
-  ]);
+  const [questions, setQuestions] = useState([{ ...emptyQuestion }]);
   const [loading, setLoading] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showStudentView, setShowStudentView] = useState(false);
@@ -48,6 +58,7 @@ export default function CreateAssessmentManual({ navigation, route }) {
     excludedStudentIds: [],
     isPracticeOnly: false,
     shuffleQuestions: false,
+    scoreVisibility: 'immediate',
   });
 
   useEffect(() => {
@@ -68,9 +79,10 @@ export default function CreateAssessmentManual({ navigation, route }) {
         }
 
         return {
+          ...emptyQuestion,
           format: 'multiple_choice',
           text: text,
-          points: 1,
+          points: Math.max(1, Number(q.points || 1)),
           options: options,
           correctIndex: correctIndex,
         };
@@ -82,21 +94,32 @@ export default function CreateAssessmentManual({ navigation, route }) {
   }, [route.params?.aiQuestions]);
 
   const addQuestion = () => {
-    setQuestions([
-      ...questions,
-      {
-        format: 'multiple_choice',
-        text: '',
-        points: 1,
-        options: ['', '', '', ''],
-        correctIndex: 0,
-      },
-    ]);
+    setQuestions([...questions, { ...emptyQuestion }]);
   };
 
   const updateQuestion = (index, field, value) => {
     const updated = [...questions];
     updated[index][field] = value;
+    setQuestions(updated);
+  };
+
+  const changeQuestionFormat = (index, newFormat) => {
+    const updated = [...questions];
+    const q = updated[index];
+    q.format = newFormat;
+    
+    if (newFormat === 'true_false') {
+      q.options = ['True', 'False'];
+      q.correctIndex = 0;
+    } else if (newFormat === 'multiple_choice' && (!q.options || q.options.length !== 4)) {
+      q.options = ['', '', '', ''];
+      q.correctIndex = 0;
+    } else if (newFormat === 'matching' && (!q.matchingPairs || q.matchingPairs.length === 0)) {
+      q.matchingPairs = [{ left: '', right: '' }, { left: '', right: '' }];
+    } else if (newFormat === 'identification' && (!q.acceptedAnswers || q.acceptedAnswers.length === 0)) {
+      q.acceptedAnswers = [''];
+    }
+    
     setQuestions(updated);
   };
 
@@ -137,6 +160,7 @@ export default function CreateAssessmentManual({ navigation, route }) {
         quizType: 'test',
         status: status,
         createdBy: user?._id || null,
+        scoreVisibility: settings.scoreVisibility || 'immediate',
         timer: {
           enabled: !!settings.timer?.enabled,
           minutes: settings.timer?.enabled
@@ -149,9 +173,14 @@ export default function CreateAssessmentManual({ navigation, route }) {
         questions: questions.map((q) => ({
           format: q.format || 'multiple_choice',
           text: String(q.text || '').trim(),
-          points: Number(q.points || 1),
-          options: (q.options || []).map((opt) => String(opt).trim()),
+          points: Math.max(1, Number(q.points || 1)),
+          options: (q.format === 'multiple_choice' || q.format === 'true_false') ? (q.options || []).map((opt) => String(opt).trim()) : [],
           correctIndex: Number(q.correctIndex || 0),
+          matchingPairs: q.format === 'matching' ? (q.matchingPairs || []).map((pair) => ({
+            left: String(pair.left || '').trim(),
+            right: String(pair.right || '').trim(),
+          })) : [],
+          acceptedAnswers: q.format === 'identification' ? (q.acceptedAnswers || []).map((answer) => String(answer).trim()).filter(Boolean) : [],
         })),
         ...settings,
         availableAt: settings.availableAt
@@ -237,6 +266,18 @@ export default function CreateAssessmentManual({ navigation, route }) {
               )}
             </View>
 
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.formatScroll}>
+              {questionFormats.map(f => (
+                <TouchableOpacity 
+                  key={f.key} 
+                  style={[styles.formatChip, q.format === f.key && styles.formatChipActive]}
+                  onPress={() => changeQuestionFormat(qIndex, f.key)}
+                >
+                  <Text style={[styles.formatChipText, q.format === f.key && styles.formatChipTextActive]}>{f.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
             <TextInput
               style={[styles.input, { marginBottom: 15, minHeight: 60 }]}
               placeholder="Enter your question here..."
@@ -246,7 +287,27 @@ export default function CreateAssessmentManual({ navigation, route }) {
               placeholderTextColor="#94A3B8"
             />
 
-            {q.options.map((opt, oIndex) => (
+            {/* POINTS ASSIGNMENT ROW */}
+            <View style={styles.pointsRow}>
+              <Text style={[styles.label, { marginBottom: 0, color: '#153c2a' }]}>Points</Text>
+              <TextInput
+                style={styles.pointsInput}
+                keyboardType="number-pad"
+                value={q.points !== '' ? String(q.points) : ''}
+                onChangeText={(t) => {
+                  const num = parseInt(t.replace(/[^0-9]/g, ''), 10);
+                  updateQuestion(qIndex, 'points', isNaN(num) ? '' : num);
+                }}
+                onBlur={() => {
+                  if (q.points === '' || q.points < 1) {
+                    updateQuestion(qIndex, 'points', 1);
+                  }
+                }}
+                placeholderTextColor="#94A3B8"
+              />
+            </View>
+
+            {q.format === 'multiple_choice' && q.options.map((opt, oIndex) => (
               <View key={oIndex} style={styles.optRow}>
                 <TouchableOpacity
                   style={[
@@ -277,6 +338,73 @@ export default function CreateAssessmentManual({ navigation, route }) {
                 />
               </View>
             ))}
+
+            {q.format === 'true_false' && (
+              <View style={styles.tfRow}>
+                {['True', 'False'].map((choice, cIndex) => (
+                  <TouchableOpacity 
+                    key={cIndex}
+                    style={[styles.tfBtn, q.correctIndex === cIndex && styles.tfBtnActive]}
+                    onPress={() => updateQuestion(qIndex, 'correctIndex', cIndex)}
+                  >
+                    <Text style={[styles.tfBtnText, q.correctIndex === cIndex && styles.tfBtnTextActive]}>{choice}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+
+            {q.format === 'matching' && (
+              <View>
+                {(q.matchingPairs || []).map((pair, pIndex) => (
+                  <View key={pIndex} style={styles.matchRow}>
+                     <TextInput 
+                        style={[styles.input, {flex: 1}]} 
+                        placeholder="Prompt (Left)" 
+                        value={pair.left} 
+                        onChangeText={(t) => {
+                          const newPairs = [...q.matchingPairs];
+                          newPairs[pIndex].left = t;
+                          updateQuestion(qIndex, 'matchingPairs', newPairs);
+                        }}
+                        placeholderTextColor="#94A3B8"
+                     />
+                     <TextInput 
+                        style={[styles.input, {flex: 1}]} 
+                        placeholder="Answer (Right)" 
+                        value={pair.right} 
+                        onChangeText={(t) => {
+                          const newPairs = [...q.matchingPairs];
+                          newPairs[pIndex].right = t;
+                          updateQuestion(qIndex, 'matchingPairs', newPairs);
+                        }}
+                        placeholderTextColor="#94A3B8"
+                     />
+                  </View>
+                ))}
+                <TouchableOpacity style={styles.ghostBtn} onPress={() => {
+                   updateQuestion(qIndex, 'matchingPairs', [...(q.matchingPairs || []), {left: '', right: ''}]);
+                }}>
+                  <Text style={styles.ghostBtnText}>+ Add Pair</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {q.format === 'identification' && (
+              <TextInput 
+                style={styles.input} 
+                placeholder="Expected Exact Answer" 
+                value={(q.acceptedAnswers || [''])[0]} 
+                onChangeText={(t) => updateQuestion(qIndex, 'acceptedAnswers', [t])}
+                placeholderTextColor="#94A3B8"
+              />
+            )}
+
+            {q.format === 'written' && (
+              <Text style={styles.instructionText}>
+                Written responses are graded manually by the professor.
+              </Text>
+            )}
+
           </View>
         ))}
 
@@ -372,7 +500,7 @@ const styles = StyleSheet.create({
     fontSize: 18, 
     fontWeight: '900', 
     color: '#FFF',
-    marginBottom: 6, // Adds breathing room between title and button
+    marginBottom: 6,
     textAlign: 'center' 
   },
   card: {
@@ -421,6 +549,42 @@ const styles = StyleSheet.create({
     color: '#153c2a',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+  },
+  formatScroll: { marginBottom: 15 },
+  formatChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: '#F1F5F9', marginRight: 8, borderWidth: 1, borderColor: '#E2E8F0' },
+  formatChipActive: { backgroundColor: '#153c2a', borderColor: '#153c2a' },
+  formatChipText: { fontSize: 12, fontWeight: '700', color: '#64748B' },
+  formatChipTextActive: { color: '#FFF' },
+  tfRow: { flexDirection: 'row', gap: 10, marginBottom: 5 },
+  tfBtn: { flex: 1, paddingVertical: 12, borderRadius: 10, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', alignItems: 'center' },
+  tfBtnActive: { backgroundColor: '#E7F5EE', borderColor: '#10B981' },
+  tfBtnText: { fontSize: 14, fontWeight: '700', color: '#64748B' },
+  tfBtnTextActive: { color: '#10B981' },
+  matchRow: { flexDirection: 'row', gap: 10, marginBottom: 10 },
+  ghostBtn: { paddingVertical: 12, alignItems: 'center', backgroundColor: '#F1F5F9', borderRadius: 10, marginTop: 5 },
+  ghostBtnText: { color: '#153c2a', fontWeight: '800', fontSize: 13 },
+  instructionText: { fontSize: 13, color: '#64748B', fontStyle: 'italic', marginBottom: 5, textAlign: 'center' },
+  pointsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 15,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  pointsInput: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    fontSize: 14,
+    backgroundColor: '#F8FAFC',
+    color: '#000',
+    fontWeight: '900',
+    width: 80,
+    textAlign: 'center',
   },
   optRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
   radio: {

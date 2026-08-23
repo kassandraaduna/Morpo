@@ -1,5 +1,8 @@
 import React, { useState, useContext, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, Switch, StyleSheet, Platform, Alert, StatusBar } from 'react-native';
+import { 
+  View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, 
+  Switch, StyleSheet, Platform, Modal, StatusBar 
+} from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -12,6 +15,7 @@ export default function UploadLesson({ navigation, route }) {
   const { theme } = useContext(ThemeContext);
   const editingLesson = route.params?.lesson || null; 
   const isEditing = !!editingLesson;
+  
   const [title, setTitle] = useState(editingLesson?.title || '');
   const [description, setDescription] = useState(editingLesson?.description || '');
   const [content, setContent] = useState(editingLesson?.content || '');
@@ -20,6 +24,9 @@ export default function UploadLesson({ navigation, route }) {
   const [loading, setLoading] = useState(false);
   const [instructorId, setInstructorId] = useState(null);
   const [hasActiveAssignment, setHasActiveAssignment] = useState(true);
+  
+  // New state for custom modal
+  const [modalVisible, setModalVisible] = useState(false);
 
   useEffect(() => {
       const verifyInstructorAssignment = async () => {
@@ -28,7 +35,6 @@ export default function UploadLesson({ navigation, route }) {
               if (!rawUser) return;
               const currentUser = JSON.parse(rawUser);
 
-              // If user is not an instructor, let it pass through or handle accordingly
               if (currentUser.role !== 'instructor') return;
 
               const syRes = await api.get('/admin/academic-settings/school-years');
@@ -75,114 +81,147 @@ export default function UploadLesson({ navigation, route }) {
     }
   };
 
-  const handleSave = async () => {
+  const handleSaveClick = () => {
     if (!title.trim()) return toastError("Please enter a lesson title");
     if (!editingLesson && !file) return toastError("Please select a PDF file");
-
-    Alert.alert(
-      editingLesson ? "Update Lesson" : "Publish Lesson",
-      editingLesson ? "Are you sure you want to save changes to this lesson?" : "Are you sure you want to publish this new lesson?",
-      [
-        { text: "Cancel", style: "cancel" },
-        { 
-          text: "Confirm", 
-          onPress: async () => {
-            setLoading(true);
-            const formData = new FormData();
-            formData.append('title', title);
-            formData.append('educationalContent', content);
-            formData.append('isArchived', isArchived ? 'true' : 'false');
-            formData.append('createdBy', instructorId);
-            formData.append('modifiedBy', instructorId);
-            
-            if (file) {
-              formData.append('lessonPdf', {
-                uri: file.uri,
-                name: file.name,
-                type: 'application/pdf',
-              });
-            }
-
-            try {
-              if (editingLesson) {
-                await api.put(`/lessons/${editingLesson._id}`, formData, {
-                  headers: { 'Content-Type': 'multipart/form-data' },
-                });
-                toastSuccess("Lesson updated successfully!");
-              } else {
-                await api.post('/lessons', formData, {
-                  headers: { 'Content-Type': 'multipart/form-data' },
-                });
-                toastSuccess("Lesson published successfully!");
-              }
-              navigation.goBack();
-            } catch (err) {
-              toastError(err.response?.data?.message || "Action failed");
-            } finally {
-              setLoading(false);
-            }
-          }
-        }
-      ]
-    );
+    
+    // Show custom modal instead of native alert
+    setModalVisible(true);
   };
 
-return (
+  const confirmSave = async () => {
+    setModalVisible(false);
+    setLoading(true);
+    
+    const formData = new FormData();
+    formData.append('title', title);
+    formData.append('educationalContent', content);
+    formData.append('isArchived', isArchived ? 'true' : 'false');
+    formData.append('createdBy', instructorId);
+    formData.append('modifiedBy', instructorId);
+    
+    if (file) {
+      formData.append('lessonPdf', {
+        uri: file.uri,
+        name: file.name,
+        type: 'application/pdf',
+      });
+    }
+
+    try {
+      if (editingLesson) {
+        await api.put(`/lessons/${editingLesson._id}`, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        toastSuccess("Lesson updated successfully!");
+      } else {
+        await api.post('/lessons', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        toastSuccess("Lesson published successfully!");
+      }
+      navigation.goBack();
+    } catch (err) {
+      toastError(err.response?.data?.message || "Action failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
     <View style={{ flex: 1, backgroundColor: theme.bg }}>
       <StatusBar barStyle="light-content" />
-        <View style={[localStyles.header, { backgroundColor: '#153c2a' }]}>
-          <View style={localStyles.headerRow}>
-            <TouchableOpacity onPress={() => navigation.goBack()} style={{justifyContent: 'center' }}>
-              <Ionicons name="arrow-back" size={25} color="#fff" />
-            </TouchableOpacity>
-            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={localStyles.title}>
-                {isEditing ? 'Edit Lesson' : 'Upload Lesson'}
-              </Text>
-              <Text style={localStyles.subtitle}>
-                {isEditing ? 'Update your lesson details and PDF lesson file' : 'Publish a new lesson by uploading a PDF lesson document'}
-              </Text>
+      
+      {/* Custom Confirmation Modal */}
+      <Modal
+        animationType="fade"
+        transparent={true}
+        visible={modalVisible}
+        onRequestClose={() => setModalVisible(false)}
+      >
+        <View style={localStyles.modalOverlay}>
+          <View style={[localStyles.modalContainer, { backgroundColor: theme.card }]}>
+            <Text style={[localStyles.modalTitle, { color: theme.text }]}>
+              {isEditing ? "Update Lesson" : "Publish Lesson"}
+            </Text>
+            <Text style={[localStyles.modalMessage, { color: theme.subText }]}>
+              {isEditing 
+                ? "Are you sure you want to save changes to this lesson?" 
+                : "Are you sure you want to publish this new lesson?"}
+            </Text>
+            
+            <View style={localStyles.modalButtonRow}>
+              <TouchableOpacity 
+                style={[localStyles.modalButton, localStyles.modalCancelButton]} 
+                onPress={() => setModalVisible(false)}
+              >
+                <Text style={localStyles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[localStyles.modalButton, localStyles.modalConfirmButton]} 
+                onPress={confirmSave}
+              >
+                <Text style={localStyles.modalConfirmText}>Confirm</Text>
+              </TouchableOpacity>
             </View>
           </View>
         </View>
+      </Modal>
 
-        <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 50 }}>
-          <View style={[localStyles.card, { backgroundColor: theme.card }]}>
-            <Text style={[localStyles.label, { color: theme.subText }]}>LESSON TITLE</Text>
-              <TextInput 
-                style={[localStyles.input, { backgroundColor: theme.card, color: theme.text }]} 
-                placeholder="Automatically set from PDF file name if left empty"
-                value={title}
-                onChangeText={setTitle}
-              />
-
-              <Text style={[localStyles.label, { color: theme.subText, marginTop: 25 }]}>PDF LESSON DOCUMENT</Text>
-              <TouchableOpacity 
-                style={[localStyles.dropZone, { borderColor: file || editingLesson?.pdfUrl ? '#153c2a' : '#ccc', backgroundColor: theme.card }]} 
-                onPress={pickDocument}
-              >
-                <Ionicons 
-                  name={file || editingLesson?.pdfUrl ? "document-text" : "cloud-upload"} 
-                  size={40} 
-                  color={file || editingLesson?.pdfUrl ? "#153c2a" : "#999"} 
-                />
-                <Text style={[localStyles.dropText, { color: theme.text }]}>
-                  {file ? file.name : (editingLesson?.pdfName || "Tap to select a PDF File")}
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity 
-                style={[localStyles.uploadBtn, { opacity: loading ? 0.7 : 1 }]} 
-                onPress={handleSave}
-                disabled={loading}
-              >
-                {loading ? <ActivityIndicator color="#fff" /> : (
-                  <Text style={localStyles.uploadBtnText}>
-                      {isEditing ? 'Save Changes' : 'Publish Lesson'}
-                  </Text>
-                )}
-              </TouchableOpacity>
+      <View style={[localStyles.header, { backgroundColor: '#153c2a' }]}>
+        <View style={localStyles.headerRow}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={{justifyContent: 'center' }}>
+            <Ionicons name="arrow-back" size={25} color="#fff" />
+          </TouchableOpacity>
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={localStyles.title}>
+              {isEditing ? 'Edit Lesson' : 'Upload Lesson'}
+            </Text>
+            <Text style={localStyles.subtitle}>
+              {isEditing ? 'Update your lesson details and PDF lesson file' : 'Publish a new lesson by uploading a PDF lesson document'}
+            </Text>
           </View>
+        </View>
+      </View>
+
+      <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 50 }}>
+        <View style={[localStyles.card, { backgroundColor: theme.card }]}>
+          <Text style={[localStyles.label, { color: theme.subText }]}>LESSON TITLE</Text>
+            <TextInput 
+              style={[localStyles.input, { backgroundColor: theme.card, color: theme.text }]} 
+              placeholder="Automatically set from PDF file name if left empty"
+              placeholderTextColor={theme.subText}
+              value={title}
+              onChangeText={setTitle}
+            />
+
+            <Text style={[localStyles.label, { color: theme.subText, marginTop: 25 }]}>PDF LESSON DOCUMENT</Text>
+            <TouchableOpacity 
+              style={[localStyles.dropZone, { borderColor: file || editingLesson?.pdfUrl ? '#153c2a' : '#ccc', backgroundColor: theme.card }]} 
+              onPress={pickDocument}
+            >
+              <Ionicons 
+                name={file || editingLesson?.pdfUrl ? "document-text" : "cloud-upload"} 
+                size={40} 
+                color={file || editingLesson?.pdfUrl ? "#153c2a" : "#999"} 
+              />
+              <Text style={[localStyles.dropText, { color: theme.text }]}>
+                {file ? file.name : (editingLesson?.pdfName || "Tap to select a PDF File")}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[localStyles.uploadBtn, { opacity: loading ? 0.7 : 1 }]} 
+              onPress={handleSaveClick}
+              disabled={loading}
+            >
+              {loading ? <ActivityIndicator color="#fff" /> : (
+                <Text style={localStyles.uploadBtnText}>
+                    {isEditing ? 'Save Changes' : 'Publish Lesson'}
+                </Text>
+              )}
+            </TouchableOpacity>
+        </View>
       </ScrollView>
     </View>
   );
@@ -198,7 +237,7 @@ const localStyles = StyleSheet.create({
   },
   headerRow: { flexDirection: 'row', alignItems: 'center' },
   title: { fontSize: 25, fontWeight: '900', color: '#fff', marginTop: 20 },
-  subtitle: { fontSize: 13, color: '#d1fae5', marginTop: 2 },
+  subtitle: { fontSize: 13, color: '#d1fae5', marginTop: 2, textAlign: 'center' },
   card: { 
     padding: 25, 
     borderRadius: 10, 
@@ -213,5 +252,62 @@ const localStyles = StyleSheet.create({
   dropText: { fontWeight: 'bold', marginTop: 10, textAlign: 'center', paddingHorizontal: 20 },
   switchRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 30 },
   uploadBtn: { backgroundColor: '#153c2a', height: 55, borderRadius: 10, marginTop: 40, justifyContent: 'center', alignItems: 'center', elevation: 4 },
-  uploadBtnText: { color: '#fff', fontWeight: 'bold', letterSpacing: 1 }
+  uploadBtnText: { color: '#fff', fontWeight: 'bold', letterSpacing: 1 },
+
+  /* Modal Styles */
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContainer: {
+    width: '100%',
+    padding: 25,
+    borderRadius: 15,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '900',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  modalMessage: {
+    fontSize: 15,
+    textAlign: 'center',
+    marginBottom: 25,
+    lineHeight: 22,
+  },
+  modalButtonRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  modalButton: {
+    flex: 1,
+    height: 50,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalCancelButton: {
+    backgroundColor: '#f1f5f9',
+    marginRight: 10,
+  },
+  modalConfirmButton: {
+    backgroundColor: '#153c2a',
+    marginLeft: 10,
+  },
+  modalCancelText: {
+    color: '#334155',
+    fontWeight: 'bold',
+  },
+  modalConfirmText: {
+    color: '#fff',
+    fontWeight: 'bold',
+  },
 });

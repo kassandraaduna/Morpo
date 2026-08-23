@@ -40,7 +40,6 @@ export default function AssessmentStudent({ navigation }) {
             const localExtIds = rawExt ? JSON.parse(rawExt) : [];
             setLocalCompletedExt(localExtIds);
 
-            // THE FIX: Changed '&' to '&&' to properly enforce the draft check
             const instructors = allAssessments.filter(a => 
                 a.status !== 'draft' &&
                 a.createdBy !== userObj._id && 
@@ -48,7 +47,6 @@ export default function AssessmentStudent({ navigation }) {
                 a.quizType !== 'flashcard'
             );
 
-            // THE FIX: Wrapped the OR conditions in parentheses so 'draft' check applies to all of them
             const practices = allAssessments.filter(a => 
                 a.status !== 'draft' &&
                 (a.createdBy === userObj._id || 
@@ -92,7 +90,10 @@ export default function AssessmentStudent({ navigation }) {
         const isClosed = Boolean(item.isClosed);
         const canRetake = Boolean(item.canRetake);
         const timerText = item.timer?.enabled ? `${item.timer.minutes} min timer` : 'No timer';
-        const isPassing = lastScore >= 70;
+        
+        // --- SCORE VISIBILITY LOCK LOGIC ADDED HERE ---
+        const isHidden = item.scoreVisibility === 'after_instructor_grade' && !item.latestAttempt?.isScoreReleased;
+        const isPassing = isHidden ? false : lastScore >= 70;
 
         return (
             <View style={[localStyles.card, { backgroundColor: theme.card }]}>
@@ -159,17 +160,17 @@ export default function AssessmentStudent({ navigation }) {
                     <View style={[localStyles.scoreContainer, { backgroundColor: theme.bg }]}>
                         <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
                             <Text style={localStyles.scoreLabel}>Latest Score</Text>
-                            <Text style={[localStyles.scoreValue, { color: isCompleted ? (isPassing ? '#10B981' : '#EF4444') : theme.text }]}>
+                            <Text style={[localStyles.scoreValue, { color: isCompleted ? (isHidden ? '#F59E0B' : (isPassing ? '#10B981' : '#EF4444')) : theme.text }]}>
                                 {isCompleted && item.latestAttempt?.score !== null && item.latestAttempt?.score !== undefined
-                                    ? `${item.latestAttempt.score} / ${item.latestAttempt.total || item.questions?.length || 100}` 
+                                    ? (isHidden ? 'Score Hidden' : `${item.latestAttempt.score} / ${item.latestAttempt.total || item.questions?.length || 100}`) 
                                     : (isCompleted ? 'Under Review' : 'Pending')}
                             </Text>
                         </View>
                         <View style={localStyles.progressBg}>
-                            <View style={[localStyles.progressFill, { width: `${Math.min(lastScore, 100)}%`, backgroundColor: isPassing ? '#10B981' : '#F59E0B' }]} />
+                            <View style={[localStyles.progressFill, { width: `${Math.min(isHidden ? 0 : lastScore, 100)}%`, backgroundColor: isPassing && !isHidden ? '#10B981' : '#F59E0B' }]} />
                         </View>
                         <Text style={localStyles.scoreSub}>
-                            {isCompleted ? `Grade: ${lastScore}%` : 'Complete the assessment to view your score.'}
+                            {isCompleted ? (isHidden ? 'Instructor has not released the score yet.' : `Grade: ${lastScore}%`) : 'Complete the assessment to view your score.'}
                         </Text>
                     </View>
                 )}
@@ -181,11 +182,17 @@ export default function AssessmentStudent({ navigation }) {
                 <View style={{ flexDirection: 'row', gap: 10, marginTop: isClosed ? 10 : 15 }}>
                     {isCompleted && (
                         <TouchableOpacity 
-                            style={[localStyles.actionBtn, { flex: 1, marginTop: 0, backgroundColor: '#F1F5F9', borderColor: '#CBD5E1', borderWidth: 1.5 }]}
-                            onPress={() => navigation.navigate('StudentResultViewer', { 
-                                assessmentId: item._id, 
-                                submissionId: item.latestAttempt?._id 
-                            })}
+                            style={[localStyles.actionBtn, { flex: 1, marginTop: 0, backgroundColor: '#F1F5F9', borderColor: '#CBD5E1', borderWidth: 1.5, opacity: isHidden ? 0.6 : 1 }]}
+                            onPress={() => {
+                                if (isHidden) {
+                                    toastError("Score is hidden until the instructor releases it.");
+                                    return;
+                                }
+                                navigation.navigate('StudentResultViewer', { 
+                                    assessmentId: item._id, 
+                                    submissionId: item.latestAttempt?._id 
+                                });
+                            }}
                         >
                             <Text style={[localStyles.actionBtnText, { color: '#153c2a' }]}>View Result</Text>
                         </TouchableOpacity>

@@ -9,14 +9,16 @@ import {
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
-  Platform,
+  Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import DateTimePicker from '@react-native-community/datetimepicker';
+import DatePicker from 'react-native-date-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import api from '../Pages/src/services/api';
 import { ThemeContext } from '../Pages/src/context/ThemeContext';
 import { toastError } from '../Pages/src/components/ToastMsg';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export default function AssessmentSettings({
   visible,
@@ -30,12 +32,12 @@ export default function AssessmentSettings({
   const [studentsList, setStudentsList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadingStudents, setLoadingStudents] = useState(false);
+  const [showExcludeDropdown, setShowExcludeDropdown] = useState(false);
 
-  // ─── Date/Time Picker State ─────────────────────────────────────────
+  // ─── Unified Date/Time Picker State ─────────────────────────────────
   const [pickerState, setPickerState] = useState({
     show: false,
-    mode: 'date', // 'date' | 'time'
-    field: null,  // 'availableAt' | 'deadlineAt'
+    field: null,
     tempDate: new Date(),
   });
 
@@ -45,7 +47,6 @@ export default function AssessmentSettings({
     }
   }, [visible]);
 
-  // 1. Load instructor assigned scope and student lists from backend options
   const loadInstructorScopedOptions = async () => {
     try {
       setLoading(true);
@@ -72,11 +73,9 @@ export default function AssessmentSettings({
         sections: data.sections || [],
       });
 
-      // If the backend returns student rosters within assignment options or a students array, capture it safely
       if (Array.isArray(data.students)) {
         setStudentsList(data.students);
       } else {
-        // Fallback: Try fetching general students list if available, or keep empty
         try {
           const userRes = await api.get(`/users?role=student`);
           const users = userRes.data?.data || userRes.data || [];
@@ -93,12 +92,10 @@ export default function AssessmentSettings({
     }
   };
 
-  // ─── Helper: Update Settings Object ─────────────────────────────────
   const updateSetting = (key, value) => {
     setSettings((prev) => ({ ...prev, [key]: value }));
   };
 
-  // ─── Timer Helpers ──────────────────────────────────────────────────
   const toggleTimer = (enabled) => {
     setSettings((prev) => ({
       ...prev,
@@ -120,42 +117,17 @@ export default function AssessmentSettings({
     }));
   };
 
-  // ─── Date & Time Picker Flow ────────────────────────────────────────
-  const openPicker = (field, mode = 'date') => {
+  // ─── Custom Picker Flow ─────────────────────────────────────────────
+  const openPicker = (field) => {
     const existingVal = settings[field] ? new Date(settings[field]) : new Date();
     setPickerState({
       show: true,
-      mode,
       field,
       tempDate: isNaN(existingVal.getTime()) ? new Date() : existingVal,
     });
   };
 
-  const handleDateChange = (event, selectedDate) => {
-    if (Platform.OS === 'android') {
-      if (event.type === 'dismissed') {
-        setPickerState((prev) => ({ ...prev, show: false }));
-        return;
-      }
-      const activeDate = selectedDate || pickerState.tempDate;
-      if (pickerState.mode === 'date') {
-        setPickerState({
-          show: true,
-          mode: 'time',
-          field: pickerState.field,
-          tempDate: activeDate,
-        });
-      } else {
-        updateSetting(pickerState.field, activeDate.toISOString());
-        setPickerState((prev) => ({ ...prev, show: false }));
-      }
-    } else {
-      const activeDate = selectedDate || pickerState.tempDate;
-      setPickerState((prev) => ({ ...prev, tempDate: activeDate }));
-    }
-  };
-
-  const confirmIosDate = () => {
+  const confirmDate = () => {
     updateSetting(pickerState.field, pickerState.tempDate.toISOString());
     setPickerState((prev) => ({ ...prev, show: false }));
   };
@@ -165,9 +137,9 @@ export default function AssessmentSettings({
   };
 
   const formatDateLabel = (isoString) => {
-    if (!isoString) return 'Not set';
+    if (!isoString) return 'Select date and time';
     const dt = new Date(isoString);
-    if (isNaN(dt.getTime())) return 'Not set';
+    if (isNaN(dt.getTime())) return 'Select date and time';
     return dt.toLocaleString('en-US', {
       month: 'short',
       day: 'numeric',
@@ -177,7 +149,6 @@ export default function AssessmentSettings({
     });
   };
 
-  // ─── Scope & Exclusion Toggles ──────────────────────────────────────
   const toggleSection = (secName) => {
     const current = Array.isArray(settings.targetSections)
       ? settings.targetSections
@@ -212,7 +183,6 @@ export default function AssessmentSettings({
   const excludedList = Array.isArray(settings.excludedStudentIds)
     ? settings.excludedStudentIds
     : [];
-
   const activeSections = Array.isArray(settings.targetSections)
     ? settings.targetSections
     : [];
@@ -221,6 +191,12 @@ export default function AssessmentSettings({
     activeSections.length > 0
       ? studentsList.filter((s) => !s.section || activeSections.includes(s.section))
       : studentsList;
+
+  const sortedFilteredStudents = [...filteredStudents].sort((a, b) => {
+    const nameA = (`${a.firstName || ''} ${a.lastName || ''}`.trim() || a.name || a.email || `Student`).toLowerCase();
+    const nameB = (`${b.firstName || ''} ${b.lastName || ''}`.trim() || b.name || b.email || `Student`).toLowerCase();
+    return nameA.localeCompare(nameB);
+  });
 
   return (
     <Modal visible={visible} transparent animationType="fade">
@@ -245,13 +221,12 @@ export default function AssessmentSettings({
             </View>
           ) : (
             <ScrollView contentContainerStyle={styles.scrollContent}>
-              {/* ─── 1. SCHEDULE & ACCESS DATES ───────────────────────── */}
+              {/* 1. SCHEDULE & ACCESS DATES */}
               <Text style={styles.sectionHeading}>Schedule & Access</Text>
               
-              {/* Available At */}
               <View style={styles.settingCard}>
                 <View style={styles.dateHeaderRow}>
-                  <View>
+                  <View style={{ flex: 1 }}>
                     <Text style={styles.settingTitle}>Available From</Text>
                     <Text style={styles.settingSub}>
                       When students can start taking the quiz
@@ -262,27 +237,26 @@ export default function AssessmentSettings({
                       onPress={() => clearDate('availableAt')}
                       style={styles.clearBtn}
                     >
-                      <Ionicons name="trash-outline" size={20} color="#EF4444" />
+                      <Ionicons name="trash-outline" size={18} color="#EF4444" />
                     </TouchableOpacity>
                   )}
                 </View>
                 <TouchableOpacity
                   style={styles.dateSelectorBtn}
-                  onPress={() => openPicker('availableAt', 'date')}
+                  onPress={() => openPicker('availableAt')}
                   activeOpacity={0.8}
                 >
-                  <Ionicons name="calendar-outline" size={20} color="#153c2a" />
-                  <Text style={styles.dateText}>
+                  <Ionicons name="calendar-outline" size={18} color="#153c2a" />
+                  <Text style={[styles.dateText, !settings.availableAt && { color: '#94A3B8' }]}>
                     {formatDateLabel(settings.availableAt)}
                   </Text>
-                  <Ionicons name="chevron-forward" size={20} color="#94A3B8" />
+                  <Ionicons name="chevron-forward" size={16} color="#94A3B8" />
                 </TouchableOpacity>
               </View>
 
-              {/* Deadline At */}
               <View style={styles.settingCard}>
                 <View style={styles.dateHeaderRow}>
-                  <View>
+                  <View style={{ flex: 1 }}>
                     <Text style={styles.settingTitle}>Submission Deadline</Text>
                     <Text style={styles.settingSub}>
                       Due date and time for submissions
@@ -293,23 +267,22 @@ export default function AssessmentSettings({
                       onPress={() => clearDate('deadlineAt')}
                       style={styles.clearBtn}
                     >
-                      <Ionicons name="trash-outline" size={20} color="#EF4444" />
+                      <Ionicons name="trash-outline" size={18} color="#EF4444" />
                     </TouchableOpacity>
                   )}
                 </View>
                 <TouchableOpacity
                   style={styles.dateSelectorBtn}
-                  onPress={() => openPicker('deadlineAt', 'date')}
+                  onPress={() => openPicker('deadlineAt')}
                   activeOpacity={0.8}
                 >
-                  <Ionicons name="time-outline" size={20} color="#153c2a" />
-                  <Text style={styles.dateText}>
+                  <Ionicons name="time-outline" size={18} color="#153c2a" />
+                  <Text style={[styles.dateText, !settings.deadlineAt && { color: '#94A3B8' }]}>
                     {formatDateLabel(settings.deadlineAt)}
                   </Text>
-                  <Ionicons name="chevron-forward" size={20} color="#94A3B8" />
+                  <Ionicons name="chevron-forward" size={16} color="#94A3B8" />
                 </TouchableOpacity>
 
-                {/* Close on deadline toggle */}
                 <View style={styles.subToggleRow}>
                   <Text style={styles.subToggleText}>
                     Close quiz automatically on deadline
@@ -323,12 +296,30 @@ export default function AssessmentSettings({
                 </View>
               </View>
 
-              {/* ─── 2. TIMER & DELIVERY POLICIES ─────────────────────── */}
+              {/* SCORE VISIBILITY SETTING */}
+              <Text style={[styles.sectionHeading, { marginTop: 10 }]}>Score Visibility</Text>
+              <View style={styles.settingCard}>
+                <Text style={[styles.settingSub, { marginBottom: 10 }]}>
+                  Choose when students can see their assessment score.
+                </Text>
+                <View style={styles.toggleRow}>
+                  <Text style={[styles.subToggleText, { flex: 1, marginRight: 10 }]}>
+                    Show score immediately
+                  </Text>
+                  <Switch
+                    value={settings.scoreVisibility !== 'after_instructor_grade'}
+                    onValueChange={(val) => updateSetting('scoreVisibility', val ? 'immediate' : 'after_instructor_grade')}
+                    trackColor={{ false: '#CBD5E1', true: '#10B981' }}
+                    thumbColor="#FFF"
+                  />
+                </View>
+              </View>
+
+              {/* 2. TIMER & DELIVERY POLICIES */}
               <Text style={[styles.sectionHeading, { marginTop: 10 }]}>
                 Timer & Retake Policies
               </Text>
 
-              {/* Timer Config */}
               <View style={styles.settingCard}>
                 <View style={styles.toggleRow}>
                   <View style={{ flex: 1 }}>
@@ -419,7 +410,7 @@ export default function AssessmentSettings({
                 </View>
               )}
 
-              {/* ─── 3. TARGET ASSIGNMENT SCOPE ───────────────────────── */}
+              {/* 3. TARGET ASSIGNMENT SCOPE */}
               <Text style={[styles.sectionHeading, { marginTop: 10 }]}>
                 Target Year Levels
               </Text>
@@ -476,7 +467,7 @@ export default function AssessmentSettings({
                 </View>
               )}
 
-              {/* ─── 4. EXCLUDE SPECIFIC STUDENTS ─────────────────────── */}
+              {/* 4. EXCLUDE SPECIFIC STUDENTS */}
               <View style={{ marginTop: 24 }}>
                 <Text style={styles.sectionHeading}>
                   Exclude Specific Student(s)
@@ -491,82 +482,99 @@ export default function AssessmentSettings({
                     color="#153c2a"
                     style={{ alignSelf: 'flex-start', marginTop: 10 }}
                   />
-                ) : filteredStudents.length === 0 ? (
+                ) : sortedFilteredStudents.length === 0 ? (
                   <Text style={[styles.emptyText, { marginTop: 10 }]}>
                     No student roster loaded for exclusion.
                   </Text>
                 ) : (
-                  <View style={[styles.chipGrid, { marginTop: 12 }]}>
-                    {filteredStudents.map((student) => {
-                      const studentId = student._id || student.id;
-                      const isExcluded = excludedList.includes(studentId);
-                      const displayName =
-                        `${student.firstName || ''} ${student.lastName || ''}`.trim() ||
-                        student.name ||
-                        student.email ||
-                        `Student`;
+                  <View style={styles.dropdownContainer}>
+                    <TouchableOpacity
+                      style={styles.dropdownHeader}
+                      onPress={() => setShowExcludeDropdown(!showExcludeDropdown)}
+                      activeOpacity={0.8}
+                    >
+                      <Text style={[styles.dropdownHeaderText, excludedList.length > 0 && { color: '#EF4444', fontWeight: '800' }]}>
+                        {excludedList.length > 0
+                          ? `${excludedList.length} Student(s) Excluded`
+                          : 'Select students to exclude'}
+                      </Text>
+                      <Ionicons
+                        name={showExcludeDropdown ? "chevron-up" : "chevron-down"}
+                        size={20}
+                        color="#64748B"
+                      />
+                    </TouchableOpacity>
 
-                      return (
-                        <TouchableOpacity
-                          key={studentId}
-                          style={[
-                            styles.chip,
-                            isExcluded && styles.chipExcluded,
-                          ]}
-                          onPress={() => toggleExcludeStudent(studentId)}
-                          activeOpacity={0.8}
-                        >
-                          <Ionicons
-                            name={isExcluded ? 'close-circle' : 'person-outline'}
-                            size={14}
-                            color={isExcluded ? '#FFF' : '#64748B'}
-                            style={{ marginRight: 6 }}
-                          />
-                          <Text
-                            style={[
-                              styles.chipText,
-                              isExcluded && styles.chipTextExcluded,
-                            ]}
-                          >
-                            {displayName} {student.section ? `(${student.section})` : ''}
-                          </Text>
-                        </TouchableOpacity>
-                      );
-                    })}
+                    {showExcludeDropdown && (
+                      <ScrollView style={styles.dropdownList} nestedScrollEnabled={true}>
+                        {sortedFilteredStudents.map((student) => {
+                          const studentId = student._id || student.id;
+                          const isExcluded = excludedList.includes(studentId);
+                          const displayName =
+                            `${student.firstName || ''} ${student.lastName || ''}`.trim() ||
+                            student.name ||
+                            student.email ||
+                            `Student`;
+
+                          return (
+                            <TouchableOpacity
+                              key={studentId}
+                              style={styles.dropdownItem}
+                              onPress={() => toggleExcludeStudent(studentId)}
+                            >
+                              <Ionicons
+                                name={isExcluded ? "checkbox" : "square-outline"}
+                                size={22}
+                                color={isExcluded ? "#EF4444" : "#CBD5E1"}
+                              />
+                              <Text
+                                style={[
+                                  styles.dropdownItemText,
+                                  isExcluded && { color: '#EF4444', fontWeight: '700' },
+                                ]}
+                                numberOfLines={1}
+                              >
+                                {displayName} {student.section ? `(${student.section})` : ''}
+                              </Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </ScrollView>
+                    )}
                   </View>
                 )}
               </View>
             </ScrollView>
           )}
 
-          {/* ─── NATIVE DATE / TIME PICKER MODAL (iOS & Android) ────────── */}
+          {/* Unified App Theme Modal for Date & Time (Both iOS and Android) */}
           {pickerState.show && (
-            <>
-              <DateTimePicker
-                value={pickerState.tempDate}
-                mode={pickerState.mode}
-                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                onChange={handleDateChange}
-              />
-              {Platform.OS === 'ios' && (
-                <View style={styles.iosPickerToolbar}>
-                  <TouchableOpacity
-                    style={styles.iosPickerBtn}
-                    onPress={() =>
-                      setPickerState((prev) => ({ ...prev, show: false }))
-                    }
-                  >
-                    <Text style={styles.iosCancelText}>Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.iosPickerBtn, styles.iosConfirmBtn]}
-                    onPress={confirmIosDate}
-                  >
-                    <Text style={styles.iosConfirmText}>Confirm Date</Text>
-                  </TouchableOpacity>
+            <Modal transparent animationType="slide">
+              <View style={styles.overlay}>
+                <View style={[styles.modalContent, { height: '55%', backgroundColor: theme?.card || '#FFF' }]}>
+                  <View style={styles.iosPickerToolbar}>
+                    <TouchableOpacity onPress={() => setPickerState((prev) => ({ ...prev, show: false }))}>
+                      <Text style={styles.iosCancelText}>Cancel</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.iosPickerTitle}>Date & Time</Text>
+                    <TouchableOpacity onPress={confirmDate}>
+                      <Text style={styles.iosConfirmText}>Confirm</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <View style={styles.iosPickerWrapper}>
+                    <DatePicker
+                      date={pickerState.tempDate}
+                      mode="datetime"
+                      onDateChange={(date) => setPickerState(prev => ({ ...prev, tempDate: date }))}
+                      textColor="#153c2a"
+                      theme="light"
+                      style={styles.iosSpinner}
+                    />
+                  </View>
                 </View>
-              )}
-            </>
+              </View>
+            </Modal>
           )}
         </View>
       </View>
@@ -582,8 +590,8 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     height: '88%',
-    borderTopLeftRadius: 10,
-    borderTopRightRadius: 10,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
     overflow: 'hidden',
   },
   header: {
@@ -615,7 +623,7 @@ const styles = StyleSheet.create({
   },
   settingCard: {
     backgroundColor: '#F8FAFC',
-    borderRadius: 10,
+    borderRadius: 12,
     padding: 16,
     marginBottom: 14,
     borderWidth: 1,
@@ -691,6 +699,46 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#0F172A',
   },
+  dropdownContainer: {
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    backgroundColor: '#F8FAFC',
+    overflow: 'hidden',
+  },
+  dropdownHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 15,
+    backgroundColor: '#F8FAFC',
+  },
+  dropdownHeaderText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  dropdownList: {
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+    backgroundColor: '#FFF',
+    maxHeight: 220,
+  },
+  dropdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  dropdownItemText: {
+    fontSize: 14,
+    color: '#475569',
+    marginLeft: 12,
+    flex: 1,
+  },
   chipGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   chip: {
     flexDirection: 'row',
@@ -703,25 +751,37 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
   },
   chipActive: { backgroundColor: '#153c2a', borderColor: '#153c2a' },
-  chipExcluded: { backgroundColor: '#EF4444', borderColor: '#EF4444' },
   chipText: { fontSize: 13, fontWeight: '700', color: '#64748B' },
   chipTextActive: { color: '#FFF' },
-  chipTextExcluded: { color: '#FFF' },
   emptyText: { fontStyle: 'italic', color: '#94A3B8', fontSize: 13 },
+  
   iosPickerToolbar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    backgroundColor: '#F1F5F9',
-    padding: 12,
-    borderTopWidth: 1,
-    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    backgroundColor: '#153c2a',
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderColor: '#153c2a',
   },
-  iosPickerBtn: {
-    paddingVertical: 10,
-    paddingHorizontal: 18,
-    borderRadius: 10,
+  iosPickerTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: '#FFF',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
-  iosConfirmBtn: { backgroundColor: '#153c2a' },
-  iosCancelText: { color: '#64748B', fontWeight: '700' },
-  iosConfirmText: { color: '#FFF', fontWeight: '800' },
+  iosCancelText: { color: '#E2E8F0', fontSize: 16, fontWeight: '800' },
+  iosConfirmText: { color: '#E2E8F0', fontSize: 16, fontWeight: '900' },
+  iosPickerWrapper: {
+    backgroundColor: '#FFF',
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  iosSpinner: {
+    width: SCREEN_WIDTH, 
+    height: 250,
+  },
 });

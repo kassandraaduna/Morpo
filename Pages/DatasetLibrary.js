@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useContext, useRef } from 'react';
-import {  View, Text, FlatList, Image, TouchableOpacity, ActivityIndicator,  StyleSheet, Platform, StatusBar, Modal, Dimensions } from 'react-native';
+import { View, Text, SectionList, Image, TouchableOpacity, ActivityIndicator, StyleSheet, Platform, StatusBar, Modal, Dimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import * as FileSystem from 'expo-file-system/legacy';
 import * as MediaLibrary from 'expo-media-library';
 import Toast from 'react-native-toast-message';
 import { captureRef } from 'react-native-view-shot';
@@ -65,15 +64,31 @@ export default function DatasetLibrary({ navigation }) {
         }
     };
 
-    const renderItem = ({ item }) => (
-        <TouchableOpacity 
-            style={localStyles.gridItem} 
-            onPress={() => setSelectedImage(item)}
-            activeOpacity={0.8}
-        >
-            <Image source={{ uri: toAbsUrl(item.imageUrl) }} style={localStyles.gridImage} />
-        </TouchableOpacity>
-    );
+    // 1. Groups the scans by Date, sorting newest first, and chunks them into 3-column rows
+    const groupScansByDate = (scansArray) => {
+        const sortedScans = [...scansArray].sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+
+        const grouped = {};
+        sortedScans.forEach(scan => {
+            const dateStr = new Date(scan.createdAt || Date.now()).toLocaleDateString('en-US', {
+                weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'
+            });
+            if (!grouped[dateStr]) grouped[dateStr] = [];
+            grouped[dateStr].push(scan);
+        });
+
+        return Object.keys(grouped).map(dateStr => {
+            const items = grouped[dateStr];
+            const rows = [];
+            for (let i = 0; i < items.length; i += COLUMN_COUNT) {
+                rows.push(items.slice(i, i + COLUMN_COUNT));
+            }
+            return {
+                title: dateStr,
+                data: rows
+            };
+        });
+    };
 
     return (
         <View style={{ flex: 1, backgroundColor: theme.bg }}>
@@ -94,13 +109,34 @@ export default function DatasetLibrary({ navigation }) {
         {loading ? (
             <View style={{ flex: 1, justifyContent: 'center' }}><ActivityIndicator size="large" color="#153c2a" /></View>
         ) : (
-            <FlatList
-                data={scans}
-                keyExtractor={(item) => item._id || item.id}
-                renderItem={renderItem}
-                numColumns={COLUMN_COUNT}
+            <SectionList
+                sections={groupScansByDate(scans)}
+                keyExtractor={(item, index) => `row-${index}`}
+                renderSectionHeader={({ section: { title } }) => (
+                    <View style={localStyles.dateHeaderContainer}>
+                        <Text style={localStyles.dateHeaderText}>{title}</Text>
+                    </View>
+                )}
+                renderItem={({ item }) => (
+                    <View style={{ flexDirection: 'row', gap: 10, marginBottom: 10 }}>
+                        {item.map(scan => (
+                            <TouchableOpacity 
+                                key={scan._id || scan.id} 
+                                style={localStyles.gridItem} 
+                                onPress={() => setSelectedImage(scan)}
+                                activeOpacity={0.8}
+                            >
+                                <Image source={{ uri: toAbsUrl(scan.imageUrl) }} style={localStyles.gridImage} />
+                            </TouchableOpacity>
+                        ))}
+                        {/* Empty placeholders to maintain grid alignment for incomplete rows */}
+                        {Array.from({ length: COLUMN_COUNT - item.length }).map((_, i) => (
+                            <View key={`empty-${i}`} style={[localStyles.gridItem, { backgroundColor: 'transparent' }]} />
+                        ))}
+                    </View>
+                )}
                 contentContainerStyle={{ padding: 20, paddingBottom: 100 }}
-                columnWrapperStyle={{ gap: 10, marginBottom: 10 }}
+                showsVerticalScrollIndicator={false}
                 ListEmptyComponent={
                     <View style={{ alignItems: 'center', marginTop: 50 }}>
                         <Ionicons name="images-outline" size={60} color={theme.subText + '44'} style={{ marginBottom: 10 }} />
@@ -170,6 +206,9 @@ const localStyles = StyleSheet.create({
     headerTitle: { fontSize: 25, fontWeight: '900', color: '#fff', textAlign: 'center' },
     headerSubtitle: { fontSize: 13, color: '#d1fae5', marginTop: 2, textAlign: 'center' },
     
+    dateHeaderContainer: { paddingVertical: 8, marginBottom: 5, marginTop: 5, alignSelf: 'flex-start' },
+    dateHeaderText: { fontSize: 20, fontWeight: '900', color: '#153c2a', textTransform: 'uppercase' },
+
     gridItem: { width: IMAGE_SIZE, height: IMAGE_SIZE, borderRadius: 10, overflow: 'hidden', backgroundColor: '#e2e8f0' },
     gridImage: { width: '100%', height: '100%', resizeMode: 'cover' },
 

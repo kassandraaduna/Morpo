@@ -36,6 +36,11 @@ export default function TakeAssessment({ route, navigation }) {
         confirmText: 'Confirm', hideCancel: false, onConfirm: () => {}
     });
 
+    // Custom Modal State for the Matching Dropdown
+    const [matchingModal, setMatchingModal] = useState({
+        visible: false, questionIndex: null, leftPrompt: null, options: []
+    });
+
     useEffect(() => {
         const loadData = async () => {
             try {
@@ -148,19 +153,27 @@ export default function TakeAssessment({ route, navigation }) {
                     const studentChoice = selectedAnswers[idx];
                     
                     let selectedIndex = -1;
-                    let answerText = typeof studentChoice === 'string' ? studentChoice : '';
+                    let answerText = '';
+                    let matches = []; // Mapping pairs for the backend
 
-                    if (q.format === 'multiple_choice' || q.format === 'true_false' || !q.format) {
-                        if (Array.isArray(q.options) && q.options.length > 0) {
-                            const cleanStudentChoice = String(studentChoice || '').trim().toLowerCase();
-                            
-                            if (cleanStudentChoice) {
-                                const matchIndex = q.options.findIndex(
-                                    opt => String(opt || '').trim().toLowerCase() === cleanStudentChoice
-                                );
+                    if (q.format === 'matching') {
+                        if (typeof studentChoice === 'object' && studentChoice !== null) {
+                            matches = Object.keys(studentChoice).map(key => ({
+                                left: key,
+                                right: studentChoice[key]
+                            }));
+                        }
+                    } else {
+                        answerText = typeof studentChoice === 'string' ? studentChoice : '';
+                        if (q.format === 'multiple_choice' || q.format === 'true_false' || !q.format) {
+                            if (Array.isArray(q.options) && q.options.length > 0) {
+                                const cleanStudentChoice = String(studentChoice || '').trim().toLowerCase();
                                 
-                                if (matchIndex !== -1) {
-                                    selectedIndex = matchIndex;
+                                if (cleanStudentChoice) {
+                                    const matchIndex = q.options.findIndex(
+                                        opt => String(opt || '').trim().toLowerCase() === cleanStudentChoice
+                                    );
+                                    if (matchIndex !== -1) selectedIndex = matchIndex;
                                 }
                             }
                         }
@@ -169,7 +182,8 @@ export default function TakeAssessment({ route, navigation }) {
                     return {
                         questionId: q._id || q.id,
                         selectedIndex: selectedIndex,
-                        answerText: answerText
+                        answerText: answerText,
+                        matches: matches
                     };
                 });
 
@@ -185,7 +199,7 @@ export default function TakeAssessment({ route, navigation }) {
 
                 // ADAPTIVE INTERVENTION LOGIC (INSTRUCTOR ASSESSMENTS ONLY)
                 let interventionGenerated = false;
-                let trackedFails = 0; // Initialize tracker
+                let trackedFails = 0; 
 
                 if (!assessment?.isPracticeOnly && result.percent < 50 && assessment?.quizType !== 'flashcard') {
                     try {
@@ -193,12 +207,11 @@ export default function TakeAssessment({ route, navigation }) {
                         const previousFailsRaw = await AsyncStorage.getItem(failKey);
                         trackedFails = previousFailsRaw ? parseInt(previousFailsRaw) + 1 : 1;
                         
-                        // Attach fail tracker to result object for the UI
                         result.currentFails = trackedFails;
 
                         if (trackedFails >= 3) {
                             const failedItems = questions.map((q, idx) => {
-                                const studentAns = selectedAnswers[idx] || '';
+                                let studentAns = selectedAnswers[idx] || '';
                                 let isCorrect = false;
                                 let actualCorrectAnswer = q.correctAnswer;
                                 
@@ -212,6 +225,11 @@ export default function TakeAssessment({ route, navigation }) {
                                     const accepted = q.acceptedAnswers?.length > 0 ? q.acceptedAnswers : [q.correctAnswer];
                                     actualCorrectAnswer = accepted[0];
                                     isCorrect = accepted.some(ans => ans?.toLowerCase().trim() === studentAns.toLowerCase().trim());
+                                } else if (q.format === 'matching') {
+                                    const matchesObj = studentAns || {};
+                                    actualCorrectAnswer = (q.matchingPairs || []).map(p => `${p.left} -> ${p.right}`).join(', ');
+                                    isCorrect = (q.matchingPairs || []).every(p => matchesObj[p.left] === p.right);
+                                    studentAns = Object.keys(matchesObj).map(k => `${k} -> ${matchesObj[k]}`).join(', ');
                                 }
 
                                 return { 
@@ -503,12 +521,23 @@ export default function TakeAssessment({ route, navigation }) {
     }
 
     // ==========================================
-    // 5. MULTIPLE CHOICE / TEST VIEW
+    // 5. NATIVE QUESTION FORMAT VIEW
     // ==========================================
     const questions = assessment?.questions || [];
     const currentQuestion = questions[currentIndex];
     const qFormat = currentQuestion?.format || 'multiple_choice';
-    const answeredCount = Object.keys(selectedAnswers).length;
+
+    // Calculate Answered Progress accurately (Checking deep matching pairs completion)
+    const answeredCount = Object.keys(selectedAnswers).filter(key => {
+        const ans = selectedAnswers[key];
+        const format = assessment?.questions?.[key]?.format;
+        if (format === 'matching') {
+            const requiredCount = assessment?.questions?.[key]?.matchingPairs?.length || 0;
+            const answeredPairs = Object.keys(ans || {}).length;
+            return requiredCount > 0 && answeredPairs === requiredCount;
+        }
+        return ans !== undefined && ans !== '';
+    }).length;
 
     return (
         <View style={{ flex: 1, backgroundColor: theme?.bg || '#F4F7F6' }}>
@@ -552,6 +581,34 @@ export default function TakeAssessment({ route, navigation }) {
                                 onChangeText={(val) => handleSelectOption(currentIndex, val)}
                                 multiline={qFormat === 'written'}
                             />
+                        ) : qFormat === 'matching' ? (
+                            <View style={{ gap: 12 }}>
+                                {currentQuestion?.matchingPairs?.map((pair, pIdx) => {
+                                    const selectedMatch = (selectedAnswers[currentIndex] || {})[pair.left];
+                                    return (
+                                        <View key={pIdx} style={styles.matchContainer}>
+                                            <Text style={styles.matchPrompt}>{pair.left}</Text>
+                                            <TouchableOpacity 
+                                                style={styles.matchSelectBtn} 
+                                                onPress={() => {
+                                                    const options = [...new Set(currentQuestion.matchingPairs.map(p => p.right))].sort();
+                                                    setMatchingModal({
+                                                        visible: true,
+                                                        questionIndex: currentIndex,
+                                                        leftPrompt: pair.left,
+                                                        options: options
+                                                    });
+                                                }}
+                                            >
+                                                <Text style={[styles.matchSelectText, selectedMatch && {color: '#153c2a', fontWeight: '800'}]}>
+                                                    {selectedMatch || "Select a match..."}
+                                                </Text>
+                                                <Ionicons name="chevron-down" size={16} color="#64748B" />
+                                            </TouchableOpacity>
+                                        </View>
+                                    );
+                                })}
+                            </View>
                         ) : (
                             currentQuestion?.options?.map((opt, optIdx) => {
                                 const isSelected = selectedAnswers[currentIndex] === opt;
@@ -561,7 +618,6 @@ export default function TakeAssessment({ route, navigation }) {
                                         onPress={() => handleSelectOption(currentIndex, opt)}
                                         style={[styles.optionItem, { backgroundColor: theme?.bg || '#F8FAFC', borderColor: isSelected ? '#153c2a' : '#E2E8F0' }, isSelected && styles.optionItemSelected]}
                                     >
-                                        {/* THE NEW CHECKBOX UI */}
                                         <View style={[styles.radioCircle, isSelected && styles.radioCircleActive]}>
                                             {isSelected && <Ionicons name="checkmark" size={16} color="#FFF" />}
                                         </View>
@@ -590,9 +646,66 @@ export default function TakeAssessment({ route, navigation }) {
                 )}
             </View>
 
+            {renderMatchingModal()}
             {renderConfirmModal()}
         </View>
     );
+
+    function renderMatchingModal() {
+        return (
+            <Modal visible={matchingModal.visible} transparent animationType="fade">
+                <View style={styles.modalOverlay}>
+                    {/* FIX: Added alignItems: 'stretch' and backgroundColor to ensure full-width layout and clean corners */}
+                    <View style={[styles.modalCard, { width: '90%', maxWidth: 400, maxHeight: '80%', padding: 0, overflow: 'hidden', alignItems: 'stretch', backgroundColor: '#FFF' }]}>
+                        
+                        <View style={{ padding: 20, backgroundColor: '#153c2a', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <View style={{ flex: 1, paddingRight: 15 }}>
+                                <Text style={[styles.modalTitle, { color: '#FFF', marginBottom: 5, textAlign: 'left' }]}>Select Match</Text>
+                                <Text style={{ color: '#A7F3D0', fontSize: 13, lineHeight: 18 }}>{matchingModal.leftPrompt}</Text>
+                            </View>
+                            <TouchableOpacity 
+                                onPress={() => setMatchingModal(prev => ({ ...prev, visible: false }))} 
+                                style={{ padding: 6, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 20 }}
+                            >
+                                <Ionicons name="close" size={20} color="#FFF" />
+                            </TouchableOpacity>
+                        </View>
+                        
+                        <ScrollView style={{ maxHeight: Dimensions.get('window').height * 0.5 }}>
+                            {matchingModal.options.map((opt, oIdx) => (
+                                <TouchableOpacity 
+                                    key={oIdx} 
+                                    style={styles.matchOptionBtn}
+                                    onPress={() => {
+                                        setSelectedAnswers(prev => ({
+                                            ...prev,
+                                            [matchingModal.questionIndex]: {
+                                                ...(prev[matchingModal.questionIndex] || {}),
+                                                [matchingModal.leftPrompt]: opt
+                                            }
+                                        }));
+                                        setMatchingModal(prev => ({ ...prev, visible: false }));
+                                    }}
+                                >
+                                    <Text style={styles.matchOptionText}>{opt}</Text>
+                                </TouchableOpacity>
+                            ))}
+                        </ScrollView>
+
+                        {/* Fixed the squished Close button constraint */}
+                        <View style={{ padding: 15, borderTopWidth: 1, borderTopColor: '#E2E8F0', backgroundColor: '#F8FAFC' }}>
+                            <TouchableOpacity 
+                                style={{ paddingVertical: 14, borderRadius: 10, backgroundColor: '#E2E8F0', alignItems: 'center', width: '100%' }} 
+                                onPress={() => setMatchingModal(prev => ({ ...prev, visible: false }))}
+                            >
+                                <Text style={{ fontWeight: '800', color: '#475569', fontSize: 14 }}>Cancel</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+        );
+    }
 
     function renderConfirmModal() {
         return (
@@ -602,7 +715,7 @@ export default function TakeAssessment({ route, navigation }) {
                         <View style={[styles.modalIconCircle, { backgroundColor: confirmModal.iconBg }]}>
                             <Ionicons name={confirmModal.iconName} size={28} color={confirmModal.iconColor} />
                         </View>
-                        <Text style={[styles.modalTitle, { color: theme?.text || '#1E293B' }]}>{confirmModal.title}</Text>
+                        <Text style={[styles.modalTitle, { color: theme?.text || '#1E293B', textAlign: 'center' }]}>{confirmModal.title}</Text>
                         <Text style={styles.modalMessage}>{confirmModal.message}</Text>
                         
                         <View style={styles.modalBtnRow}>
@@ -657,11 +770,16 @@ const styles = StyleSheet.create({
     optionItem: { flexDirection: 'row', alignItems: 'center', padding: 16, borderRadius: 10, borderWidth: 1.5 },
     optionItemSelected: { backgroundColor: '#E7F5EE' },
     
-    // THE NEW CHECKBOX UI
+    matchContainer: { backgroundColor: '#F8FAFC', borderRadius: 10, padding: 15, borderWidth: 1, borderColor: '#E2E8F0' },
+    matchPrompt: { fontSize: 14, fontWeight: '700', color: '#1E293B', marginBottom: 10, lineHeight: 22 },
+    matchSelectBtn: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#FFF', borderWidth: 1, borderColor: '#CBD5E1', padding: 14, borderRadius: 8 },
+    matchSelectText: { fontSize: 14, color: '#64748B', flex: 1, marginRight: 10 },
+    matchOptionBtn: { padding: 16, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', backgroundColor: '#FFF' },
+    matchOptionText: { fontSize: 14, color: '#1E293B', lineHeight: 22, fontWeight: '600' },
+    
     radioCircle: { width: 24, height: 24, borderRadius: 8, borderWidth: 2, borderColor: '#CBD5E1', justifyContent: 'center', alignItems: 'center', marginRight: 14, backgroundColor: '#FFF' },
     radioCircleActive: { borderColor: '#153c2a', backgroundColor: '#153c2a' },
     
-    // TEXT INPUT UI FOR WRITTEN/IDENTIFICATION
     textInputAnswer: { backgroundColor: '#F8FAFC', borderWidth: 1.5, borderColor: '#E2E8F0', borderRadius: 10, padding: 18, fontSize: 15, color: '#1E293B', minHeight: 80, textAlignVertical: 'top', fontWeight: '600' },
     
     optionText: { fontSize: 14, fontWeight: '600', flex: 1, lineHeight: 20 },
@@ -683,7 +801,7 @@ const styles = StyleSheet.create({
     modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 20 },
     modalCard: { width: '100%', maxWidth: 340, padding: 25, borderRadius: 10, alignItems: 'center', elevation: 10 },
     modalIconCircle: { width: 55, height: 55, borderRadius: 27.5, justifyContent: 'center', alignItems: 'center', marginBottom: 15 },
-    modalTitle: { fontSize: 18, fontWeight: '900', marginBottom: 8, textAlign: 'center' },
+    modalTitle: { fontSize: 18, fontWeight: '900', marginBottom: 8, textAlign: 'left' },
     modalMessage: { fontSize: 13, color: '#64748B', textAlign: 'center', marginBottom: 25, fontWeight: '600', lineHeight: 18 },
     modalBtnRow: { flexDirection: 'row', gap: 12, width: '100%' },
     modalCancelBtn: { flex: 1, paddingVertical: 14, borderRadius: 10, backgroundColor: '#F1F5F9', alignItems: 'center' },

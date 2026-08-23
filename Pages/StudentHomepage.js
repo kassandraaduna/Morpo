@@ -184,6 +184,7 @@ export default function StudentHomepage({ navigation }) {
                     score: latest.score,
                     total: latest.total,
                     percent: latest.percent,
+                    scorePending: latest.scorePending,
                     feedback: latest.feedback || (latest.percent >= 70 ? 'Passed' : 'Needs Review')
                 });
             } else {
@@ -795,9 +796,13 @@ export default function StudentHomepage({ navigation }) {
               </Text>
             </View>
             <View style={localStyles.assessmentContentRight}>
-              <Text style={[localStyles.scoreFractionText, { color: latestQuiz.percent >= 70 ? '#10B981' : '#EF4444' }]}>
-                {`${latestQuiz.score} / ${latestQuiz.total || 10}`}
-              </Text>
+              {latestQuiz.scorePending ? (
+                <Text style={[localStyles.scoreFractionText, { color: '#D97706', fontSize: 16 }]}>Pending</Text>
+              ) : (
+                <Text style={[localStyles.scoreFractionText, { color: latestQuiz.percent >= 70 ? '#10B981' : '#EF4444' }]}>
+                  {`${latestQuiz.score} / ${latestQuiz.total || 10}`}
+                </Text>
+              )}
               <TouchableOpacity onPress={() => navigation.navigate('Assessments')}>
                 <Text style={localStyles.viewAllLinkText}>View all</Text>
               </TouchableOpacity>

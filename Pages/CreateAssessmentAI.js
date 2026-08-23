@@ -8,7 +8,6 @@ import {
   ActivityIndicator,
   ScrollView,
   Platform,
-  SafeAreaView,
   KeyboardAvoidingView,
 } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
@@ -20,22 +19,38 @@ import { toastSuccess, toastError } from '../Pages/src/components/ToastMsg';
 import AssessmentSettings from './AssessmentSettings';
 import StudentViewModal from './StudentViewModal';
 
+const emptyQuestion = {
+  format: 'multiple_choice',
+  text: '',
+  points: 1,
+  options: ['', '', '', ''],
+  correctIndex: 0,
+  matchingPairs: [{ left: '', right: '' }, { left: '', right: '' }],
+  acceptedAnswers: [''],
+};
+
+const questionFormats = [
+  { key: 'multiple_choice', label: 'Multiple Choice' },
+  { key: 'true_false', label: 'True / False' },
+  { key: 'matching', label: 'Matching' },
+  { key: 'written', label: 'Written Response' },
+  { key: 'identification', label: 'Identification' }
+];
+
 export default function CreateAssessmentAI({ navigation }) {
   const { theme } = useContext(ThemeContext);
 
-  // AI Generation Controls State
   const [instructions, setInstructions] = useState('');
   const [questionCount, setQuestionCount] = useState('5');
   const [pdfFile, setPdfFile] = useState(null);
   const [generating, setGenerating] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // Lessons References State
   const [availableLessons, setAvailableLessons] = useState([]);
   const [selectedLessons, setSelectedLessons] = useState([]);
   const [fetchingLessons, setFetchingLessons] = useState(true);
+  const [showLessonDropdown, setShowLessonDropdown] = useState(false); 
 
-  // Assessment Form State (Populates after AI generation)
   const [title, setTitle] = useState('');
   const [questions, setQuestions] = useState([]);
   const [showSettings, setShowSettings] = useState(false);
@@ -53,6 +68,7 @@ export default function CreateAssessmentAI({ navigation }) {
     excludedStudentIds: [],
     isPracticeOnly: false,
     shuffleQuestions: false,
+    scoreVisibility: 'immediate',
   });
 
   useEffect(() => {
@@ -97,7 +113,6 @@ export default function CreateAssessmentAI({ navigation }) {
     }
   };
 
-  // ─── GENERATE WITH MYPHO-AI (FIXED URL & EPHEMERAL DISK COMPATIBILITY) ───
   const handleGenerateWithAI = async () => {
     if (selectedLessons.length === 0 && !pdfFile && !instructions.trim()) {
       return toastError('Please select a lesson, upload a PDF reference, or enter instructions.');
@@ -108,45 +123,62 @@ export default function CreateAssessmentAI({ navigation }) {
       const formData = new FormData();
       formData.append('questionCount', String(questionCount || '5'));
 
-      // 1. COMBINE LESSON TEXT FROM MONGODB INTO lessonContent:
-      // Because hosting platforms like Render use ephemeral disk storage, files in /uploads/
-      // get wiped on restart. Sending all lesson text via lessonContent ensures Gemini
-      // receives 100% of your lesson content without ever throwing an ENOENT HTTP 500 error.
-      const lessonTextParts = selectedLessons
-        .map((l) => {
-          const text = l.educationalContent || l.content || l.description || '';
-          return `--- Lesson: ${l.title || 'Untitled'} ---\n${text}`;
-        })
-        .filter(Boolean);
-
+      let combinedText = '';
       if (instructions.trim()) {
-        lessonTextParts.push(`--- Additional Instructions ---\n${instructions.trim()}`);
+        combinedText += `--- Additional Instructions ---\n${instructions.trim()}\n\n`;
       }
 
-      const combinedLessonContent = lessonTextParts.join('\n\n');
-      if (combinedLessonContent.trim()) {
-        formData.append('lessonContent', combinedLessonContent.trim());
+      let pdfNamesArr = [];
+
+      // Fetch the full content of each selected lesson so we have readable text
+      if (selectedLessons.length > 0) {
+        for (const lessonSummary of selectedLessons) {
+          try {
+            const detailRes = await api.get(`/lessons/${lessonSummary._id}`);
+            const fullLesson = detailRes.data?.data || detailRes.data || lessonSummary;
+            
+            const text = fullLesson.educationalContent || fullLesson.content || fullLesson.description || '';
+            if (text) {
+              combinedText += `--- Lesson: ${fullLesson.title || 'Untitled'} ---\n${text}\n\n`;
+            }
+
+            // --- THE FIX ---
+            // Strictly use pdfUrl to get the exact hashed filename stored on the server's disk, exactly like the Web version does.
+            const rawUrl = fullLesson.pdfUrl;
+            if (rawUrl) {
+              const fName = String(rawUrl).replace(/\\/g, '/').split('/').pop();
+              pdfNamesArr.push(fName);
+            }
+            // ---------------
+            
+          } catch (err) {
+            console.log(`Failed to fetch full text for lesson ${lessonSummary._id}`, err);
+          }
+        }
       }
 
-      // 2. Attach newly uploaded PDF reference file securely for Android & iOS
+      // THE FIX: Explicitly send lessonContent matching the backend requirement (req.body.lessonContent)
+      if (combinedText.trim()) {
+        formData.append('lessonContent', combinedText.trim());
+      }
+
+      // --- UPDATED LOGIC ---
+      // Append each filename individually so the backend recognizes it as an array
+      if (pdfNamesArr.length > 0) {
+        pdfNamesArr.forEach((fileName) => {
+          formData.append('existingPdfNames', fileName);
+        });
+      }
+      // ---------------------
+
       if (pdfFile) {
-        const fileUri =
-          Platform.OS === 'ios' ? pdfFile.uri.replace('file://', '') : pdfFile.uri;
-
+        const fileUri = Platform.OS === 'ios' ? pdfFile.uri.replace('file://', '') : pdfFile.uri;
         let fileName = pdfFile.name || `reference_${Date.now()}.pdf`;
         if (!/\.[a-zA-Z0-9]+$/.test(fileName)) {
           fileName += '.pdf';
         }
-
-        formData.append('pdfFiles', {
-          uri: fileUri,
-          name: fileName,
-          type: pdfFile.mimeType || 'application/pdf',
-        });
       }
 
-      // 3. CALL API.POST:
-      // Automatically uses BASE_URL (/api/ai/generate-quiz), preventing HTML 404 errors
       const response = await api.post('/ai/generate-quiz', formData, {
         timeout: 120000,
         headers: {
@@ -154,7 +186,6 @@ export default function CreateAssessmentAI({ navigation }) {
         },
       });
 
-      // Unwrap questions across all possible backend JSON wrapper shapes
       const resPayload = response.data?.data || response.data;
       const rawQuestions =
         Array.isArray(resPayload)
@@ -179,21 +210,20 @@ export default function CreateAssessmentAI({ navigation }) {
             : ['Option A', 'Option B', 'Option C', 'Option D'];
 
         let correctIndex = Number(q.correctIndex ?? q.answerIndex ?? 0);
-        if (
-          isNaN(correctIndex) ||
-          correctIndex < 0 ||
-          correctIndex >= options.length
-        ) {
+        if (isNaN(correctIndex) || correctIndex < 0 || correctIndex >= options.length) {
           correctIndex = 0;
         }
 
         return {
+          ...emptyQuestion,
           id: `ai_${Date.now()}_${idx}`,
           format: q.format || 'multiple_choice',
           text: String(q.text || q.question || `Question ${idx + 1}`).trim(),
-          points: Number(q.points || 1),
+          points: Math.max(1, Number(q.points || 1)),
           options: options,
           correctIndex: correctIndex,
+          matchingPairs: Array.isArray(q.matchingPairs) ? q.matchingPairs : [{ left: '', right: '' }, { left: '', right: '' }],
+          acceptedAnswers: Array.isArray(q.acceptedAnswers) ? q.acceptedAnswers : [''],
         };
       });
 
@@ -220,19 +250,29 @@ export default function CreateAssessmentAI({ navigation }) {
   };
 
   const addQuestion = () => {
-    setQuestions([
-      ...questions,
-      {
-        format: 'multiple_choice',
-        text: '',
-        points: 1,
-        options: ['', '', '', ''],
-        correctIndex: 0,
-      },
-    ]);
+    setQuestions([...questions, { ...emptyQuestion }]);
   };
 
-  // ─── SUBMIT / PUBLISH HANDLER (WITH STRICT VALIDATION) ───
+  const changeQuestionFormat = (index, newFormat) => {
+    const updated = [...questions];
+    const q = updated[index];
+    q.format = newFormat;
+    
+    if (newFormat === 'true_false') {
+      q.options = ['True', 'False'];
+      q.correctIndex = 0;
+    } else if (newFormat === 'multiple_choice' && (!q.options || q.options.length !== 4)) {
+      q.options = ['', '', '', ''];
+      q.correctIndex = 0;
+    } else if (newFormat === 'matching' && (!q.matchingPairs || q.matchingPairs.length === 0)) {
+      q.matchingPairs = [{ left: '', right: '' }, { left: '', right: '' }];
+    } else if (newFormat === 'identification' && (!q.acceptedAnswers || q.acceptedAnswers.length === 0)) {
+      q.acceptedAnswers = [''];
+    }
+    
+    setQuestions(updated);
+  };
+
   const handleSubmitAssessment = async (status = 'published') => {
     if (!title.trim()) {
       return toastError('Please enter an assessment title.');
@@ -241,7 +281,6 @@ export default function CreateAssessmentAI({ navigation }) {
       return toastError('Please generate or add at least one question.');
     }
 
-    // Strict validation before publishing
     if (status === 'published') {
       if (!settings.targetSections || settings.targetSections.length === 0) {
         return toastError(
@@ -270,7 +309,8 @@ export default function CreateAssessmentAI({ navigation }) {
         deliveryMode: 'internal',
         quizType: 'test',
         status: status,
-        createdBy: user?._id || null, // Syncs with Instructor Web
+        createdBy: user?._id || null,
+        scoreVisibility: settings.scoreVisibility || 'immediate',
         timer: {
           enabled: !!settings.timer?.enabled,
           minutes: settings.timer?.enabled
@@ -283,9 +323,14 @@ export default function CreateAssessmentAI({ navigation }) {
         questions: questions.map((q) => ({
           format: q.format || 'multiple_choice',
           text: String(q.text || '').trim(),
-          points: Number(q.points || 1),
-          options: (q.options || []).map((opt) => String(opt).trim()),
+          points: Math.max(1, Number(q.points || 1)),
+          options: (q.format === 'multiple_choice' || q.format === 'true_false') ? (q.options || []).map((opt) => String(opt).trim()) : [],
           correctIndex: Number(q.correctIndex || 0),
+          matchingPairs: q.format === 'matching' ? (q.matchingPairs || []).map((pair) => ({
+            left: String(pair.left || '').trim(),
+            right: String(pair.right || '').trim(),
+          })) : [],
+          acceptedAnswers: q.format === 'identification' ? (q.acceptedAnswers || []).map((answer) => String(answer).trim()).filter(Boolean) : [],
         })),
         ...settings,
         availableAt: settings.availableAt
@@ -310,14 +355,12 @@ export default function CreateAssessmentAI({ navigation }) {
     }
   };
 
-  const handleSave = handleSubmitAssessment; // Alias to prevent ReferenceError
-
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={[styles.container, { backgroundColor: theme?.bg || '#F4F7F6' }]}
     >
-      {/* HEADER */}
+
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={24} color="#FFF" />
@@ -345,7 +388,7 @@ export default function CreateAssessmentAI({ navigation }) {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        {/* AI GENERATOR CARD */}
+
         <View style={styles.card}>
           <Text style={styles.label}>Number of Questions</Text>
           <TextInput
@@ -367,29 +410,53 @@ export default function CreateAssessmentAI({ navigation }) {
           ) : availableLessons.length === 0 ? (
             <Text style={styles.emptyText}>No lessons uploaded yet.</Text>
           ) : (
-            <View style={styles.chipContainer}>
-              {availableLessons.map((lesson) => {
-                const isSelected = selectedLessons.some(
-                  (l) => l._id === lesson._id
-                );
-                return (
-                  <TouchableOpacity
-                    key={lesson._id}
-                    style={[styles.chip, isSelected && styles.chipActive]}
-                    onPress={() => toggleLesson(lesson)}
-                  >
-                    <Text
-                      style={[
-                        styles.chipText,
-                        isSelected && styles.chipTextActive,
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {lesson.title || 'Untitled Lesson'}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
+            <View style={styles.dropdownContainer}>
+              <TouchableOpacity
+                style={styles.dropdownHeader}
+                onPress={() => setShowLessonDropdown(!showLessonDropdown)}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.dropdownHeaderText, selectedLessons.length > 0 && { color: '#10B981', fontWeight: '800' }]}>
+                  {selectedLessons.length > 0
+                    ? `${selectedLessons.length} Lesson(s) Selected`
+                    : 'Select Lessons (Max 5)'}
+                </Text>
+                <Ionicons
+                  name={showLessonDropdown ? "chevron-up" : "chevron-down"}
+                  size={20}
+                  color="#64748B"
+                />
+              </TouchableOpacity>
+
+              {showLessonDropdown && (
+                <ScrollView style={styles.dropdownList} nestedScrollEnabled={true}>
+                  {availableLessons.map((lesson) => {
+                    const isSelected = selectedLessons.some((l) => l._id === lesson._id);
+                    return (
+                      <TouchableOpacity
+                        key={lesson._id}
+                        style={styles.dropdownItem}
+                        onPress={() => toggleLesson(lesson)}
+                      >
+                        <Ionicons
+                          name={isSelected ? "checkbox" : "square-outline"}
+                          size={22}
+                          color={isSelected ? "#10B981" : "#CBD5E1"}
+                        />
+                        <Text
+                          style={[
+                            styles.dropdownItemText,
+                            isSelected && { color: '#10B981', fontWeight: '700' },
+                          ]}
+                          numberOfLines={2}
+                        >
+                          {lesson.title || 'Untitled Lesson'}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              )}
             </View>
           )}
 
@@ -423,7 +490,6 @@ export default function CreateAssessmentAI({ navigation }) {
           />
         </View>
 
-        {/* GENERATE BUTTON */}
         <TouchableOpacity
           style={styles.generateBtn}
           onPress={handleGenerateWithAI}
@@ -444,7 +510,6 @@ export default function CreateAssessmentAI({ navigation }) {
           )}
         </TouchableOpacity>
 
-        {/* GENERATED QUESTIONS REVIEW FORM */}
         {questions.length > 0 && (
           <View style={{ marginTop: 30 }}>
             <Text style={styles.sectionTitle}>
@@ -477,6 +542,18 @@ export default function CreateAssessmentAI({ navigation }) {
                   </TouchableOpacity>
                 </View>
 
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.formatScroll}>
+                  {questionFormats.map(f => (
+                    <TouchableOpacity 
+                      key={f.key} 
+                      style={[styles.formatChip, q.format === f.key && styles.formatChipActive]}
+                      onPress={() => changeQuestionFormat(qIndex, f.key)}
+                    >
+                      <Text style={[styles.formatChipText, q.format === f.key && styles.formatChipTextActive]}>{f.label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+
                 <TextInput
                   style={[styles.input, { marginBottom: 15, minHeight: 60 }]}
                   placeholder="Question text..."
@@ -486,7 +563,26 @@ export default function CreateAssessmentAI({ navigation }) {
                   placeholderTextColor="#94A3B8"
                 />
 
-                {q.options.map((opt, oIndex) => (
+                <View style={styles.pointsRow}>
+                  <Text style={[styles.label, { marginBottom: 0, color: '#153c2a' }]}>Points</Text>
+                  <TextInput
+                    style={styles.pointsInput}
+                    keyboardType="number-pad"
+                    value={q.points !== '' ? String(q.points) : ''}
+                    onChangeText={(t) => {
+                      const num = parseInt(t.replace(/[^0-9]/g, ''), 10);
+                      updateQuestion(qIndex, 'points', isNaN(num) ? '' : num);
+                    }}
+                    onBlur={() => {
+                      if (q.points === '' || q.points < 1) {
+                        updateQuestion(qIndex, 'points', 1);
+                      }
+                    }}
+                    placeholderTextColor="#94A3B8"
+                  />
+                </View>
+
+                {q.format === 'multiple_choice' && (q.options || []).map((opt, oIndex) => (
                   <View key={oIndex} style={styles.optRow}>
                     <TouchableOpacity
                       style={[
@@ -517,6 +613,72 @@ export default function CreateAssessmentAI({ navigation }) {
                     />
                   </View>
                 ))}
+
+                {q.format === 'true_false' && (
+                  <View style={styles.tfRow}>
+                    {['True', 'False'].map((choice, cIndex) => (
+                      <TouchableOpacity 
+                        key={cIndex}
+                        style={[styles.tfBtn, q.correctIndex === cIndex && styles.tfBtnActive]}
+                        onPress={() => updateQuestion(qIndex, 'correctIndex', cIndex)}
+                      >
+                        <Text style={[styles.tfBtnText, q.correctIndex === cIndex && styles.tfBtnTextActive]}>{choice}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+
+                {q.format === 'matching' && (
+                  <View>
+                    {(q.matchingPairs || []).map((pair, pIndex) => (
+                      <View key={pIndex} style={styles.matchRow}>
+                        <TextInput 
+                            style={[styles.input, {flex: 1}]} 
+                            placeholder="Prompt (Left)" 
+                            value={pair.left} 
+                            onChangeText={(t) => {
+                              const newPairs = [...q.matchingPairs];
+                              newPairs[pIndex].left = t;
+                              updateQuestion(qIndex, 'matchingPairs', newPairs);
+                            }}
+                            placeholderTextColor="#94A3B8"
+                        />
+                        <TextInput 
+                            style={[styles.input, {flex: 1}]} 
+                            placeholder="Answer (Right)" 
+                            value={pair.right} 
+                            onChangeText={(t) => {
+                              const newPairs = [...q.matchingPairs];
+                              newPairs[pIndex].right = t;
+                              updateQuestion(qIndex, 'matchingPairs', newPairs);
+                            }}
+                            placeholderTextColor="#94A3B8"
+                        />
+                      </View>
+                    ))}
+                    <TouchableOpacity style={styles.ghostBtn} onPress={() => {
+                      updateQuestion(qIndex, 'matchingPairs', [...(q.matchingPairs || []), {left: '', right: ''}]);
+                    }}>
+                      <Text style={styles.ghostBtnText}>+ Add Pair</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+
+                {q.format === 'identification' && (
+                  <TextInput 
+                    style={styles.input} 
+                    placeholder="Expected Exact Answer" 
+                    value={(q.acceptedAnswers || [''])[0]} 
+                    onChangeText={(t) => updateQuestion(qIndex, 'acceptedAnswers', [t])}
+                    placeholderTextColor="#94A3B8"
+                  />
+                )}
+
+                {q.format === 'written' && (
+                  <Text style={styles.instructionText}>
+                    Written responses are graded manually by the professor in Student Monitoring.
+                  </Text>
+                )}
               </View>
             ))}
 
@@ -605,7 +767,11 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     gap: 4,
   },
-  studentViewText: { fontSize: 13, fontWeight: '800', color: '#fff' },
+  studentViewText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#FFF',
+  },
   headerTitle: { 
     fontSize: 18, 
     fontWeight: '900', 
@@ -616,12 +782,12 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: '#FFF',
     padding: 20,
-    borderRadius: 10,
+    borderRadius: 20,
     elevation: 2,
-    marginBottom: 10,
+    marginBottom: 20,
   },
   label: {
-    fontSize: 15,
+    fontSize: 12,
     fontWeight: '800',
     color: '#64748B',
     marginBottom: 8,
@@ -633,29 +799,51 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    fontSize: 14,
+    fontSize: 15,
     backgroundColor: '#F8FAFC',
-    color: '#0F172A',
+    color: '#000',
     fontWeight: '600',
   },
-  chipContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
+  dropdownContainer: {
     marginTop: 5,
-  },
-  chip: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 10,
-    backgroundColor: '#F1F5F9',
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    maxWidth: '100%',
+    borderRadius: 12,
+    backgroundColor: '#F8FAFC',
+    overflow: 'hidden',
   },
-  chipActive: { backgroundColor: '#E7F5EE', borderColor: '#10B981' },
-  chipText: { fontSize: 13, fontWeight: '700', color: '#64748B' },
-  chipTextActive: { color: '#10B981' },
+  dropdownHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 15,
+    backgroundColor: '#F8FAFC',
+  },
+  dropdownHeaderText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  dropdownList: {
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+    backgroundColor: '#FFF',
+    maxHeight: 220,
+  },
+  dropdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  dropdownItemText: {
+    fontSize: 14,
+    color: '#475569',
+    marginLeft: 12,
+    flex: 1,
+  },
   emptyText: {
     fontStyle: 'italic',
     color: '#94A3B8',
@@ -716,7 +904,7 @@ const styles = StyleSheet.create({
   qCard: {
     backgroundColor: '#FFF',
     padding: 20,
-    borderRadius: 10,
+    borderRadius: 20,
     marginBottom: 20,
     elevation: 2,
     borderWidth: 1,
@@ -735,6 +923,42 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
+  formatScroll: { marginBottom: 15 },
+  formatChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: '#F1F5F9', marginRight: 8, borderWidth: 1, borderColor: '#E2E8F0' },
+  formatChipActive: { backgroundColor: '#153c2a', borderColor: '#153c2a' },
+  formatChipText: { fontSize: 12, fontWeight: '700', color: '#64748B' },
+  formatChipTextActive: { color: '#FFF' },
+  tfRow: { flexDirection: 'row', gap: 10, marginBottom: 5 },
+  tfBtn: { flex: 1, paddingVertical: 12, borderRadius: 10, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', alignItems: 'center' },
+  tfBtnActive: { backgroundColor: '#E7F5EE', borderColor: '#10B981' },
+  tfBtnText: { fontSize: 14, fontWeight: '700', color: '#64748B' },
+  tfBtnTextActive: { color: '#10B981' },
+  matchRow: { flexDirection: 'row', gap: 10, marginBottom: 10 },
+  ghostBtn: { paddingVertical: 12, alignItems: 'center', backgroundColor: '#F1F5F9', borderRadius: 10, marginTop: 5 },
+  ghostBtnText: { color: '#153c2a', fontWeight: '800', fontSize: 13 },
+  instructionText: { fontSize: 13, color: '#64748B', fontStyle: 'italic', marginBottom: 5, textAlign: 'center' },
+  pointsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 15,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  pointsInput: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    fontSize: 14,
+    backgroundColor: '#F8FAFC',
+    color: '#000',
+    fontWeight: '900',
+    width: 80,
+    textAlign: 'center',
+  },
   optRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
   radio: {
     width: 24,
@@ -752,7 +976,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 18,
     backgroundColor: '#E7F5EE',
-    borderRadius: 10,
+    borderRadius: 15,
     marginBottom: 30,
     borderWidth: 1,
     borderColor: '#153c2a',
@@ -762,14 +986,14 @@ const styles = StyleSheet.create({
   publishBtn: {
     backgroundColor: '#153c2a',
     padding: 16,
-    borderRadius: 10,
+    borderRadius: 15,
     alignItems: 'center',
     elevation: 4,
   },
   draftBtn: {
     backgroundColor: '#F1F5F9',
     padding: 16,
-    borderRadius: 10,
+    borderRadius: 15,
     alignItems: 'center',
     marginTop: 15,
     borderWidth: 1,
