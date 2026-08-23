@@ -84,12 +84,28 @@ export default function InstructorHomepage({ navigation }) {
       const config = {
         headers: { Authorization: token ? `Bearer ${token}` : '' }
       };
-      
-      let fetchedStudents = [];
-      let relevantScores = [];
-      let generatedNotifs = [];
-      let plottedEvents = [];
 
+      // 1. Parallel Data Fetching
+      const [readNotifsRaw, clearedNotifsRaw, usersRes, calRes, dataRes, assessRes, monRes] = await Promise.all([
+          AsyncStorage.getItem('read_notifs_instructor').catch(() => null),
+          AsyncStorage.getItem('cleared_notifs_instructor').catch(() => null),
+          api.get('/admin/users', config).catch(() => ({ data: [] })),
+          api.get('/calendar/events', config).catch(() => ({ data: [] })),
+          api.get('/datasets', config).catch(() => ({ data: [] })),
+          api.get('/assessments', { ...config, params: { instructorId: currentUser._id } }).catch(() => ({ data: [] })),
+          api.get('/instructor/assessment-monitoring', { ...config, params: { instructorId: currentUser._id } }).catch(() => ({ data: [] }))
+      ]);
+
+      const readNotifs = readNotifsRaw ? JSON.parse(readNotifsRaw) : [];
+      const clearedNotifs = clearedNotifsRaw ? JSON.parse(clearedNotifsRaw) : [];
+      
+      const allUsers = Array.isArray(usersRes.data) ? usersRes.data : (usersRes.data?.users || []);
+      const events = calRes.data?.events || calRes.data || [];
+      const datasets = dataRes.data?.datasets || dataRes.data?.data || [];
+      const assessmentsData = assessRes.data?.data || assessRes.data || [];
+      const monitoringData = monRes.data?.data || monRes.data || [];
+
+      // 2. Instructor Scope & Section matching
       const assignments = currentUser.instructorAssignments || [];
       const fallbackArr = Array.isArray(currentUser.assignedSections) ? currentUser.assignedSections : [];
       const fallbackStr = currentUser.section ? [currentUser.section] : [];
@@ -103,171 +119,144 @@ export default function InstructorHomepage({ navigation }) {
       const uniqueSections = new Set(allSectionsRaw.map(normalizeSection).filter(Boolean));
       const sectionsAssigned = uniqueSections.size;
 
-      const readNotifsRaw = await AsyncStorage.getItem('read_notifs').catch(() => null);
-      const readNotifs = readNotifsRaw ? JSON.parse(readNotifsRaw) : [];
-
-      try {
-        const res = await api.get('/admin/users', config);
-        const allUsers = Array.isArray(res.data) ? res.data : (res.data?.users || []);
-        
-        fetchedStudents = allUsers.filter(u => {
-          const roleStr = extractValue(u.role);
-          const isStudent = roleStr.toLowerCase() === 'student' || roleStr.toLowerCase() === 'user';
-          const studentSection = normalizeSection(u.section);
-          return isStudent && uniqueSections.has(studentSection);
-        });
-      } catch (err) {
-        console.warn("Failed to fetch students from /admin/users:", err.message);
-      }
-
-      const totalStudents = fetchedStudents.length;
-
-      if (totalStudents > 0) {
-        try {
-          const scorePromises = fetchedStudents.map(student => 
-            api.get(`/practice/history/${student._id}`, config)
-                .catch(() => api.get(`/assessments/history/${student._id}`, config))
-                .catch(() => ({ data: [] })) 
-          );
-
-          const historyResponses = await Promise.all(scorePromises);
-          
-          historyResponses.forEach((res, index) => {
-            const studentHistory = res.data?.history || res.data || [];
-            const studentId = fetchedStudents[index]._id;
-            
-            studentHistory.forEach(attempt => {
-              relevantScores.push({
-                ...attempt,
-                studentId: studentId,
-                score: attempt.score || attempt.result || 0,
-                createdAt: attempt.createdAt || new Date().toISOString()
-              });
-            });
-          });
-        } catch (err) {
-          console.warn("Failed to compile individual student histories.");
-        }
-      }
-
-      const overallAvgScore = relevantScores.length > 0 
-        ? relevantScores.reduce((acc, curr) => acc + (curr.score || 0), 0) / relevantScores.length 
-        : 0;
-
-      setStats({ sectionsAssigned, totalStudents, avgScore: overallAvgScore });
-
-      const performanceData = fetchedStudents.map(student => {
-        const studentSubmissions = relevantScores.filter(s => s.studentId === student._id);
-        const studentAvg = studentSubmissions.length > 0
-          ? studentSubmissions.reduce((acc, curr) => acc + (curr.score || 0), 0) / studentSubmissions.length
-          : 0;
-          
-        return {
-          _id: student._id,
-          name: `${student.fname || ''} ${student.lname || ''}`.trim() || 'Unknown Student',
-          year: student.yearLevel || 'N/A',
-          section: extractValue(student.section) || 'N/A',
-          score: Math.round(studentAvg)
-        };
+      const fetchedStudents = allUsers.filter(u => {
+        const roleStr = extractValue(u.role);
+        const isStudent = roleStr.toLowerCase() === 'student' || roleStr.toLowerCase() === 'user';
+        const studentSection = normalizeSection(u.section);
+        return isStudent && uniqueSections.has(studentSection);
       });
 
+      const totalStudents = monitoringData.length > 0 ? monitoringData.length : fetchedStudents.length;
+
+      // 3. Calculate Stats directly from monitoring endpoint (Syncs with Web)
+      let totalPercents = 0;
+      let percentCount = 0;
+
+      const performanceData = monitoringData.map(student => {
+          const sAss = student.assessments || student.items || [];
+          let sTotal = 0;
+          let sCount = 0;
+          sAss.forEach(a => {
+              if (a.lastPercent !== undefined && a.lastPercent !== null) {
+                  sTotal += a.lastPercent;
+                  sCount++;
+                  totalPercents += a.lastPercent;
+                  percentCount++;
+              }
+          });
+          return {
+              _id: student.studentId || student._id,
+              name: student.studentName || student.fname || 'Unknown Student',
+              year: student.yearLevel || 'N/A',
+              section: student.section || 'N/A',
+              score: sCount > 0 ? Math.round(sTotal / sCount) : 0
+          };
+      });
+
+      const overallAvgScore = percentCount > 0 ? (totalPercents / percentCount) : 0;
+      setStats({ sectionsAssigned, totalStudents, avgScore: overallAvgScore });
       setPerformance(performanceData);
 
-      // EXTRACT RECENT SUBMISSIONS FOR NOTIFICATIONS
-      if (relevantScores.length > 0) {
-        const recentSubmissions = relevantScores
-          .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-          .slice(0, 5); // Get up to top 5 recent submissions
+      // 4. Generate Notifications & Calendar (UNLIMITED)
+      let plottedEvents = [];
+      let generatedNotifs = [];
 
-        recentSubmissions.forEach(sub => {
-          const student = fetchedStudents.find(s => s._id === sub.studentId);
-          if (student) {
-            generatedNotifs.push({
-              _id: `sub-${sub._id}`, // Stable ID
-              type: 'assessment',
-              message: `${student.fname} submitted an assessment (Score: ${Math.round(sub.score)}%)`,
-              createdAt: sub.createdAt,
-              isRead: false
-            });
-          }
-        });
-      }
-
-      try {
-        const [calRes, dataRes, assessRes] = await Promise.all([
-          api.get('/calendar/events', config).catch(() => ({ data: [] })),
-          api.get('/datasets', config).catch(() => ({ data: [] })),
-          api.get('/assessments', { ...config, params: { instructorId: currentUser._id } }).catch(() => ({ data: [] }))
-        ]);
-
-        const events = calRes.data?.events || calRes.data || [];
-        events.forEach(ev => {
-          if(ev.date) {
-            plottedEvents.push({
-              id: ev._id || Math.random().toString(),
-              title: ev.title,
-              date: new Date(ev.date),
-              type: ev.type || 'event',
-              color: ev.color || '#153c2a'
-            });
-          }
-        });
-
-        if (events.length > 0) {
-          generatedNotifs.push({
-            _id: `cal-${events[0]._id}`, // Stable ID
-            type: 'calendar',
-            message: `New calendar event added: ${events[0].title || 'Update'}`,
-            createdAt: events[0].createdAt || new Date().toISOString(),
-            isRead: false
+      events.forEach(ev => {
+        if(ev.date) {
+          plottedEvents.push({
+            id: ev._id || Math.random().toString(),
+            title: ev.title,
+            date: new Date(ev.date),
+            type: ev.type || 'event',
+            color: ev.color || '#153c2a'
           });
         }
-
-        const assessmentsData = assessRes.data?.data || assessRes.data || [];
-        assessmentsData.forEach(a => {
-          if(a.deadlineAt || a.closesAt) {
-            plottedEvents.push({
-              id: `assess-${a._id}`,
-              title: `${a.title} Due`,
-              date: new Date(a.deadlineAt || a.closesAt),
-              type: 'assessment',
-              color: '#EF4444' 
-            });
-          }
+        generatedNotifs.push({
+          _id: `cal-${ev._id}`,
+          type: 'calendar',
+          message: `New calendar event added: ${ev.title || 'Update'}`,
+          createdAt: ev.createdAt || ev.updatedAt || new Date().toISOString(),
+          isRead: false
         });
+      });
 
-        plottedEvents.sort((a, b) => a.date - b.date);
-        setCalendarEvents(plottedEvents);
-
-        const datasets = dataRes.data?.datasets || dataRes.data?.data || [];
-        if (datasets.length > 0) {
-          generatedNotifs.push({
-            _id: `data-${datasets[0]._id}`, // Stable ID
-            type: 'dataset',
-            message: `New AI Scan added to Dataset Library.`,
-            createdAt: datasets[0].createdAt || new Date().toISOString(),
-            isRead: false
+      assessmentsData.forEach(a => {
+        if(a.deadlineAt || a.closesAt) {
+          plottedEvents.push({
+            id: `assess-${a._id}`,
+            title: `${a.title} Due`,
+            date: new Date(a.deadlineAt || a.closesAt),
+            type: 'assessment',
+            color: '#EF4444' 
           });
         }
-      } catch (err) {
-        console.log("Skipping generic notifications (Endpoints missing)");
-      }
+      });
+      plottedEvents.sort((a, b) => a.date - b.date);
+      setCalendarEvents(plottedEvents);
+
+      datasets.forEach(ds => {
+        generatedNotifs.push({
+          _id: `data-${ds._id}`,
+          type: 'dataset',
+          message: `New AI Scan added to Dataset Library: ${ds.classification || 'Specimen'}`,
+          createdAt: ds.createdAt || ds.updatedAt || new Date().toISOString(),
+          isRead: false
+        });
+      });
+
+      // THE FIX: Robust Submission Notifications matching Web Logic[cite: 6]
+      monitoringData.forEach(student => {
+          const studentName = student.studentName || student.fname || 'A student';
+          const sAss = student.assessments || student.items || [];
+          
+          sAss.forEach(att => {
+              const submitTime = att.lastSubmittedAt || att.lastModifiedAt || att.updatedAt;
+              
+              if (submitTime) {
+                  const matchedAssessment = assessmentsData.find(a => String(a._id) === String(att.assessmentId));
+                  const finalTitle = matchedAssessment?.title || att.assessmentTitle || att.title || 'an assessment';
+                  
+                  generatedNotifs.push({
+                      _id: `sub-${student.studentId || student._id}-${att.assessmentId}-${submitTime}`, 
+                      type: 'assessment_submission',
+                      assessment: matchedAssessment || { _id: att.assessmentId, title: finalTitle },
+                      message: `${studentName} submitted an assessment: ${finalTitle} (Score: ${Math.round(att.lastPercent || att.lastScorePercent || 0)}%)`,
+                      createdAt: submitTime,
+                      isRead: false
+                  });
+              }
+          });
+      });
+
+      // New Students Assigned Notification
+      monitoringData.forEach(student => {
+          generatedNotifs.push({
+             _id: `instructor-student-${student.studentId || student._id}`,
+             type: 'student',
+             message: `New student assigned to your monitoring list: ${student.studentName || student.fname || 'Student'}`,
+             createdAt: student.createdAt || new Date().toISOString(),
+             isRead: false
+          });
+      });
 
       generatedNotifs.push({
-        _id: 'sys-assignment', // Stable ID
+        _id: 'sys-assignment',
         type: 'assignment',
         message: `You are currently handling ${sectionsAssigned} section(s).`,
         createdAt: new Date().toISOString(),
         isRead: false
       });
 
-      generatedNotifs.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      // Sort Newest first and Map reads
+      generatedNotifs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       
-      // Map cross-referenced local read state
-      const mappedNotifs = generatedNotifs.map(n => ({
-          ...n,
-          isRead: readNotifs.includes(n._id)
-      }));
+      const mappedNotifs = generatedNotifs
+          .filter(n => !clearedNotifs.includes(n._id))
+          .map(n => ({
+              ...n,
+              isRead: readNotifs.includes(n._id)
+          }));
+          
       setNotifications(mappedNotifs);
 
     } catch (error) {
@@ -283,48 +272,76 @@ export default function InstructorHomepage({ navigation }) {
     }, [])
   );
 
-  // THE FIX: Mark individual notification as read
   const handleMarkAsRead = async (id) => {
     try {
-        const raw = await AsyncStorage.getItem('read_notifs');
+        const raw = await AsyncStorage.getItem('read_notifs_instructor');
         const readNotifs = raw ? JSON.parse(raw) : [];
         if (!readNotifs.includes(id)) {
             readNotifs.push(id);
-            await AsyncStorage.setItem('read_notifs', JSON.stringify(readNotifs));
+            await AsyncStorage.setItem('read_notifs_instructor', JSON.stringify(readNotifs));
         }
         setNotifications(prev => prev.map(n => n._id === id ? { ...n, isRead: true } : n));
     } catch (e) {}
   };
 
-  // THE FIX: Mark all notifications as read
   const handleMarkAllAsRead = async () => {
     try {
-        const raw = await AsyncStorage.getItem('read_notifs');
+        const raw = await AsyncStorage.getItem('read_notifs_instructor');
         const readNotifs = raw ? JSON.parse(raw) : [];
         notifications.forEach(n => {
             if (!readNotifs.includes(n._id)) readNotifs.push(n._id);
         });
-        await AsyncStorage.setItem('read_notifs', JSON.stringify(readNotifs));
+        await AsyncStorage.setItem('read_notifs_instructor', JSON.stringify(readNotifs));
         setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
         toastSuccess('All notifications marked as read.');
     } catch (e) {}
   };
 
+  const handleClearNotifications = async () => {
+    try {
+        const raw = await AsyncStorage.getItem('cleared_notifs_instructor');
+        const cleared = raw ? JSON.parse(raw) : [];
+        notifications.forEach(n => {
+            if (!cleared.includes(n._id)) cleared.push(n._id);
+        });
+        await AsyncStorage.setItem('cleared_notifs_instructor', JSON.stringify(cleared));
+        setNotifications([]);
+        toastSuccess('All notifications cleared.');
+    } catch (e) {
+        console.error('Failed to clear notifs', e);
+    }
+  };
+
   const renderNotifItem = ({ item }) => {
-    // INTERACTIVE ROUTING FOR INSTRUCTOR
+    // THE FIX: Exact Redirection Routes
     const handlePress = async () => {
-        await handleMarkAsRead(item._id); // Clear the red dot
+        await handleMarkAsRead(item._id); 
         setShowNotifications(false);
-        if (item.type === 'dataset') navigation.navigate('DatasetLibrary');
-        else if (item.type === 'calendar') setShowCalendar(true);
-        else if (item.type === 'assessment' || item.type === 'assignment') navigation.navigate('StudentMonitoring');
+        
+        if (item.type === 'dataset') {
+            navigation.navigate('DatasetLibrary');
+        } else if (item.type === 'calendar') {
+            setShowCalendar(true);
+        } else if (item.type === 'assessment_submission') {
+            if (item.assessment && item.assessment._id) {
+                navigation.navigate('AssessmentQuestionsView', { 
+                    assessment: item.assessment, 
+                    quiz: item.assessment, 
+                    quizId: item.assessment._id 
+                });
+            } else {
+                navigation.navigate('StudentMonitoring');
+            }
+        } else if (item.type === 'assignment' || item.type === 'student') {
+            navigation.navigate('StudentMonitoring');
+        }
     };
 
     return (
         <TouchableOpacity style={localStyles.notifItem} onPress={handlePress} activeOpacity={0.7}>
             <View style={[localStyles.notifIconBox, !item.isRead && { backgroundColor: '#C5DEC9' }]}>
                 <Ionicons 
-                    name={item.type === 'dataset' ? 'cube' : item.type === 'calendar' ? 'calendar' : item.type === 'assessment' ? 'clipboard' : 'notifications'} 
+                    name={item.type === 'dataset' ? 'cube' : item.type === 'calendar' ? 'calendar' : item.type === 'assessment_submission' ? 'clipboard' : 'people'} 
                     size={20} 
                     color="#153c2a" 
                 />
@@ -350,7 +367,6 @@ export default function InstructorHomepage({ navigation }) {
     </View>
   ), []);
 
-  // Calendar Logic
   const handlePrevMonth = () => {
     if (calendarMonth === 0) {
       setCalendarMonth(11);
@@ -627,7 +643,7 @@ export default function InstructorHomepage({ navigation }) {
 
       </ScrollView>
 
-      {/* THE FIX: INSTRUCTOR NOTIFICATIONS MODAL (WITH MARK ALL AS READ) */}
+      {/* THE FIX: Updated Modal to include the Clear Notification button */}
       <Modal visible={showNotifications} transparent animationType="fade" onRequestClose={() => setShowNotifications(false)}>
         <View style={localStyles.modalOverlay}>
           <View style={localStyles.modalCard}>
@@ -635,6 +651,9 @@ export default function InstructorHomepage({ navigation }) {
               <Text style={localStyles.modalTitle}>Notifications</Text>
               
               <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <TouchableOpacity onPress={handleClearNotifications} style={localStyles.closeBtn}>
+                    <Ionicons name="trash-outline" size={24} color="#EF4444" />
+                  </TouchableOpacity>
                   <TouchableOpacity onPress={handleMarkAllAsRead} style={localStyles.closeBtn}>
                     <Ionicons name="checkmark-done" size={24} color="#153c2a" />
                   </TouchableOpacity>

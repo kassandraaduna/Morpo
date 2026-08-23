@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useContext, useCallback } from 'react';
+import React, { useEffect, useState, useContext } from 'react';
 import { View, Text, TextInput, ScrollView, TouchableOpacity, ActivityIndicator, Image, StyleSheet, Platform, StatusBar, KeyboardAvoidingView, Modal } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
@@ -6,6 +6,9 @@ import * as ImagePicker from 'expo-image-picker';
 import { toastError, toastSuccess } from './src/components/ToastMsg';
 import { ThemeContext } from './src/context/ThemeContext';
 import api, { toAbsUrl } from './src/services/api';
+
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const DAYS_OF_WEEK = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 
 const getInitials = (fname, lname) => {
     const f = fname ? fname.charAt(0).toUpperCase() : '';
@@ -17,6 +20,55 @@ const getAvatarUri = (url, u) => {
     if (!url) return null;
     if (url.startsWith('data:image') || url.startsWith('file:')) return url;
     return `${toAbsUrl(url)}?v=${u?.updatedAt || '1'}`;
+};
+
+const Field = ({ field, value, editable, placeholder, icon, theme, errors, onChange, onPress }) => {
+    const [isFocused, setIsFocused] = useState(false);
+
+    const FieldContent = (
+        <View style={[localStyles.inputWrapper, { 
+            backgroundColor: theme.card, 
+            borderColor: editable ? (isFocused ? '#153c2a' : '#E2E8F0') : 'transparent', 
+            borderWidth: editable ? 1.5 : 0 
+        }]}>
+            <Ionicons name={icon} size={18} color="#94A3B8" style={localStyles.inputIcon} />
+            {onPress ? (
+                <Text style={[localStyles.input, { color: value ? (editable ? theme.text : theme.subText) : '#94A3B8', textAlignVertical: 'center', alignSelf: 'center' }]}>
+                    {value || placeholder}
+                </Text>
+            ) : (
+                <TextInput
+                    style={[localStyles.input, { color: editable ? theme.text : theme.subText }]}
+                    value={String(value || '')}
+                    editable={editable}
+                    placeholder={placeholder}
+                    placeholderTextColor="#94A3B8"
+                    onChangeText={(v) => onChange(field, v)}
+                    onFocus={() => setIsFocused(true)}
+                    onBlur={() => setIsFocused(false)}
+                />
+            )}
+        </View>
+    );
+
+    return (
+        <View style={localStyles.fieldContainer}>
+            <Text style={[localStyles.fieldLabel, { color: theme.text }]}>{placeholder}</Text>
+            {onPress && editable ? (
+                <TouchableOpacity 
+                    activeOpacity={0.8} 
+                    onPress={onPress}
+                    onPressIn={() => setIsFocused(true)}
+                    onPressOut={() => setIsFocused(false)}
+                >
+                    {FieldContent}
+                </TouchableOpacity>
+            ) : (
+                FieldContent
+            )}
+            {errors[field] && <Text style={localStyles.errorText}>{errors[field]}</Text>}
+        </View>
+    );
 };
 
 export default function EditProfile({ navigation }) {
@@ -32,6 +84,13 @@ export default function EditProfile({ navigation }) {
 
     const [editMode, setEditMode] = useState(false);
     const [loading, setLoading] = useState(false);
+
+    // Advanced Calendar States
+    const [showDatePicker, setShowDatePicker] = useState(false);
+    const [calendarMode, setCalendarMode] = useState('days'); 
+    const [calendarYear, setCalendarYear] = useState(2004);
+    const [calendarMonth, setCalendarMonth] = useState(0); 
+    const [selectedDay, setSelectedDay] = useState(1);
 
     const [modalConfig, setModalConfig] = useState({
         visible: false,
@@ -89,8 +148,8 @@ export default function EditProfile({ navigation }) {
             mediaTypes: ImagePicker.MediaTypeOptions.Images,
             allowsEditing: true,
             aspect: [1, 1],
-            quality: 0.3,   // Compress heavily for database limits
-            base64: true,   // GUARANTEES SYNC: Encodes the image as a string for JSON payload
+            quality: 0.3,   
+            base64: true,   
         });
 
         if (!result.canceled) {
@@ -128,7 +187,6 @@ export default function EditProfile({ navigation }) {
             try {
                 setLoading(true);
                 
-                // Send standard JSON payload with the Base64 image
                 const payload = {
                     fname: form.fname || '',
                     lname: form.lname || '',
@@ -140,12 +198,11 @@ export default function EditProfile({ navigation }) {
                 };
 
                 if (avatar !== originalAvatar) {
-                    payload.avatar = avatar || ''; // Empty string instructs backend to remove it
+                    payload.avatar = avatar || ''; 
                 }
 
                 await api.put(`/meds/${user._id}`, payload);
 
-                // Fetch fresh DB data to update local states and ensure caching timestamp changes
                 const freshUserRes = await api.get(`/meds/${user._id}`);
                 const updatedUser = freshUserRes.data?.data || freshUserRes.data;
 
@@ -172,23 +229,120 @@ export default function EditProfile({ navigation }) {
         }
     };
 
-    const Field = ({ field, value, editable, placeholder, icon }) => (
-        <View style={localStyles.fieldContainer}>
-            <Text style={[localStyles.fieldLabel, { color: theme.text }]}>{placeholder}</Text>
-            <View style={[localStyles.inputWrapper, { backgroundColor: theme.card, borderColor: editable ? '#10b981' : '#E2E8F0', borderWidth: editable ? 1 : 0 }]}>
-                <Ionicons name={icon} size={18} color="#94A3B8" style={localStyles.inputIcon} />
-                <TextInput
-                    style={[localStyles.input, { color: editable ? theme.text : theme.subText }]}
-                    value={String(value || '')}
-                    editable={editable}
-                    placeholder={placeholder}
-                    placeholderTextColor="#94A3B8"
-                    onChangeText={(v) => onChange(field, v)}
-                />
-            </View>
-            {errors[field] && <Text style={localStyles.errorText}>{errors[field]}</Text>}
-        </View>
-    );
+    // ─── CALENDAR LOGIC ──────────────────────────────────────────────
+    const openDatePicker = () => {
+        if (form.dob) {
+            const [y, m, d] = form.dob.slice(0, 10).split('-');
+            if (y && m && d) {
+                setCalendarYear(parseInt(y, 10));
+                setCalendarMonth(parseInt(m, 10) - 1);
+                setSelectedDay(parseInt(d, 10));
+            }
+        }
+        setShowDatePicker(true);
+    };
+
+    const getDaysInMonth = (year, month) => new Date(year, month + 1, 0).getDate();
+    const getFirstDayOfMonth = (year, month) => new Date(year, month, 1).getDay();
+
+    const handlePrevMonth = () => {
+        if (calendarMonth === 0) {
+            setCalendarMonth(11);
+            setCalendarYear((y) => y - 1);
+        } else {
+            setCalendarMonth((m) => m - 1);
+        }
+    };
+
+    const handleNextMonth = () => {
+        if (calendarMonth === 11) {
+            setCalendarMonth(0);
+            setCalendarYear((y) => y + 1);
+        } else {
+            setCalendarMonth((m) => m + 1);
+        }
+    };
+
+    const confirmSelectedDate = () => {
+        const formatted = `${calendarYear}-${String(calendarMonth + 1).padStart(2, '0')}-${String(selectedDay).padStart(2, '0')}`;
+        onChange('dob', formatted);
+        setShowDatePicker(false);
+        setCalendarMode('days');
+    };
+
+    const renderCalendarGrid = () => {
+        if (calendarMode === 'years') {
+            const currentYear = new Date().getFullYear();
+            const years = [];
+            for (let y = currentYear - 80; y <= currentYear; y++) {
+                years.push(y);
+            }
+            return (
+                <View style={localStyles.yearGridContainer}>
+                    {years.reverse().map((yr) => (
+                        <TouchableOpacity
+                            key={yr}
+                            style={[localStyles.yearCell, calendarYear === yr && localStyles.cellSelected]}
+                            onPress={() => {
+                                setCalendarYear(yr);
+                                setCalendarMode('days');
+                            }}
+                        >
+                            <Text style={[localStyles.yearText, calendarYear === yr && localStyles.cellTextSelected]}>
+                                {yr}
+                            </Text>
+                        </TouchableOpacity>
+                    ))}
+                </View>
+            );
+        }
+
+        if (calendarMode === 'months') {
+            return (
+                <View style={localStyles.monthGridContainer}>
+                    {MONTH_NAMES.map((mName, mIdx) => (
+                        <TouchableOpacity
+                            key={mName}
+                            style={[localStyles.monthCell, calendarMonth === mIdx && localStyles.cellSelected]}
+                            onPress={() => {
+                                setCalendarMonth(mIdx);
+                                setCalendarMode('days');
+                            }}
+                        >
+                            <Text style={[localStyles.monthText, calendarMonth === mIdx && localStyles.cellTextSelected]}>
+                                {mName.slice(0, 3)}
+                            </Text>
+                        </TouchableOpacity>
+                    ))}
+                </View>
+            );
+        }
+
+        const totalDays = getDaysInMonth(calendarYear, calendarMonth);
+        const firstDayIndex = getFirstDayOfMonth(calendarYear, calendarMonth);
+        const gridItems = [];
+
+        for (let i = 0; i < firstDayIndex; i++) {
+            gridItems.push(<View key={`empty-${i}`} style={localStyles.dayCell} />);
+        }
+
+        for (let d = 1; d <= totalDays; d++) {
+            const isSelected = selectedDay === d;
+            gridItems.push(
+                <TouchableOpacity
+                    key={`day-${d}`}
+                    style={[localStyles.dayCell, isSelected && localStyles.cellSelected]}
+                    onPress={() => setSelectedDay(d)}
+                >
+                    <Text style={[localStyles.dayText, isSelected && localStyles.cellTextSelected]}>
+                        {d}
+                    </Text>
+                </TouchableOpacity>
+            );
+        }
+
+        return <View style={localStyles.daysGridContainer}>{gridItems}</View>;
+    };
 
     return (
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1, backgroundColor: theme.bg }}>
@@ -242,13 +396,23 @@ export default function EditProfile({ navigation }) {
                 </View>
 
                 <View style={localStyles.formContainer}>
-                    <Field field="fname" value={form.fname} editable={editMode} placeholder="First Name" icon="person-outline" />
-                    <Field field="lname" value={form.lname} editable={editMode} placeholder="Last Name" icon="person-outline" />
-                    <Field field="username" value={form.username} editable={editMode} placeholder="Username" icon="at-outline" />
-                    <Field field="email" value={form.email} editable={editMode} placeholder="Email Address" icon="mail-outline" />
-                    <Field field="number" value={form.number} editable={editMode} placeholder="Mobile Number" icon="call-outline" />
-                    <Field field="gender" value={form.gender} editable={editMode} placeholder="Gender" icon="male-female-outline" />
-                    <Field field="dob" value={form.dob?.slice?.(0, 10)} editable={editMode} placeholder="Date of Birth (YYYY-MM-DD)" icon="calendar-outline" />
+                    <Field field="fname" value={form.fname} editable={editMode} placeholder="First Name" icon="person-outline" theme={theme} errors={errors} onChange={onChange} />
+                    <Field field="lname" value={form.lname} editable={editMode} placeholder="Last Name" icon="person-outline" theme={theme} errors={errors} onChange={onChange} />
+                    <Field field="username" value={form.username} editable={editMode} placeholder="Username" icon="at-outline" theme={theme} errors={errors} onChange={onChange} />
+                    <Field field="email" value={form.email} editable={editMode} placeholder="Email Address" icon="mail-outline" theme={theme} errors={errors} onChange={onChange} />
+                    <Field field="number" value={form.number} editable={editMode} placeholder="Mobile Number" icon="call-outline" theme={theme} errors={errors} onChange={onChange} />
+                    <Field field="gender" value={form.gender} editable={editMode} placeholder="Gender" icon="male-female-outline" theme={theme} errors={errors} onChange={onChange} />
+                    <Field 
+                        field="dob" 
+                        value={form.dob?.slice?.(0, 10)} 
+                        editable={editMode} 
+                        placeholder="Date of Birth" 
+                        icon="calendar-outline" 
+                        theme={theme} 
+                        errors={errors} 
+                        onChange={onChange}
+                        onPress={openDatePicker} 
+                    />
                 </View>
 
                 {editMode && (
@@ -283,13 +447,92 @@ export default function EditProfile({ navigation }) {
                 </View>
             </Modal>
 
+            <Modal
+                visible={showDatePicker}
+                transparent
+                animationType="fade"
+                onRequestClose={() => {
+                    setShowDatePicker(false);
+                    setCalendarMode('days');
+                }}
+            >
+                <View style={localStyles.modalOverlay}>
+                    <View style={localStyles.calendarCard}>
+                        <View style={localStyles.calendarHeader}>
+                            {calendarMode === 'days' ? (
+                                <>
+                                    <TouchableOpacity onPress={handlePrevMonth} style={localStyles.navBtn}>
+                                        <Ionicons name="chevron-back" size={20} color="#153c2a" />
+                                    </TouchableOpacity>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                        <TouchableOpacity onPress={() => setCalendarMode('months')}>
+                                            <Text style={localStyles.monthYearText}>{MONTH_NAMES[calendarMonth]}</Text>
+                                        </TouchableOpacity>
+                                        <TouchableOpacity onPress={() => setCalendarMode('years')}>
+                                            <Text style={localStyles.monthYearText}>{calendarYear}</Text>
+                                        </TouchableOpacity>
+                                    </View>
+                                    <TouchableOpacity onPress={handleNextMonth} style={localStyles.navBtn}>
+                                        <Ionicons name="chevron-forward" size={20} color="#153c2a" />
+                                    </TouchableOpacity>
+                                </>
+                            ) : (
+                                <TouchableOpacity
+                                    style={localStyles.backToDaysBtn}
+                                    onPress={() => setCalendarMode('days')}
+                                >
+                                    <Ionicons name="arrow-back" size={16} color="#153c2a" />
+                                    <Text style={localStyles.backToDaysText}>Back to Calendar</Text>
+                                </TouchableOpacity>
+                            )}
+                        </View>
+
+                        {calendarMode === 'days' && (
+                            <View style={localStyles.daysOfWeekRow}>
+                                {DAYS_OF_WEEK.map((day) => (
+                                    <Text key={day} style={localStyles.dayOfWeekText}>
+                                        {day}
+                                    </Text>
+                                ))}
+                            </View>
+                        )}
+
+                        <ScrollView
+                            style={{ maxHeight: 290 }}
+                            showsVerticalScrollIndicator={false}
+                            contentContainerStyle={calendarMode !== 'days' ? { paddingVertical: 10 } : undefined}
+                        >
+                            {renderCalendarGrid()}
+                        </ScrollView>
+
+                        <View style={localStyles.calendarActionRow}>
+                            <TouchableOpacity
+                                style={[localStyles.calendarBtn, localStyles.calendarBtnCancel]}
+                                onPress={() => {
+                                    setShowDatePicker(false);
+                                    setCalendarMode('days');
+                                }}
+                            >
+                                <Text style={localStyles.calendarBtnCancelText}>Cancel</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[localStyles.calendarBtn, localStyles.calendarBtnConfirm]}
+                                onPress={confirmSelectedDate}
+                            >
+                                <Text style={localStyles.calendarBtnConfirmText}>Confirm</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
         </KeyboardAvoidingView>
     );
 }
 
 const localStyles = StyleSheet.create({
     header: { paddingHorizontal: 20, paddingTop: Platform.OS === 'ios' ? 60 : 40, paddingBottom: 25, borderBottomLeftRadius: 10, borderBottomRightRadius: 10, elevation: 4, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 8 },
-    headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 20, position: 'relative' },
+    headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 5, position: 'relative' },
     backBtn: { position: 'absolute', left: 0, zIndex: 10 },
     rightBtn: { position: 'absolute', right: 0, zIndex: 10 },
     headerTextContainer: { alignItems: 'center', paddingHorizontal: 35 },
@@ -314,6 +557,7 @@ const localStyles = StyleSheet.create({
     errorText: { color: '#EF4444', fontSize: 13, marginTop: 4, marginLeft: 4, fontWeight: 'bold' },
     saveBtn: { backgroundColor: '#153c2a', height: 55, borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginTop: 15, elevation: 3, shadowColor: '#153c2a', shadowOpacity: 0.3, shadowRadius: 8 },
     saveBtnText: { color: '#fff', fontSize: 15, fontWeight: '900', letterSpacing: 0.5 },
+
     modalOverlay: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.6)', justifyContent: 'center', alignItems: 'center', padding: 20 },
     modalContainer: { backgroundColor: '#FFF', width: '90%', borderRadius: 10, padding: 25, alignItems: 'center', elevation: 10 },
     modalTitle: { fontSize: 20, fontWeight: '800', color: '#153c2a', marginBottom: 10 },
@@ -325,4 +569,43 @@ const localStyles = StyleSheet.create({
     confirmSaveBtn: { backgroundColor: '#153c2a' },
     confirmDangerBtn: { backgroundColor: '#EF4444' },
     confirmBtnText: { color: '#FFF', fontWeight: '700', fontSize: 15 },
+
+    calendarCard: { backgroundColor: '#FFFFFF', borderRadius: 20, padding: 20, width: '100%', maxWidth: 400, elevation: 12, shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 12, shadowOffset: { width: 0, height: 5 } },
+    calendarHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+    monthYearText: { fontSize: 15, fontWeight: '900', color: '#153c2a', paddingHorizontal: 8, paddingVertical: 4, backgroundColor: '#E7F5EE', borderRadius: 8 },
+    navBtn: { padding: 8, backgroundColor: '#E7F5EE', borderRadius: 10 },
+    backToDaysBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 6, paddingHorizontal: 10, backgroundColor: '#E7F5EE', borderRadius: 8 },
+    backToDaysText: { fontSize: 13, fontWeight: '800', color: '#153c2a' },
+    daysOfWeekRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
+    dayOfWeekText: { 
+        width: '14.2%', 
+        textAlign: 'center', 
+        fontSize: 13, 
+        fontWeight: '800', 
+        color: '#64748B' 
+    },
+    daysGridContainer: { flexDirection: 'row', flexWrap: 'wrap' },
+    dayCell: { 
+        width: '14.2%', 
+        height: 40, 
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        marginVertical: 2, 
+        borderRadius: 10 
+    },
+    cellSelected: { backgroundColor: '#153c2a' },
+    dayText: { fontSize: 14, fontWeight: '700', color: '#0F172A' },
+    cellTextSelected: { color: '#FFFFFF', fontWeight: '900' },
+    yearGridContainer: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 8 },
+    yearCell: { width: '30%', height: 44, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F8FAFC', borderRadius: 10, borderWidth: 1, borderColor: '#E2E8F0' },
+    yearText: { fontSize: 14, fontWeight: '800', color: '#1E293B' },
+    monthGridContainer: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 10 },
+    monthCell: { width: '30%', height: 50, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F8FAFC', borderRadius: 10, borderWidth: 1, borderColor: '#E2E8F0' },
+    monthText: { fontSize: 14, fontWeight: '800', color: '#1E293B' },
+    calendarActionRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 20, gap: 12 },
+    calendarBtn: { flex: 1, height: 46, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+    calendarBtnCancel: { backgroundColor: '#F1F5F9' },
+    calendarBtnConfirm: { backgroundColor: '#153c2a' },
+    calendarBtnCancelText: { color: '#475569', fontSize: 14, fontWeight: '800' },
+    calendarBtnConfirmText: { color: '#FFFFFF', fontSize: 14, fontWeight: '800' }
 });

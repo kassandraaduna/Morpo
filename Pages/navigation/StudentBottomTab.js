@@ -35,11 +35,11 @@ export default function StudentBottomTab() {
         },
         tabBarIcon: ({ focused, color }) => {
           let icon;
-          if (route.name === 'Home') icon = focused ? 'home' : 'home-outline';
-          if (route.name === 'Learn') icon = focused ? 'book' : 'book-outline';
-          if (route.name === 'Scan') icon = focused ? 'scan' : 'scan-outline';
-          if (route.name === 'Assessments') icon = focused ? 'clipboard' : 'clipboard-outline';
-          if (route.name === 'Profile') icon = focused ? 'person' : 'person-outline';
+          if (route.name === 'Home') icon = focused ? 'home' : 'home';
+          if (route.name === 'Learn') icon = focused ? 'book' : 'book';
+          if (route.name === 'Scan') icon = focused ? 'scan' : 'scan';
+          if (route.name === 'Assessments') icon = focused ? 'clipboard' : 'clipboard';
+          if (route.name === 'Profile') icon = focused ? 'person' : 'person';
 
           return <Ionicons name={icon} size={24} color={color} />;
         },

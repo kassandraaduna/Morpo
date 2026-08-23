@@ -65,8 +65,7 @@ export default function StudentHomepage({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [bookmarks, setBookmarks] = useState({ lessons: [], models: [], scans: [] });
   const [usersMap, setUsersMap] = useState({});
-  
-  // Modals & Calendar States
+
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [showCalendar, setShowCalendar] = useState(false);
@@ -108,10 +107,10 @@ export default function StudentHomepage({ navigation }) {
             } catch (err) {
                 console.log("Failed to sync latest user data:", err);
             }
-            
+
             const [
                 usersRes, syRes, lessonsRes, remedialRes, scansRes, bookmarksRaw, calRes, assessRes, 
-                officialHistoryRes, unifiedHistoryRes, recentLessonsRaw, readNotifsRaw
+                officialHistoryRes, unifiedHistoryRes, recentLessonsRaw, readNotifsRaw, clearedNotifsRaw
             ] = await Promise.all([
                 api.get('/admin/users', config).catch(() => api.get('/getMed', config).catch(() => ({ data: [] }))),
                 api.get('/admin/academic-settings/school-years', config).catch(() => ({ data: {} })),
@@ -124,66 +123,68 @@ export default function StudentHomepage({ navigation }) {
                 api.get(`/assessments/history/${currentUser._id}?_t=${Date.now()}`, config).catch(() => ({ data: [] })),
                 api.get(`/student/${currentUser._id}/assessment-history?_t=${Date.now()}`, config).catch(() => ({ data: [] })),
                 AsyncStorage.getItem(`recent_lessons_${currentUser._id}`).catch(() => null),
-                AsyncStorage.getItem('read_notifs').catch(() => null) // THE FIX: Fetch read status
+                AsyncStorage.getItem('read_notifs').catch(() => null),
+                AsyncStorage.getItem('cleared_notifs').catch(() => null)
             ]);
 
             const readNotifs = readNotifsRaw ? JSON.parse(readNotifsRaw) : [];
+            const clearedNotifs = clearedNotifsRaw ? JSON.parse(clearedNotifsRaw) : [];
             if (bookmarksRaw) setBookmarks(JSON.parse(bookmarksRaw));
-            
+
+            const rawScans = extractArray(scansRes.data);
+            setScans(rawScans);
+
             let allOfficialAttempts = [];
+            const seenAttemptIds = new Set();
+
+            const registerAttempt = (att, defaultTitle) => {
+                if (!att) return;
+                const id = String(att._id || '');
+                if (!id || seenAttemptIds.has(id)) return;
+                seenAttemptIds.add(id);
+
+                const isPractice = att.isPracticeOnly || att.assessment?.isPracticeOnly;
+                if (!isPractice && att.score !== undefined && att.score !== null) {
+                    allOfficialAttempts.push({
+                        _id: id,
+                        assessmentId: att.assessmentId?._id || att.assessmentId || att.assessment?._id || att.assessment || att._id,
+                        title: att.assessment?.title || att.assessmentId?.title || att.title || defaultTitle || 'Assessment',
+                        score: att.score,
+                        total: att.total || 100,
+                        percent: att.percent !== undefined ? att.percent : Math.round((att.score / (att.total || 100)) * 100),
+                        feedback: att.professorFeedback || att.feedback,
+                        scorePending: Boolean(att.scorePending), // Syncs with web grade states
+                        timestamp: new Date(att.updatedAt || att.submittedAt || att.createdAt || 0).getTime()
+                    });
+                }
+            };
 
             const allAssessments = extractArray(assessRes.data);
             allAssessments.forEach(a => {
-                if (!a.isPracticeOnly && a.latestAttempt && a.latestAttempt.score !== undefined) {
-                    allOfficialAttempts.push({
-                        _id: a.latestAttempt._id || a._id, // Store ID for notification tracking
-                        title: a.title || 'Assessment',
-                        score: a.latestAttempt.score,
-                        total: a.latestAttempt.total || a.questions?.length || 10,
-                        percent: a.latestAttempt.percent,
-                        feedback: a.latestAttempt.feedback,
-                        timestamp: new Date(a.latestAttempt.submittedAt || a.latestAttempt.createdAt || a.latestAttempt.updatedAt || 0).getTime()
-                    });
+                if (!a.isPracticeOnly && a.latestAttempt) {
+                    registerAttempt({ ...a.latestAttempt, assessmentId: a._id }, a.title);
                 }
             });
 
             const extractFromHistory = (historyData) => {
                 const historyArray = extractArray(historyData?.history || historyData?.data || historyData);
-                historyArray.forEach(att => {
-                    const isPractice = att.isPracticeOnly || att.assessment?.isPracticeOnly;
-                    if (!isPractice && att.score !== undefined) {
-                        allOfficialAttempts.push({
-                            _id: att._id || att.assessment?._id,
-                            title: att.assessment?.title || att.title || 'Assessment',
-                            score: att.score,
-                            total: att.total || 10,
-                            percent: att.percent,
-                            feedback: att.feedback,
-                            timestamp: new Date(att.submittedAt || att.createdAt || att.updatedAt || 0).getTime()
-                        });
-                    }
-                });
+                historyArray.forEach(att => registerAttempt(att));
             };
 
             extractFromHistory(officialHistoryRes.data);
             extractFromHistory(unifiedHistoryRes.data);
 
+            allOfficialAttempts.sort((a, b) => b.timestamp - a.timestamp);
+
             if (allOfficialAttempts.length > 0) {
-                allOfficialAttempts.sort((a, b) => b.timestamp - a.timestamp);
                 const latest = allOfficialAttempts[0];
-
-                let percent = latest.percent;
-                if (percent === undefined) {
-                     percent = latest.total > 0 ? Math.round((latest.score / latest.total) * 100) : 0;
-                }
-
                 setLatestQuiz({
                     title: latest.title,
                     submittedAt: new Date(latest.timestamp || Date.now()).toISOString(),
                     score: latest.score,
                     total: latest.total,
-                    percent: percent,
-                    feedback: latest.feedback || (percent >= 70 ? 'Passed' : 'Needs Review')
+                    percent: latest.percent,
+                    feedback: latest.feedback || (latest.percent >= 70 ? 'Passed' : 'Needs Review')
                 });
             } else {
                 setLatestQuiz(null);
@@ -267,78 +268,75 @@ export default function StudentHomepage({ navigation }) {
             });
 
             setSuggestedLessons(combinedLessons); 
-            
-            const rawScans = extractArray(scansRes.data);
-            setScans(rawScans);
-            
-            // =========================================================
-            // GENERATE STUDENT NOTIFICATIONS DYNAMICALLY (STABLE IDS)
-            // =========================================================
+
             let generatedNotifs = [];
 
-            if (allOfficialAttempts.length > 0) {
-                const latest = allOfficialAttempts[0];
-                generatedNotifs.push({
-                    _id: `score-${latest._id}`, // Stable ID
-                    type: 'assessment',
-                    message: `Score received: ${latest.score} on ${latest.title}`,
-                    createdAt: new Date(latest.timestamp).toISOString(),
-                    isRead: false
-                });
-            }
+            allOfficialAttempts.forEach(latest => {
+                if (!latest.scorePending) {
+                    generatedNotifs.push({
+                        _id: `score-${latest._id}-${latest.score}`,
+                        type: 'assessment_score',
+                        assessmentId: latest.assessmentId,
+                        submissionId: latest._id,
+                        message: `Score received: ${latest.score}/${latest.total} (${latest.percent}%) on ${latest.title}`,
+                        createdAt: new Date(latest.timestamp).toISOString(),
+                        isRead: false
+                    });
+                }
+            });
 
-            if (rawScans.length > 0) {
+            rawScans.forEach(scan => {
                 generatedNotifs.push({
-                    _id: `scan-${rawScans[0]._id}`, // Stable ID
+                    _id: `scan-${scan._id}`,
                     type: 'scan',
-                    message: `New AI scan saved: ${rawScans[0].classification || 'Unknown'}`,
-                    createdAt: rawScans[0].createdAt || new Date().toISOString(),
+                    message: `New AI scan saved: ${scan.classification || 'Unknown'}`,
+                    createdAt: scan.createdAt || new Date().toISOString(),
                     isRead: false
                 });
-            }
+            });
 
-            if (plottedEvents.length > 0) {
+            plottedEvents.forEach(event => {
                 generatedNotifs.push({
-                    _id: `cal-${plottedEvents[0].id}`, // Stable ID
+                    _id: `cal-${event.id}`,
                     type: 'calendar',
-                    message: `Upcoming event: ${plottedEvents[0].title}`,
-                    createdAt: new Date().toISOString(),
+                    message: `Upcoming event: ${event.title}`,
+                    createdAt: new Date(event.date || Date.now()).toISOString(),
                     isRead: false
                 });
-            }
+            });
 
             const officialAssessments = extractArray(assessRes.data).filter(a => a.status !== 'draft' && !a.isArchived);
-            if (officialAssessments.length > 0) {
-                const newestAss = [...officialAssessments].sort((a,b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())[0];
+            officialAssessments.forEach(ass => {
                 generatedNotifs.push({
-                    _id: `new-ass-${newestAss._id}`, // Stable ID
-                    type: 'assessment',
-                    message: `New assessment assigned: ${newestAss.title}`,
-                    createdAt: newestAss.createdAt || newestAss.updatedAt || new Date().toISOString(),
+                    _id: `new-ass-${ass._id}`,
+                    type: 'new_assessment',
+                    assessmentId: ass._id,
+                    message: `New assessment assigned: ${ass.title}`,
+                    createdAt: ass.createdAt || ass.updatedAt || new Date().toISOString(),
                     isRead: false
                 });
-            }
+            });
 
-            if (combinedLessons.length > 0) {
-                const sortedByNew = [...combinedLessons].sort((a,b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
-                const newestLesson = sortedByNew[0];
+            combinedLessons.forEach(lesson => {
                 generatedNotifs.push({
-                    _id: `lesson-${newestLesson._id}`, // Stable ID
-                    type: 'lesson',
-                    message: `New material available: ${newestLesson.title}`,
-                    createdAt: newestLesson.createdAt || newestLesson.updatedAt || new Date().toISOString(),
+                    _id: `lesson-${lesson._id}`,
+                    type: 'new_lesson',
+                    lessonId: lesson._id,
+                    message: `New material available: ${lesson.title}`,
+                    createdAt: lesson.createdAt || lesson.updatedAt || new Date().toISOString(),
                     isRead: false
                 });
-            }
+            });
 
             generatedNotifs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-            
-            // THE FIX: Cross-reference with AsyncStorage to mark existing reads
-            const mappedNotifs = generatedNotifs.map(n => ({
-                ...n,
-                isRead: readNotifs.includes(n._id)
-            }));
-            
+
+            const mappedNotifs = generatedNotifs
+                .filter(n => !clearedNotifs.includes(n._id))
+                .map(n => ({
+                    ...n,
+                    isRead: readNotifs.includes(n._id)
+                }));
+
             setNotifications(mappedNotifs);
 
         } catch (error) {
@@ -346,7 +344,7 @@ export default function StudentHomepage({ navigation }) {
         } finally {
             setLoading(false);
         }
-    };
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -354,7 +352,6 @@ export default function StudentHomepage({ navigation }) {
     }, [])
   );
 
-  // THE FIX: Mark individual notification as read
   const handleMarkAsRead = async (id) => {
     try {
         const raw = await AsyncStorage.getItem('read_notifs');
@@ -369,7 +366,6 @@ export default function StudentHomepage({ navigation }) {
     }
   };
 
-  // THE FIX: Mark all notifications as read
   const handleMarkAllAsRead = async () => {
     try {
         const raw = await AsyncStorage.getItem('read_notifs');
@@ -382,6 +378,21 @@ export default function StudentHomepage({ navigation }) {
         toastSuccess('All notifications marked as read.');
     } catch (e) {
         console.error('Failed to mark all read', e);
+    }
+  };
+
+  const handleClearNotifications = async () => {
+    try {
+        const raw = await AsyncStorage.getItem('cleared_notifs');
+        const cleared = raw ? JSON.parse(raw) : [];
+        notifications.forEach(n => {
+            if (!cleared.includes(n._id)) cleared.push(n._id);
+        });
+        await AsyncStorage.setItem('cleared_notifs', JSON.stringify(cleared));
+        setNotifications([]);
+        toastSuccess('All notifications cleared.');
+    } catch (e) {
+        console.error('Failed to clear notifs', e);
     }
   };
 
@@ -444,15 +455,24 @@ export default function StudentHomepage({ navigation }) {
         }
   };
 
-  // INTERACTIVE ROUTING FOR STUDENT NOTIFICATIONS
   const renderNotifItem = ({ item }) => {
     const handlePress = async () => {
-        await handleMarkAsRead(item._id); // Clear the red dot instantly
+        await handleMarkAsRead(item._id);
         setShowNotifications(false); 
         
         if (item.type === 'scan') navigation.navigate('ScanHistory');
-        else if (item.type === 'assessment') navigation.navigate('Learn', { initialTab: 'Assessments' });
-        else if (item.type === 'lesson') navigation.navigate('Learn', { initialTab: 'Lessons' });
+        else if (item.type === 'new_assessment' || item.type === 'assessment') {
+            navigation.navigate('TakeAssessment', { assessmentId: item.assessmentId });
+        }
+        else if (item.type === 'assessment_score') {
+            navigation.navigate('StudentResultViewer', { 
+                assessmentId: item.assessmentId, 
+                submissionId: item.submissionId 
+            });
+        }
+        else if (item.type === 'new_lesson' || item.type === 'lesson') {
+            navigation.navigate('LessonStudent', { lessonId: item.lessonId });
+        }
         else if (item.type === 'calendar') setShowCalendar(true); 
     };
 
@@ -460,7 +480,7 @@ export default function StudentHomepage({ navigation }) {
         <TouchableOpacity style={localStyles.notifItem} onPress={handlePress} activeOpacity={0.7}>
             <View style={[localStyles.notifIconBox, !item.isRead && { backgroundColor: '#C5DEC9' }]}>
                 <Ionicons 
-                    name={item.type === 'scan' ? 'scan' : item.type === 'calendar' ? 'calendar' : item.type === 'assessment' ? 'clipboard' : item.type === 'lesson' ? 'book' : 'notifications'} 
+                    name={item.type === 'scan' ? 'scan' : item.type === 'calendar' ? 'calendar' : item.type.includes('assessment') ? 'clipboard' : 'book'} 
                     size={20} 
                     color="#153c2a" 
                 />
@@ -473,7 +493,6 @@ export default function StudentHomepage({ navigation }) {
     );
   };
 
-  // Calendar Navigation & Rendering Helpers
   const handlePrevMonth = () => {
     if (calendarMonth === 0) {
       setCalendarMonth(11);
@@ -591,7 +610,6 @@ export default function StudentHomepage({ navigation }) {
     <View style={[localStyles.container, { backgroundColor: theme?.bg || '#F8F9FA' }]}>
       <StatusBar barStyle="dark-content" backgroundColor="#F8F9FA" />
 
-      {/* Top Header Row */}
       <View style={localStyles.topHeaderBar}>
         <Text style={[localStyles.headerTitle, { color: '#153c2a' || theme?.text }]}>Home</Text>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -879,7 +897,6 @@ export default function StudentHomepage({ navigation }) {
         <View style={{ height: 40 }} />
       </ScrollView>
 
-      {/* FULL SCREEN REPORT CARD FOR SCANS */}
       <Modal visible={!!selectedScan} transparent={true} animationType="fade" onRequestClose={() => setSelectedScan(null)}>
           <View style={localStyles.fsModalBackground}>
               <View style={localStyles.fsModalHeader}>
@@ -920,7 +937,6 @@ export default function StudentHomepage({ navigation }) {
           </View>
       </Modal>
 
-      {/* THE FIX: STUDENT NOTIFICATIONS MODAL (WITH MARK ALL AS READ) */}
       <Modal visible={showNotifications} transparent animationType="fade" onRequestClose={() => setShowNotifications(false)}>
         <View style={localStyles.modalOverlay}>
           <View style={localStyles.modalCardContainer}>
@@ -928,6 +944,10 @@ export default function StudentHomepage({ navigation }) {
               <Text style={localStyles.modalTitleText}>Notifications</Text>
               
               <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <TouchableOpacity onPress={handleClearNotifications} style={localStyles.closeModalBtn}>
+                    <Ionicons name="trash-outline" size={24} color="#EF4444" />
+                  </TouchableOpacity>
+
                   <TouchableOpacity onPress={handleMarkAllAsRead} style={localStyles.closeModalBtn}>
                     <Ionicons name="checkmark-done" size={24} color="#153c2a" />
                   </TouchableOpacity>
@@ -935,7 +955,6 @@ export default function StudentHomepage({ navigation }) {
                     <Ionicons name="close" size={24} color="#153c2a" />
                   </TouchableOpacity>
               </View>
-
             </View>
             
             {notifications.length === 0 ? (
@@ -952,12 +971,11 @@ export default function StudentHomepage({ navigation }) {
         </View>
       </Modal>
 
-      {/* ACADEMIC CALENDAR MODAL */}
       <Modal visible={showCalendar} transparent animationType="fade" onRequestClose={() => setShowCalendar(false)}>
         <View style={localStyles.modalOverlay}>
           <View style={[localStyles.modalCardContainer, { height: '85%' }]}>
             <View style={localStyles.modalHeader}>
-              <Text style={localStyles.modalTitleText}>Academic Calendar</Text>
+              <Text style={localStyles.modalTitleText}>Calendar</Text>
               <TouchableOpacity onPress={() => setShowCalendar(false)} style={localStyles.closeModalBtn}>
                 <Ionicons name="close" size={24} color="#153c2a" />
               </TouchableOpacity>

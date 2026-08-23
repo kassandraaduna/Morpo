@@ -14,13 +14,19 @@ export default function ChangePassword({ navigation }) {
     const [loading, setLoading] = useState(false);
     const [resendTimer, setResendTimer] = useState(0);
     const [canResend, setCanResend] = useState(true);
+
     const [otpId, setOtpId] = useState('');
     const [otp, setOtp] = useState(['', '', '', '', '', '']);
     const [otpVerified, setOtpVerified] = useState(false);
+    const [activeOtpIndex, setActiveOtpIndex] = useState(null);
+
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+    const [errors, setErrors] = useState({});
+    const [activeField, setActiveField] = useState(null);
 
     const otpRefs = useRef([]);
     const isOtpComplete = otp.every(d => d !== '');
@@ -85,10 +91,58 @@ export default function ChangePassword({ navigation }) {
         }
     };
 
+    const passwordRules = {
+        length: pass => pass.length >= 8,
+        upper: pass => /[A-Z]/.test(pass),
+        number: pass => /\d/.test(pass),
+        special: pass => /[!@#$%^&*]/.test(pass),
+    };
+
+    const passwordChecks = {
+        length: passwordRules.length(newPassword),
+        upper: passwordRules.upper(newPassword),
+        number: passwordRules.number(newPassword),
+        special: passwordRules.special(newPassword),
+    };
+
+    const passwordsMatch = newPassword.length > 0 && confirmPassword.length > 0 && newPassword === confirmPassword;
+    const isPasswordValid = Object.values(passwordChecks).every(Boolean);
+
+    // Real-time Validation
+    const handleNewPasswordChange = (val) => {
+        setNewPassword(val);
+        const isPassValid = passwordRules.length(val) && passwordRules.upper(val) && passwordRules.number(val) && passwordRules.special(val);
+        
+        if (errors.newPassword && isPassValid) {
+            setErrors(prev => ({ ...prev, newPassword: null }));
+        }
+        if (confirmPassword.length > 0) {
+            setErrors(prev => ({
+                ...prev,
+                confirmPassword: val !== confirmPassword ? 'Passwords do not match.' : null
+            }));
+        }
+    };
+
+    const handleConfirmPasswordChange = (val) => {
+        setConfirmPassword(val);
+        setErrors(prev => ({
+            ...prev,
+            confirmPassword: val !== newPassword ? 'Passwords do not match.' : null
+        }));
+    };
+
     const resetPassword = async () => {
         if (!otpVerified) return toastError('OTP not verified');
-        if (!isPasswordValid) return toastError('Password does not meet requirements');
-        if (!passwordsMatch) return toastError('Passwords do not match');
+        
+        const newErrors = {};
+        if (!isPasswordValid) newErrors.newPassword = 'Password does not meet requirements';
+        if (!passwordsMatch || confirmPassword.length === 0) newErrors.confirmPassword = 'Passwords do not match';
+
+        if (Object.keys(newErrors).length > 0) {
+            setErrors(newErrors);
+            return;
+        }
 
         try {
             setLoading(true);
@@ -106,24 +160,6 @@ export default function ChangePassword({ navigation }) {
             setLoading(false);
         }
     };
-
-    const passwordRules = {
-        length: pass => pass.length >= 8,
-        upper: pass => /[A-Z]/.test(pass),
-        number: pass => /\d/.test(pass),
-        special: pass => /[!@#$%^&*]/.test(pass),
-    };
-
-    const passwordChecks = {
-        length: passwordRules.length(newPassword),
-        upper: passwordRules.upper(newPassword),
-        number: passwordRules.number(newPassword),
-        special: passwordRules.special(newPassword),
-    };
-
-    const passwordsMatch = newPassword.length > 0 && confirmPassword.length > 0 && newPassword === confirmPassword;
-    const isPasswordValid = Object.values(passwordChecks).every(Boolean);
-    const canSubmitPassword = isPasswordValid && passwordsMatch;
 
     useEffect(() => {
         if (!canResend && resendTimer > 0) {
@@ -184,13 +220,19 @@ export default function ChangePassword({ navigation }) {
                                     <TextInput
                                         key={i}
                                         ref={ref => (otpRefs.current[i] = ref)}
-                                        style={[localStyles.otpBox, { backgroundColor: theme.bg, color: theme.text }]}
+                                        style={[
+                                            localStyles.otpBox, 
+                                            { backgroundColor: theme.bg, color: theme.text },
+                                            (digit !== '' || activeOtpIndex === i) && localStyles.otpBoxActive
+                                        ]}
                                         value={digit}
                                         maxLength={1}
                                         keyboardType="numeric"
                                         textAlign="center"
                                         onChangeText={v => handleOtpChange(v, i)}
                                         onKeyPress={({ nativeEvent }) => handleOtpBackspace(nativeEvent.key, i)}
+                                        onFocus={() => setActiveOtpIndex(i)}
+                                        onBlur={() => setActiveOtpIndex(null)}
                                     />
                                 ))}
                             </View>
@@ -204,7 +246,7 @@ export default function ChangePassword({ navigation }) {
                             </TouchableOpacity>
 
                             <TouchableOpacity disabled={!canResend || loading} onPress={requestOtp} style={{ marginTop: 20, alignItems: 'center' }}>
-                                <Text style={{ color: canResend ? '#10b981' : '#94A3B8', fontWeight: 'bold' }}>
+                                <Text style={{ color: canResend ? '#153c2a' : '#94A3B8', fontWeight: 'bold' }}>
                                     {canResend ? 'Resend Code' : `Resend available in ${resendTimer}s`}
                                 </Text>
                             </TouchableOpacity>
@@ -216,7 +258,12 @@ export default function ChangePassword({ navigation }) {
                             <Text style={[localStyles.cardTitle, { color: theme.text, marginBottom: 20 }]}>Create New Password</Text>
                             
                             <Text style={localStyles.label}>New Password</Text>
-                            <View style={[localStyles.inputWrapper, { backgroundColor: theme.bg }]}>
+                            <View style={[
+                                localStyles.inputWrapper, 
+                                { backgroundColor: theme.bg },
+                                activeField === 'newPassword' && localStyles.inputActive,
+                                errors.newPassword && localStyles.inputError
+                            ]}>
                                 <Ionicons name="lock-closed-outline" size={18} color="#94A3B8" style={{ marginRight: 10 }} />
                                 <TextInput
                                     style={[localStyles.input, { color: theme.text }]}
@@ -224,29 +271,37 @@ export default function ChangePassword({ navigation }) {
                                     placeholderTextColor="#94A3B8"
                                     secureTextEntry={!showPassword}
                                     value={newPassword}
-                                    onChangeText={setNewPassword}
+                                    onChangeText={handleNewPasswordChange}
+                                    onFocus={() => setActiveField('newPassword')}
+                                    onBlur={() => setActiveField(null)}
                                 />
                                 <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
                                     <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color="#94A3B8" />
                                 </TouchableOpacity>
                             </View>
+                            {errors.newPassword ? <Text style={localStyles.errorText}>{errors.newPassword}</Text> : null}
 
                             <View style={localStyles.checklistContainer}>
                                 {[
-                                    ['At least 8 characters', passwordChecks.length],
-                                    ['One uppercase letter', passwordChecks.upper],
-                                    ['One number', passwordChecks.number],
-                                    ['Special character (!@#$%^&*)', passwordChecks.special],
+                                    ['At least 8 characters long', passwordChecks.length],
+                                    ['One uppercase letter (A-Z)', passwordChecks.upper],
+                                    ['At least one number (0-9)', passwordChecks.number],
+                                    ['One special character (!@#$%^&*)', passwordChecks.special],
                                 ].map(([label, ok], i) => (
                                     <View key={i} style={localStyles.checklistRow}>
-                                        <Ionicons name={ok ? 'checkmark-circle' : 'close-circle'} size={14} color={ok ? '#10b981' : '#EF4444'} />
-                                        <Text style={[localStyles.checklistText, { color: ok ? '#10b981' : '#EF4444' }]}>{label}</Text>
+                                        <Ionicons name={ok ? 'checkmark-circle' : 'ellipse-outline'} size={14} color={ok ? '#10b981' : '#94A3B8'} />
+                                        <Text style={[localStyles.checklistText, { color: ok ? '#10b981' : '#64748B' }]}>{label}</Text>
                                     </View>
                                 ))}
                             </View>
 
                             <Text style={localStyles.label}>Confirm Password</Text>
-                            <View style={[localStyles.inputWrapper, { backgroundColor: theme.bg }]}>
+                            <View style={[
+                                localStyles.inputWrapper, 
+                                { backgroundColor: theme.bg },
+                                activeField === 'confirmPassword' && localStyles.inputActive,
+                                errors.confirmPassword && localStyles.inputError
+                            ]}>
                                 <Ionicons name="lock-closed-outline" size={18} color="#94A3B8" style={{ marginRight: 10 }} />
                                 <TextInput
                                     style={[localStyles.input, { color: theme.text }]}
@@ -254,25 +309,19 @@ export default function ChangePassword({ navigation }) {
                                     placeholderTextColor="#94A3B8"
                                     secureTextEntry={!showConfirmPassword}
                                     value={confirmPassword}
-                                    onChangeText={setConfirmPassword}
+                                    onChangeText={handleConfirmPasswordChange}
+                                    onFocus={() => setActiveField('confirmPassword')}
+                                    onBlur={() => setActiveField(null)}
                                 />
                                 <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)}>
                                     <Ionicons name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color="#94A3B8" />
                                 </TouchableOpacity>
                             </View>
-
-                            {confirmPassword.length > 0 && (
-                                <View style={[localStyles.checklistRow, { marginTop: 10 }]}>
-                                    <Ionicons name={passwordsMatch ? 'checkmark-circle' : 'close-circle'} size={14} color={passwordsMatch ? '#10b981' : '#EF4444'} />
-                                    <Text style={[localStyles.checklistText, { color: passwordsMatch ? '#10b981' : '#EF4444' }]}>
-                                        {passwordsMatch ? 'Passwords match' : 'Passwords do not match'}
-                                    </Text>
-                                </View>
-                            )}
+                            {errors.confirmPassword ? <Text style={localStyles.errorText}>{errors.confirmPassword}</Text> : null}
 
                             <TouchableOpacity 
-                                style={[localStyles.primaryBtn, { marginTop: 30 }, (!canSubmitPassword || loading) && { opacity: 0.6 }]} 
-                                disabled={!canSubmitPassword || loading} 
+                                style={[localStyles.primaryBtn, { marginTop: 20 }, loading && { opacity: 0.6 }]} 
+                                disabled={loading} 
                                 onPress={resetPassword}
                             >
                                 {loading ? <ActivityIndicator color="#fff" /> : <Text style={localStyles.btnText}>Save New Password</Text>}
@@ -290,37 +339,62 @@ const localStyles = StyleSheet.create({
         paddingHorizontal: 20, 
         paddingTop: Platform.OS === 'ios' ? 60 : 40, 
         paddingBottom: 25, 
-        borderBottomLeftRadius: 25, 
-        borderBottomRightRadius: 25,
+        borderBottomLeftRadius: 10, 
+        borderBottomRightRadius: 10,
         elevation: 4,
         shadowColor: '#000',
         shadowOpacity: 0.1,
         shadowRadius: 8
     },
-    headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 20, position: 'relative' },
+    headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 5, position: 'relative' },
     backBtn: { position: 'absolute', left: 0, zIndex: 10 },
     headerTextContainer: { alignItems: 'center', paddingHorizontal: 35 },
-    headerTitle: { fontSize: 22, fontWeight: '900', color: '#fff', textAlign: 'center' },
+    headerTitle: { fontSize: 25, fontWeight: '900', color: '#fff', textAlign: 'center' },
     headerSubtitle: { fontSize: 13, color: '#d1fae5', marginTop: 2, textAlign: 'center' },
 
-    card: { padding: 25, borderRadius: 24, elevation: 4, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10 },
+    card: { padding: 25, borderRadius: 10, elevation: 4, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10 },
     shieldIcon: { width: 90, height: 90, borderRadius: 45, backgroundColor: '#e7f8f2', justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
     cardTitle: { fontSize: 20, fontWeight: '900', marginBottom: 10 },
     cardSubtitle: { fontSize: 13, color: '#64748B', lineHeight: 20, textAlign: 'center', marginBottom: 15 },
     emailBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#e7f8f2', paddingHorizontal: 15, paddingVertical: 10, borderRadius: 10, marginBottom: 25 },
     emailText: { fontSize: 14, fontWeight: 'bold', color: '#153c2a' },
 
-    primaryBtn: { backgroundColor: '#153c2a', height: 55, borderRadius: 16, justifyContent: 'center', alignItems: 'center', width: '100%', elevation: 2 },
+    primaryBtn: { backgroundColor: '#153c2a', height: 55, borderRadius: 10, justifyContent: 'center', alignItems: 'center', width: '100%', elevation: 2 },
     btnText: { color: '#fff', fontSize: 16, fontWeight: '900', letterSpacing: 0.5 },
 
     otpContainer: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', marginBottom: 25 },
-    otpBox: { width: 45, height: 55, borderRadius: 12, textAlign: 'center', fontSize: 22, fontWeight: 'bold', elevation: 1 },
+    otpBox: { width: 45, height: 55, borderRadius: 12, textAlign: 'center', fontSize: 22, fontWeight: 'bold', elevation: 1, borderWidth: 1.5, borderColor: 'transparent' },
+    otpBoxActive: { borderColor: '#153c2a' },
 
     label: { fontSize: 13, fontWeight: '800', color: '#64748B', marginBottom: 6, marginLeft: 4 },
-    inputWrapper: { flexDirection: 'row', alignItems: 'center', height: 55, borderRadius: 15, paddingHorizontal: 15, marginBottom: 15 },
-    input: { flex: 1, fontSize: 15, fontWeight: '600', borderRadius: 15, },
+    inputWrapper: { 
+        flexDirection: 'row', 
+        alignItems: 'center', 
+        height: 55, 
+        borderRadius: 10, 
+        paddingHorizontal: 15, 
+        marginBottom: 8,
+        borderWidth: 1.5,
+        borderColor: 'transparent'
+    },
+    inputActive: {
+        borderColor: '#153c2a',
+        backgroundColor: '#FFFFFF',
+    },
+    inputError: {
+        borderColor: '#EF4444',
+    },
+    errorText: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: '#EF4444',
+        marginBottom: 12,
+        marginTop: 2,
+        marginLeft: 4,
+    },
+    input: { flex: 1, fontSize: 15, fontWeight: '600', borderRadius: 10, },
 
-    checklistContainer: { marginBottom: 20, marginTop: 5 },
+    checklistContainer: { marginBottom: 15, marginTop: 5 },
     checklistRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
     checklistText: { fontSize: 12, marginLeft: 8, fontWeight: '600' }
 });

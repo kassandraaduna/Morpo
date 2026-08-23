@@ -41,7 +41,7 @@ export default function InstructorBottomTab() {
       <Tab.Screen
         name="Scan"
         component={Scan} 
-        options={{ tabBarIcon: ({ color }) => <Ionicons name="camera" size={24} color={color} /> }}
+        options={{ tabBarIcon: ({ color }) => <Ionicons name="scan" size={24} color={color} /> }}
       />
       <Tab.Screen 
         name="Student Monitoring" 

@@ -1,7 +1,7 @@
 import React, { useContext, useCallback } from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { ThemeContext } from '../Pages/src/context/ThemeContext'; // Adjust path if necessary
+import { ThemeContext } from '../Pages/src/context/ThemeContext';
 
 const formatDate = (dateString) => {
   if (!dateString) return '';
@@ -12,14 +12,15 @@ const formatDate = (dateString) => {
 export default function Notifications({ route, navigation }) {
   const { theme } = useContext(ThemeContext);
 
-  // Safely grab the notifications passed from previous screens
   const notifications = route.params?.notifications || [];
 
-  // THE FIX: Makes items clickable and routes them dynamically based on type
   const renderNotifItem = useCallback(({ item }) => {
     const handlePress = () => {
         if (item.type === 'dataset') navigation.navigate('DatasetLibrary');
         else if (item.type === 'scan') navigation.navigate('ScanHistory');
+        else if (item.type === 'new_assessment') navigation.navigate('TakeAssessment', { assessmentId: item.assessmentId });
+        else if (item.type === 'assessment_score') navigation.navigate('StudentResultViewer', { assessmentId: item.assessmentId, submissionId: item.submissionId });
+        else if (item.type === 'new_lesson') navigation.navigate('LessonStudent', { lessonId: item.lessonId });
         else if (item.type === 'assessment') navigation.navigate('Learn', { initialTab: 'Assessments' });
         else if (item.type === 'lesson') navigation.navigate('Learn', { initialTab: 'Lessons' });
         else if (item.type === 'assignment') navigation.navigate('StudentMonitoring');
@@ -45,17 +46,15 @@ export default function Notifications({ route, navigation }) {
 
   return (
     <View style={[styles.container, { backgroundColor: theme?.bg || '#F4F7F6' }]}>
-      
-      {/* HEADER */}
+
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={24} color="#153c2a" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Notifications</Text>
-        <View style={{ width: 24 }} /> {/* Spacer for alignment */}
+        <View style={{ width: 24 }} />
       </View>
 
-      {/* NOTIFICATIONS LIST */}
       {notifications.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Ionicons name="notifications-off-outline" size={64} color="#CBD5E1" />
@@ -63,7 +62,7 @@ export default function Notifications({ route, navigation }) {
         </View>
       ) : (
         <FlatList
-          data={notifications} // THE FIX: Rendering notifications instead of calendar events
+          data={notifications}
           keyExtractor={(item, index) => item._id?.toString() || index.toString()}
           showsVerticalScrollIndicator={false}
           renderItem={renderNotifItem}

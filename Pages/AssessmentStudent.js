@@ -15,20 +15,17 @@ export default function AssessmentStudent({ navigation }) {
     
     const [currentUser, setCurrentUser] = useState(null); 
     const [mainTab, setMainTab] = useState('instructor'); 
-    const [subTab, setSubTab] = useState('upcoming'); // Updated default tab
+    const [subTab, setSubTab] = useState('upcoming');
     const [showTypeModal, setShowTypeModal] = useState(false);
     
     const [instructorAssessments, setInstructorAssessments] = useState([]);
     const [localCompletedExt, setLocalCompletedExt] = useState([]);
     const [practiceAssessments, setPracticeAssessments] = useState([]);
-    const [practiceHistory, setPracticeHistory] = useState({});
     
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
 
-    useFocusEffect(useCallback(() => { fetchData(); }, []));
-
-const fetchData = async () => {
+    const fetchData = async () => {
         try {
             const userRaw = await AsyncStorage.getItem('user');
             if (!userRaw) return;
@@ -43,18 +40,20 @@ const fetchData = async () => {
             const localExtIds = rawExt ? JSON.parse(rawExt) : [];
             setLocalCompletedExt(localExtIds);
 
+            // THE FIX: Changed '&' to '&&' to properly enforce the draft check
             const instructors = allAssessments.filter(a => 
-                a.status !== 'draft' &
+                a.status !== 'draft' &&
                 a.createdBy !== userObj._id && 
                 a.isPracticeOnly !== true && 
                 a.quizType !== 'flashcard'
             );
 
+            // THE FIX: Wrapped the OR conditions in parentheses so 'draft' check applies to all of them
             const practices = allAssessments.filter(a => 
                 a.status !== 'draft' &&
-                a.createdBy === userObj._id || 
+                (a.createdBy === userObj._id || 
                 a.isPracticeOnly === true || 
-                a.quizType === 'flashcard'
+                a.quizType === 'flashcard')
             );
 
             setInstructorAssessments(instructors);
@@ -87,9 +86,11 @@ const fetchData = async () => {
 
     const renderInstructorCard = ({ item }) => {
         const isExternalLink = item.deliveryMode === 'external' || item.link || item.externalUrl;
+        const isCompleted = item.isCompleted || localCompletedExt.includes(item._id) || Boolean(item.latestAttempt?.submittedAt);
+        const isScorePending = isExternalLink && item.latestAttempt?.scorePending;
         const lastScore = item.latestAttempt?.percent || 0;
-        const isClosed = item.isClosed;
-        const canRetake = item.canRetake;
+        const isClosed = Boolean(item.isClosed);
+        const canRetake = Boolean(item.canRetake);
         const timerText = item.timer?.enabled ? `${item.timer.minutes} min timer` : 'No timer';
         const isPassing = lastScore >= 70;
 
@@ -128,72 +129,103 @@ const fetchData = async () => {
                     </View>
                     <View style={{ alignItems: 'flex-end' }}>
                         {isClosed ? (
-                            <View style={[localStyles.statusBadge, { backgroundColor: '#F3F4F6' }]}><Text style={[localStyles.badgeText, { color: '#64748B' }]}>CLOSED</Text></View>
-                        ) : isExternalLink && item.isCompleted ? (
-                            <View style={[localStyles.statusBadge, { backgroundColor: '#FEF3C7' }]}><Text style={[localStyles.badgeText, { color: '#D97706' }]}>UNDER REVIEW</Text></View>
-                        ) : item.isCompleted ? (
-                            <View style={[localStyles.statusBadge, { backgroundColor: '#E7F5EE' }]}><Text style={[localStyles.badgeText, { color: '#10B981' }]}>COMPLETED</Text></View>
+                            <View style={[localStyles.statusBadge, { backgroundColor: '#FEE2E2' }]}>
+                                <Text style={[localStyles.badgeText, { color: '#EF4444' }]}>CLOSED</Text>
+                            </View>
+                        ) : isExternalLink && isScorePending ? (
+                            <View style={[localStyles.statusBadge, { backgroundColor: '#FEF3C7' }]}>
+                                <Text style={[localStyles.badgeText, { color: '#D97706' }]}>UNDER REVIEW</Text>
+                            </View>
+                        ) : isCompleted ? (
+                            <View style={[localStyles.statusBadge, { backgroundColor: '#E7F5EE' }]}>
+                                <Text style={[localStyles.badgeText, { color: '#10B981' }]}>COMPLETED</Text>
+                            </View>
                         ) : (
-                            <View style={[localStyles.statusBadge, { backgroundColor: '#FEF3C7' }]}><Text style={[localStyles.badgeText, { color: '#D97706' }]}>NEW</Text></View>
+                            <View style={[localStyles.statusBadge, { backgroundColor: '#FEF3C7' }]}>
+                                <Text style={[localStyles.badgeText, { color: '#D97706' }]}>NEW</Text>
+                            </View>
                         )}
                     </View>
                 </View>
 
-                {isExternalLink ? (
-                    <View style={[localStyles.scoreContainer, { backgroundColor: theme.bg, alignItems: 'center', paddingVertical: 18 }]}>
-                        <Ionicons name="document-text-outline" size={24} color="#D97706" style={{ marginBottom: 6 }} />
-                        <Text style={{ fontSize: 13, fontWeight: '800', color: theme.text, textAlign: 'center' }}>
-                            External submission. Scores are managed via manual instructor review.
+                {isExternalLink && isScorePending ? (
+                    <View style={[localStyles.scoreContainer, { backgroundColor: theme.bg, alignItems: 'center', paddingVertical: 14 }]}>
+                        <Ionicons name="document-text-outline" size={22} color="#D97706" style={{ marginBottom: 4 }} />
+                        <Text style={{ fontSize: 13, fontWeight: '700', color: theme.text, textAlign: 'center' }}>
+                            External submission recorded. Waiting for instructor score.
                         </Text>
                     </View>
                 ) : (
                     <View style={[localStyles.scoreContainer, { backgroundColor: theme.bg }]}>
                         <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
                             <Text style={localStyles.scoreLabel}>Latest Score</Text>
-                            <Text style={[localStyles.scoreValue, { color: item.isCompleted ? (isPassing ? '#10B981' : '#EF4444') : theme.text }]}>
-                                {item.isCompleted ? `${item.latestAttempt?.score || 0} / ${item.latestAttempt?.total || item.questions?.length || 0}` : 'Pending'}
+                            <Text style={[localStyles.scoreValue, { color: isCompleted ? (isPassing ? '#10B981' : '#EF4444') : theme.text }]}>
+                                {isCompleted && item.latestAttempt?.score !== null && item.latestAttempt?.score !== undefined
+                                    ? `${item.latestAttempt.score} / ${item.latestAttempt.total || item.questions?.length || 100}` 
+                                    : (isCompleted ? 'Under Review' : 'Pending')}
                             </Text>
                         </View>
                         <View style={localStyles.progressBg}>
-                            <View style={[localStyles.progressFill, { width: `${lastScore}%`, backgroundColor: isPassing ? '#10B981' : '#F59E0B' }]} />
+                            <View style={[localStyles.progressFill, { width: `${Math.min(lastScore, 100)}%`, backgroundColor: isPassing ? '#10B981' : '#F59E0B' }]} />
                         </View>
                         <Text style={localStyles.scoreSub}>
-                            {item.isCompleted ? `Grade: ${lastScore}%` : 'Complete the assessment to view your score.'}
+                            {isCompleted ? `Grade: ${lastScore}%` : 'Complete the assessment to view your score.'}
                         </Text>
                     </View>
                 )}
 
-                {isClosed ? (
+                {isClosed && (
                     <Text style={localStyles.closedText}>This assessment is no longer accepting submissions.</Text>
-                ) : isExternalLink && (item.isCompleted || localCompletedExt.includes(item._id)) ? (
-
-                    <View style={[localStyles.actionBtn, { backgroundColor: '#F1F5F9', borderColor: '#E2E8F0', borderWidth: 1.5 }]}>
-                        <Text style={[localStyles.actionBtnText, { color: '#64748B' }]}>
-                            Submitted (Under Review)
-                        </Text>
-                    </View>
-
-                ) : (
-                    <TouchableOpacity 
-                        style={[
-                            localStyles.actionBtn, 
-                            { 
-                                backgroundColor: (item.isCompleted && !item.canRetake) ? '#E2E8F0' : (item.isCompleted || localCompletedExt.includes(item._id)) ? '#ffd000' : '#153c2a', 
-                                borderColor: (item.isCompleted && !item.canRetake) ? '#E2E8F0' : '#153c2a', 
-                                borderWidth: 1.5 
-                            }
-                        ]}
-                        onPress={() => navigation.navigate('TakeAssessment', { assessmentId: item._id })}
-                        disabled={item.isCompleted && !item.canRetake}
-                    >
-                        <Text style={[
-                            localStyles.actionBtnText, 
-                            { color: (item.isCompleted && !item.canRetake) ? '#94A3B8' : (item.isCompleted || localCompletedExt.includes(item._id)) ? '#153c2a' : '#fff' }
-                        ]}>
-                            {(item.isCompleted && !item.canRetake) ? 'Attempt Limit Reached' : (item.isCompleted || localCompletedExt.includes(item._id)) ? 'Retake Assessment' : 'Start Assessment'}
-                        </Text>
-                    </TouchableOpacity>
                 )}
+
+                <View style={{ flexDirection: 'row', gap: 10, marginTop: isClosed ? 10 : 15 }}>
+                    {isCompleted && (
+                        <TouchableOpacity 
+                            style={[localStyles.actionBtn, { flex: 1, marginTop: 0, backgroundColor: '#F1F5F9', borderColor: '#CBD5E1', borderWidth: 1.5 }]}
+                            onPress={() => navigation.navigate('StudentResultViewer', { 
+                                assessmentId: item._id, 
+                                submissionId: item.latestAttempt?._id 
+                            })}
+                        >
+                            <Text style={[localStyles.actionBtnText, { color: '#153c2a' }]}>View Result</Text>
+                        </TouchableOpacity>
+                    )}
+
+                    {(!isClosed && isExternalLink && isScorePending) && (
+                         <View style={[localStyles.actionBtn, { flex: 1, marginTop: 0, backgroundColor: '#F1F5F9', borderColor: '#E2E8F0', borderWidth: 1.5 }]}>
+                             <Text style={[localStyles.actionBtnText, { color: '#64748B' }]}>Under Review</Text>
+                         </View>
+                    )}
+
+                    {!isClosed && (!isExternalLink || !isScorePending) && (!isCompleted || canRetake) && (
+                        <TouchableOpacity 
+                            style={[
+                                localStyles.actionBtn, 
+                                { 
+                                    flex: 1, 
+                                    marginTop: 0, 
+                                    backgroundColor: isCompleted ? '#ffd000' : '#153c2a', 
+                                    borderColor: isCompleted ? '#ffd000' : '#153c2a', 
+                                    borderWidth: 1.5 
+                                }
+                            ]}
+                            onPress={() => navigation.navigate('TakeAssessment', { assessmentId: item._id })}
+                        >
+                            <Text style={[
+                                localStyles.actionBtnText, 
+                                { color: isCompleted ? '#153c2a' : '#fff' }
+                            ]}>
+                                {isCompleted ? 'Retake' : (isExternalLink ? 'Open Link' : 'Start Assessment')}
+                            </Text>
+                        </TouchableOpacity>
+                    )}
+
+                    {!isClosed && isCompleted && !canRetake && (!isExternalLink || !isScorePending) && (
+                        <View style={[localStyles.actionBtn, { flex: 1, marginTop: 0, backgroundColor: '#F1F5F9', borderColor: '#E2E8F0', borderWidth: 1.5 }]}>
+                            <Text style={[localStyles.actionBtnText, { color: '#94A3B8' }]}>Attempt Limit Reached</Text>
+                        </View>
+                    )}
+                </View>
             </View>
         );
     };
@@ -243,7 +275,14 @@ const fetchData = async () => {
                 <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
                     <TouchableOpacity 
                         style={[localStyles.actionBtn, { flex: 1, backgroundColor: '#153c2a', marginTop: 0 }]}
-                        onPress={() => navigation.navigate('TakeAssessment', { assessmentId: item._id })}
+                        onPress={() => {
+                            const isCompleted = item.latestAttempt || item.status === 'completed'; 
+                            if (isCompleted) {
+                                navigation.navigate('StudentResultViewer', { assessmentId: item._id });
+                            } else {
+                                navigation.navigate('TakeAssessment', { assessmentId: item._id });
+                            }
+                        }}
                     >
                         <Text style={[localStyles.actionBtnText, { color: '#fff' }]}>Open Practice</Text>
                     </TouchableOpacity>
@@ -264,7 +303,6 @@ const fetchData = async () => {
     const getInstructorSections = () => {
         const now = new Date().getTime();
 
-        // 1. Filter accurately matching web terms
         let filtered = instructorAssessments.filter(a => {
             const hasTaken = a.isCompleted === true || (a.latestAttempt && a.latestAttempt.percent !== undefined);
             const deadline = a.deadlineAt ? new Date(a.deadlineAt).getTime() : null;
@@ -279,20 +317,17 @@ const fetchData = async () => {
             return false;
         });
 
-        // 2. Sort by Deadline securely
         filtered.sort((a, b) => {
-            if (!a.deadlineAt && b.deadlineAt) return 1; // Send no-dates to bottom
+            if (!a.deadlineAt && b.deadlineAt) return 1; 
             if (a.deadlineAt && !b.deadlineAt) return -1;
             if (!a.deadlineAt && !b.deadlineAt) return new Date(b.createdAt) - new Date(a.createdAt);
 
             const dateA = new Date(a.deadlineAt).getTime();
             const dateB = new Date(b.deadlineAt).getTime();
 
-            // Past due shows newest missed first. Upcoming shows closest due first.
             return (subTab === 'past due' || subTab === 'completed') ? dateB - dateA : dateA - dateB;
         });
 
-        // 3. Group by Deadline String
         const grouped = {};
         filtered.forEach(item => {
             let dateString = 'No Due Date';
@@ -306,7 +341,6 @@ const fetchData = async () => {
             grouped[dateString].push(item);
         });
 
-        // 4. Return as SectionList Data
         const orderedKeys = [...new Set(filtered.map(item => {
             if (item.deadlineAt) {
                 const dateObj = new Date(item.deadlineAt);
@@ -329,8 +363,6 @@ const fetchData = async () => {
             
             <View style={[localStyles.header, { backgroundColor: '#153c2a' }]}>
                 <View style={localStyles.headerTopRow}>
-                    
-                    {/* Centered Text Container */}
                     <View style={{ alignItems: 'center' }}>
                         <Text style={localStyles.headerTitle}>Assessments</Text>
                         <Text style={localStyles.headerSub}>
@@ -340,7 +372,6 @@ const fetchData = async () => {
                         </Text>
                     </View>
 
-                    {/* Absolute positioned button so it doesn't disrupt the center alignment */}
                     <View style={{ position: 'absolute', right: 0, flexDirection: 'row', alignItems: 'center' }}>
                         {mainTab === 'practice' && (
                             <TouchableOpacity style={localStyles.topAddBtn} onPress={() => setShowTypeModal(true)}>
@@ -369,7 +400,6 @@ const fetchData = async () => {
 
             {mainTab === 'instructor' && (
                 <View style={localStyles.subTabContainer}>
-                    {/* FIX: Tab names exactly match web layout */}
                     {['upcoming', 'past due', 'completed'].map((tab) => (
                         <TouchableOpacity key={tab} onPress={() => setSubTab(tab)} style={localStyles.subTabItem}>
                             <Text style={[localStyles.subTabText, subTab === tab && localStyles.subTabTextActive]}>
@@ -388,7 +418,6 @@ const fetchData = async () => {
                     sections={getInstructorSections()}
                     keyExtractor={(item) => item._id}
                     renderItem={renderInstructorCard}
-                    // FIX: Green Date Divider
                     renderSectionHeader={({ section: { title } }) => (
                         <View style={{paddingVertical: 5, paddingHorizontal: 5, marginBottom: 5, alignSelf: 'flex-start', }}>
                             <Text style={{ color: '#153c2a', fontWeight: '900', fontSize: 18, textTransform: 'uppercase', }}>{title}</Text>
@@ -425,7 +454,6 @@ const fetchData = async () => {
                 />
             )}
 
-            {/* Type Selection Modal */}
             <Modal visible={showTypeModal} transparent animationType="fade">
                 <View style={localStyles.modalOverlay}>
                     <View style={[localStyles.modalCard, { backgroundColor: theme.card }]}>

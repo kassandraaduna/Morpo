@@ -183,7 +183,7 @@ export default function Scan({ navigation }) {
         <View style={styles.headerTop}>
           <Text style={styles.headerTitle}>AI Scanner</Text>
           <Text style={styles.headerSubtitle}>
-            Classify batch collections using microscopic or macroscopic analysis
+            Classify batch collections using microscopic images of fungi
           </Text>
         </View>
       </View>
@@ -197,7 +197,7 @@ export default function Scan({ navigation }) {
                 <Ionicons name="cloud-upload-outline" size={32} color="#153c2a" />
               </View>
               <Text style={[styles.dropText, { color: theme.text }]}>Upload Specimen Batches</Text>
-              <Text style={{ color: theme.subText, fontSize: 13, marginBottom: 20 }}>Select up to 5 images (Max 10MB per item)</Text>
+              <Text style={{ color: theme.subText, fontSize: 13, marginBottom: 20 }}>Select up to 6 images (Max 10MB per item)</Text>
               
               <View style={styles.pickerRow}>
                 <TouchableOpacity style={[styles.pickerBtn, { backgroundColor: '#334155' }]} onPress={() => pickImages(false)}>
@@ -272,7 +272,7 @@ export default function Scan({ navigation }) {
                 <Ionicons 
                   name={currentScanItem.bookmarked ? "bookmark" : "bookmark-outline"} 
                   size={24} 
-                  color={currentScanItem.bookmarked ? "#059669" : theme.subText} 
+                  color={currentScanItem.bookmarked ? "#153c2a" : theme.subText} 
                 />
               </TouchableOpacity>
             </View>
@@ -446,7 +446,7 @@ const styles = StyleSheet.create({
   header: { 
     paddingHorizontal: 20, 
     paddingTop: Platform.OS === 'ios' ? 60 : 40,
-    paddingBottom: 25,
+    paddingBottom: 23,
     borderBottomLeftRadius: 10, 
     borderBottomRightRadius: 10, 
     width: '100%',
@@ -464,7 +464,7 @@ const styles = StyleSheet.create({
     fontSize: 28, 
     fontWeight: '800', 
     color: '#fff', 
-    marginTop: 20,
+    marginTop: 5,
     textAlign: 'center'
   },
   headerSubtitle: { 

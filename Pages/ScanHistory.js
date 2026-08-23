@@ -179,7 +179,7 @@ export default function ScanHistory({ navigation }) {
             <Ionicons 
               name={item.bookmarked ? "bookmark" : "bookmark-outline"} 
               size={24} 
-              color={item.bookmarked ? "#10b981" : theme.subText} 
+              color={item.bookmarked ? "#153c2a" : theme.subText} 
             />
           </TouchableOpacity>
           <TouchableOpacity style={{ padding: 8 }} onPress={() => handleDeleteItem(item._id)}>

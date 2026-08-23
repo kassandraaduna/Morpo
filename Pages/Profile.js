@@ -109,31 +109,31 @@ export default function Profile({ navigation }) {
         </View>
 
         <Text style={localStyles.sectionTitle}>ACCOUNT DETAILS</Text>
-        <Row label="Account Information" icon="person-outline" onPress={() => navigation.navigate('EditProfile')} />
-        <Row label="Bookmarks" icon="bookmark-outline" onPress={() => navigation.navigate('Bookmarks')} />
-        <Row label="Scan History" icon="time-outline" onPress={() => navigation.navigate('ScanHistory')} />
+        <Row label="Account Information" icon="person" onPress={() => navigation.navigate('EditProfile')} />
+        <Row label="Bookmarks" icon="bookmark" onPress={() => navigation.navigate('Bookmarks')} />
+        <Row label="Scan History" icon="time" onPress={() => navigation.navigate('ScanHistory')} />
         
         {isInstructor && (
-          <Row label="Dataset Library" icon="images-outline" onPress={() => navigation.navigate('DatasetLibrary')} />
+          <Row label="Dataset Library" icon="images" onPress={() => navigation.navigate('DatasetLibrary')} />
         )}
 
         <Text style={localStyles.sectionTitle}>PRIVACY & SECURITY</Text>
         {/* <Row 
           label="Dark Mode" 
-          icon="moon-outline" 
+          icon="moon" 
           chevron={false} 
           right={<Switch value={darkMode} onValueChange={toggleTheme} trackColor={{ false: "#ccc", true: "#153c2a" }} />} 
         /> */}
-        <Row label="Change Password" icon="lock-closed-outline" onPress={() => navigation.navigate('ChangePassword')} />
+        <Row label="Change Password" icon="lock-closed" onPress={() => navigation.navigate('ChangePassword')} />
 
         <Text style={localStyles.sectionTitle}>HELP & SUPPORT</Text>
-        <Row label="FAQs" icon="help-circle-outline" onPress={() => navigation.navigate('FAQs')} />
-        <Row label="Terms & Conditions" icon="document-text-outline" onPress={() => navigation.navigate('Terms')} />
-        <Row label="Privacy Policy" icon="shield-checkmark-outline" onPress={() => navigation.navigate('Privacy')} />
-        <Row label="About MyphoLens" icon="information-circle-outline" onPress={() => navigation.navigate('About')} />
+        <Row label="FAQs" icon="help-circle" onPress={() => navigation.navigate('FAQs')} />
+        <Row label="Terms & Conditions" icon="document-text" onPress={() => navigation.navigate('Terms')} />
+        <Row label="Privacy Policy" icon="shield-checkmark" onPress={() => navigation.navigate('Privacy')} />
+        <Row label="About MyphoLens" icon="information-circle" onPress={() => navigation.navigate('About')} />
 
         <TouchableOpacity style={localStyles.logoutBtn} onPress={() => setConfirmLogout(true)}>
-          <Ionicons name="log-out-outline" size={22} color="#EF4444" />
+          <Ionicons name="log-out" size={22} color="#EF4444" />
           <Text style={localStyles.logoutText}>LOG OUT</Text>
         </TouchableOpacity>
       </ScrollView>
@@ -157,8 +157,8 @@ export default function Profile({ navigation }) {
 
 const localStyles = StyleSheet.create({
   header: { paddingHorizontal: 20, paddingTop: Platform.OS === 'ios' ? 60 : 40, paddingBottom: 25, borderBottomLeftRadius: 10, borderBottomRightRadius: 10, elevation: 4, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 8 },
-  headerTop: { alignItems: 'center', marginBottom: 10 },
-  headerTitle: { fontSize: 25, fontWeight: '900', color: '#fff', marginTop: 20, textAlign: 'center' },
+  headerTop: { alignItems: 'center', marginBottom: 5 },
+  headerTitle: { fontSize: 25, fontWeight: '900', color: '#fff', marginTop: 5, textAlign: 'center' },
   headerSubtitle: { fontSize: 13, color: '#d1fae5', marginTop: 2, textAlign: 'center' },
   profileCard: { flexDirection: 'row', alignItems: 'center', marginTop: 25, marginBottom: 20, padding: 20, borderRadius: 10, elevation: 4, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10 },
   avatarContainer: { width: 75, height: 75, borderRadius: 40, justifyContent: 'center', alignItems: 'center', overflow: 'hidden', borderWidth:3, borderColor: '#153c2a', },
