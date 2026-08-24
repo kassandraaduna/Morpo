@@ -36,7 +36,7 @@ const extractId = (val) => {
     if (typeof val === 'object') {
         if (val._id) return String(val._id).trim();
         if (val.id) return String(val.id).trim();
-        return val.toString().trim();
+        return String(val).trim();
     }
     return String(val).trim();
 };
@@ -59,6 +59,9 @@ export default function AssessmentQuestionsView({ route, navigation }) {
   const [gradingTotal, setGradingTotal] = useState('');
   const [reviewFeedback, setReviewFeedback] = useState(''); 
   const [isScoreReleased, setIsScoreReleased] = useState(false);
+  
+  // Only stores draft scores for manual grading items (written, identification)
+  const [draftScores, setDraftScores] = useState({});
   
   const [isFetchingAttempt, setIsFetchingAttempt] = useState(false);
   const [isSavingGrade, setIsSavingGrade] = useState(false);
@@ -134,144 +137,120 @@ export default function AssessmentQuestionsView({ route, navigation }) {
   };
 
   const handleStudentPress = async (student) => {
-    if (!student.hasTaken && !isExternalAssess) {
-      toastError("Student has not submitted this assessment yet.");
-      return;
-    }
+        if (!student.hasTaken && !isExternalAssess) {
+            toastError("Student has not submitted this assessment yet.");
+            return;
+        }
 
-    setSelectedStudent(student);
-    setGradingModalVisible(true);
-    setIsFetchingAttempt(true);
-    
-    setGradingScore(String(student.rawScore || 0));
-    setGradingTotal(String(student.totalItems || assessment.questions?.length || 100));
-    setReviewFeedback('');
-    setIsScoreReleased(false);
+        setSelectedStudent(student);
+        setGradingModalVisible(true);
+        setIsFetchingAttempt(true);
+        
+        setGradingScore(String(student.rawScore || 0));
+        setGradingTotal(String(student.totalItems || assessment.questions?.length || 100));
+        setReviewFeedback('');
+        setIsScoreReleased(false);
+        setDraftScores({});
 
-    try {
-      const config = {};
-      const token = await AsyncStorage.getItem('token');
-      if (token) config.headers = { Authorization: `Bearer ${token}` };
+        try {
+            const token = await AsyncStorage.getItem('token');
+            const config = { headers: {} };
+            if (token) config.headers.Authorization = `Bearer ${token}`;
 
-      const rawUser = await AsyncStorage.getItem('user');
-      const currentUser = rawUser ? JSON.parse(rawUser) : null;
-      const instId = currentUser?._id || currentUser?.id || '';
-      const assessId = extractId(assessment._id);
-      const studentId = extractId(student._id);
+            const rawUser = await AsyncStorage.getItem('user');
+            const currentUser = rawUser ? JSON.parse(rawUser) : null;
+            const instId = currentUser?._id || '';
 
-      let targetAttempt = null;
-      let allAttempts = [];
+            const assessId = extractId(assessment._id);
+            const studentId = extractId(student._id);
 
-      try {
-          const instructorRes = await api.get(`/instructor/assessments/${assessId}/attempts`, {
-              ...config, params: { instructorId: instId }
-          });
-          allAttempts = extractArray(instructorRes.data);
-      } catch (err) {}
+            let attemptIdToFetch = student.quizRecord?.attemptId || student.quizRecord?.lastAttemptId || student.quizRecord?.submissionId;
 
-      if (allAttempts.length === 0) {
-          try {
-              const stdRes = await api.get(`/assessments/${assessId}/attempts`, config);
-              allAttempts = extractArray(stdRes.data);
-          } catch(e) {}
-      }
+            if (!attemptIdToFetch) {
+                const listRes = await api.get(`/instructor/assessments/${assessId}/attempts`, {
+                    headers: config.headers,
+                    params: { instructorId: instId }
+                }).catch(() => null);
 
-      if (allAttempts.length > 0) {
-          let stdAttempts = allAttempts.filter(a => 
-              extractId(a.studentId) === studentId || 
-              extractId(a.student) === studentId || 
-              extractId(a.userId) === studentId ||
-              extractId(a.user) === studentId
-          );
-          
-          if (stdAttempts.length > 0) {
-              stdAttempts.sort((a, b) => new Date(b.submittedAt || b.createdAt || 0) - new Date(a.submittedAt || a.createdAt || 0));
-              targetAttempt = stdAttempts[0];
-          }
-      }
+                let allAttempts = listRes?.data?.data || listRes?.data || [];
+                if (!Array.isArray(allAttempts)) allAttempts = [];
 
-      if (!targetAttempt && student.quizRecord) {
-          let cachedId = student.quizRecord.attemptId || student.quizRecord.lastAttemptId || student.quizRecord.submissionId || student.quizRecord._id;
-          if (cachedId && String(cachedId).length > 10) {
-              try {
-                  let detailRes = await api.get(`/instructor/attempts/${cachedId}`, config).catch(() => null);
-                  if (!detailRes) {
-                      detailRes = await api.get(`/attempts/${cachedId}`, config).catch(() => null);
-                  }
-                  const actualData = detailRes?.data?.data || detailRes?.data;
-                  if (actualData && actualData._id) {
-                      targetAttempt = actualData;
-                  }
-              } catch(e) {}
-          }
-      }
+                const stdAttempts = allAttempts.filter(a => extractId(a.studentId) === studentId || extractId(a.userId) === studentId);
+                stdAttempts.sort((a, b) => new Date(b.submittedAt || 0).getTime() - new Date(a.submittedAt || 0).getTime());
 
-      if (!targetAttempt) {
-          try {
-              const historyRes = await api.get(`/student/${studentId}/assessment-history?_t=${Date.now()}`, config)
-                  .catch(() => api.get(`/assessments/history/${studentId}`, config));
-              
-              let historyList = extractArray(historyRes?.data);
-              const historyAttempts = historyList.filter(h => extractId(h.assessment?._id || h.assessment || h.assessmentId) === assessId);
-              
-              if (historyAttempts.length > 0) {
-                  historyAttempts.sort((a, b) => new Date(b.submittedAt || b.createdAt || 0) - new Date(a.submittedAt || a.createdAt || 0));
-                  targetAttempt = historyAttempts[0];
-              }
-          } catch(e) {}
-      }
+                if (stdAttempts.length > 0) {
+                    attemptIdToFetch = stdAttempts[0]._id || stdAttempts[0].attemptId;
+                }
+            }
 
-      if (targetAttempt && targetAttempt._id && (!Array.isArray(targetAttempt.answers) || targetAttempt.answers.length === 0)) {
-          const detailEndpoints = [
-              `/instructor/attempts/${targetAttempt._id}`,
-              `/attempts/${targetAttempt._id}`,
-              `/assessments/attempts/${targetAttempt._id}`
-          ];
-          for (let endpoint of detailEndpoints) {
-              try {
-                  let dRes = await api.get(endpoint, config);
-                  let dData = dRes?.data?.data || dRes?.data;
-                  if (dData && Array.isArray(dData.answers) && dData.answers.length > 0) {
-                      targetAttempt = { ...targetAttempt, ...dData, answers: dData.answers };
-                      break; 
-                  }
-              } catch(e) {}
-          }
-      }
+            let finalAttempt = student.quizRecord || {};
+            finalAttempt.answers = [];
 
-      if (targetAttempt && typeof targetAttempt.answers === 'string') {
-          try { targetAttempt.answers = JSON.parse(targetAttempt.answers); } catch(e){}
-      }
+            if (attemptIdToFetch) {
+                let detailRes = await api.get(`/instructor/attempts/${attemptIdToFetch}`, { headers: config.headers }).catch(() => null);
 
-      if (!targetAttempt && student.quizRecord) {
-          let cachedId = student.quizRecord.attemptId || student.quizRecord.lastAttemptId || student.quizRecord.submissionId;
-          targetAttempt = {
-              _id: cachedId,
-              score: student.rawScore || 0,
-              total: student.totalItems || assessment.questions?.length || 10,
-              answers: []
-          };
-      }
+                if (!detailRes) {
+                    detailRes = await api.get(`/attempts/${attemptIdToFetch}`, { headers: config.headers }).catch(() => null);
+                }
 
-      if (targetAttempt || isExternalAssess) {
-          setStudentAttempt(targetAttempt || {});
-          if (targetAttempt) {
-            setGradingScore(String(targetAttempt.score !== undefined && targetAttempt.score !== null ? targetAttempt.score : (student.rawScore || 0)));
-            setGradingTotal(String(targetAttempt.total || student.totalItems || assessment.questions?.length || 100));
-            setReviewFeedback(targetAttempt.professorFeedback || targetAttempt.feedback || '');
-            setIsScoreReleased(Boolean(targetAttempt.isScoreReleased || targetAttempt.scoreReleased));
-          }
-      } else {
-          setStudentAttempt(null);
-          toastError("Could not retrieve detailed submission record.");
-      }
-    } catch (error) {
-      console.log("Error fetching attempt", error);
-      toastError("Failed to fetch student's full submission.");
-    } finally {
-      setIsFetchingAttempt(false);
-    }
-  };
+                let dData = detailRes?.data?.data || detailRes?.data;
+                if (dData) {
+                    finalAttempt = { ...finalAttempt, ...dData };
+                    let rawAns = dData.answers || finalAttempt.answers || [];
+
+                    if (typeof rawAns === 'string') {
+                        try { rawAns = JSON.parse(rawAns); } catch(e) { rawAns = []; }
+                    }
+                    
+                    if (Array.isArray(rawAns)) {
+                        finalAttempt.answers = rawAns;
+                    }
+                }
+            }
+
+            const isValidAttempt = finalAttempt._id || finalAttempt.attemptId || attemptIdToFetch || isExternalAssess;
+
+            if (isValidAttempt) {
+                setStudentAttempt(finalAttempt);
+                
+                const finalScore = finalAttempt.score !== undefined && finalAttempt.score !== null ? finalAttempt.score : (student.rawScore || 0);
+                const finalTotal = finalAttempt.total || student.totalItems || assessment.questions?.length || 100;
+                
+                setGradingScore(String(finalScore));
+                setGradingTotal(String(finalTotal));
+                setReviewFeedback(finalAttempt.professorFeedback || finalAttempt.feedback || '');
+                setIsScoreReleased(Boolean(finalAttempt.isScoreReleased || finalAttempt.scoreReleased));
+
+                // ONLY track drafts for manual formats (Written/Identification)
+                const initialDrafts = {};
+                if (Array.isArray(finalAttempt.answers)) {
+                    finalAttempt.answers.forEach((ans, idx) => {
+                        const format = String(assessment?.questions?.[idx]?.format || ans.format || 'multiple_choice').toLowerCase();
+                        const isManual = format === 'written' || format === 'identification' || !!ans.requiresManualReview;
+                        
+                        const ansId = ans.answerId || ans._id;
+                        if (ansId && isManual) {
+                            const pts = ans.awardedPoints !== undefined && ans.awardedPoints !== null
+                                ? Number(ans.awardedPoints)
+                                : (ans.isCorrect ? Number(ans.points || assessment?.questions?.[idx]?.points || 1) : 0);
+                            initialDrafts[ansId] = String(pts);
+                        }
+                    });
+                }
+                setDraftScores(initialDrafts);
+
+            } else {
+                setStudentAttempt(null);
+                toastError("Could not retrieve detailed submission record.");
+            }
+
+        } catch (error) {
+            console.error("Error fetching attempt:", error);
+            toastError("Failed to fetch student's full submission.");
+        } finally {
+            setIsFetchingAttempt(false);
+        }
+  }; 
 
   const submitGrade = async () => {
     let attemptId = studentAttempt?._id || studentAttempt?.attemptId || studentAttempt?.id;
@@ -306,22 +285,17 @@ export default function AssessmentQuestionsView({ route, navigation }) {
             }
         }
 
-        // --- NEW LOGIC ALIGNED WITH WEB APP ---
-        // Find manual answers that the backend expects for the /grade endpoint
         const rawAnswers = Array.isArray(studentAttempt?.answers) ? studentAttempt.answers : [];
-        const manualAnswers = rawAnswers.filter(ans => ans.requiresManualReview);
-        
-        // If external, or if there are no manual answers to grade, we safely use external-score
-        const canEditOverallScore = isExternalAssess || manualAnswers.length === 0;
-
-        const endpoint = canEditOverallScore 
+        const endpoint = isExternalAssess 
             ? `/instructor/attempts/${attemptId}/external-score`
             : `/instructor/attempts/${attemptId}/grade`;
             
         let payload = {};
 
-        if (canEditOverallScore) {
+        if (isExternalAssess) {
             payload = {
+                instructorId: currentUser?._id,
+                studentId: selectedStudent?._id,
                 score: Number(gradingScore || 0),
                 total: Number(gradingTotal || assessment?.questions?.length || 10),
                 professorFeedback: reviewFeedback,
@@ -329,11 +303,18 @@ export default function AssessmentQuestionsView({ route, navigation }) {
                 isScoreReleased: isScoreReleased
             };
         } else {
-            // Backend expects EXACTLY 'answerId' and 'awardedPoints' for manual grading
-            const formattedGrades = manualAnswers.map(ans => ({
-                answerId: ans.answerId || ans._id,
-                awardedPoints: ans.awardedPoints !== undefined ? Number(ans.awardedPoints) : (ans.isCorrect ? Number(ans.points || 1) : 0)
-            }));
+            // Push ONLY manual answer grades back to the backend
+            const formattedGrades = rawAnswers.map(ans => {
+                const ansId = ans.answerId || ans._id;
+                const drafted = draftScores[ansId];
+                if (ansId && drafted !== undefined) {
+                    return {
+                        answerId: ansId,
+                        awardedPoints: Number(drafted)
+                    };
+                }
+                return null;
+            }).filter(g => g !== null);
 
             payload = {
                 grades: formattedGrades,
@@ -342,13 +323,6 @@ export default function AssessmentQuestionsView({ route, navigation }) {
                 isScoreReleased: isScoreReleased
             };
         }
-
-        // Only append specific IDs if it's an external assessment
-        if (isExternalAssess) {
-            payload.instructorId = currentUser?._id;
-            payload.studentId = selectedStudent?._id;
-        }
-        // --------------------------------------
 
         await api.put(endpoint, payload, config);
         
@@ -466,7 +440,7 @@ export default function AssessmentQuestionsView({ route, navigation }) {
       )}
 
       {activeSubTab === 'questions' ? (
-        assessment?.deliveryMode === 'external' && assessment?.externalUrl ? (
+        isExternalAssess && assessment?.externalUrl ? (
           <View style={{ flex: 1, minHeight: 500, marginHorizontal: 22, marginBottom: 30, borderRadius: 10, overflow: 'hidden', borderWidth: 1, borderColor: '#f1f5f9' }}>
             <WebView 
               source={{ uri: assessment.externalUrl }} 
@@ -512,6 +486,7 @@ export default function AssessmentQuestionsView({ route, navigation }) {
         </View>
       )}
 
+      {/* MODAL BOTTOM SHEET */}
       <Modal visible={isGradingModalVisible} transparent animationType="slide">
         <View style={localStyles.modalOverlay}>
           <View style={localStyles.gradingModalCard}>
@@ -529,102 +504,198 @@ export default function AssessmentQuestionsView({ route, navigation }) {
 
             {isFetchingAttempt ? (
               <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-                 <ActivityIndicator size="large" color="#153c2a" />
-                 <Text style={{ marginTop: 10, color: '#64748B' }}>Loading details...</Text>
+                  <ActivityIndicator size="large" color="#153c2a" />
+                  <Text style={{ marginTop: 10, color: '#64748B' }}>Loading details...</Text>
               </View>
             ) : (
               <ScrollView style={{ flex: 1, backgroundColor: theme.bg || '#FFF' }} contentContainerStyle={{ padding: 24, paddingBottom: 60 }} showsVerticalScrollIndicator={false}>
                 
                 {isExternalAssess ? (
-                   <View style={localStyles.externalNotice}>
-                     <Ionicons name="link-outline" size={24} color="#D97706" style={{ marginBottom: 5 }} />
-                     <Text style={{ color: '#D97706', fontWeight: 'bold', fontSize: 16 }}>External Assessment</Text>
-                     <Text style={{ color: '#92400E', fontSize: 13, marginTop: 5, textAlign: 'center' }}>
-                       Review the student's submission on the external platform, then input their final score below.
-                     </Text>
-                   </View>
+                    <View style={localStyles.externalNotice}>
+                      <Ionicons name="link-outline" size={24} color="#D97706" style={{ marginBottom: 5 }} />
+                      <Text style={{ color: '#D97706', fontWeight: 'bold', fontSize: 16 }}>External Assessment</Text>
+                      <Text style={{ color: '#92400E', fontSize: 13, marginTop: 5, textAlign: 'center' }}>
+                        Review the student's submission on the external platform, then input their final score below.
+                      </Text>
+                    </View>
                 ) : (
-                   <View style={{ marginBottom: 20 }}>
-                     <Text style={localStyles.sectionHeading}>Student Answers</Text>
-                     
-                     {(!Array.isArray(assessment?.questions) || assessment.questions.length === 0) ? (
-                        <View style={localStyles.emptyQuestionsCard}>
-                            <Ionicons name="document-lock-outline" size={48} color="#CBD5E1" style={{ marginBottom: 10 }} />
-                            <Text style={localStyles.emptyQuestionsTitle}>Questions Unavailable</Text>
-                            <Text style={localStyles.emptyQuestionsText}>This assessment does not have any native questions to display.</Text>
-                        </View>
-                     ) : (
-                         assessment.questions.map((q, idx) => {
-                             const qId = String(q._id || q.id || idx);
-                             
-                             let studentAnsObj = (studentAttempt?.answers || []).find(a => {
-                                 const aQid = String(a.questionId?._id || a.questionId || a.question?._id || a.question || '');
-                                 return aQid === qId;
-                             });
-                             
-                             if (!studentAnsObj && Array.isArray(studentAttempt?.answers) && studentAttempt.answers.length > idx) {
-                                 studentAnsObj = studentAttempt.answers[idx];
-                             }
-                             
-                             let studentAnsText = studentAnsObj?.userAnswer || studentAnsObj?.answer || studentAnsObj?.answerText;
-                             if (!studentAnsText && studentAnsObj?.selectedIndex !== undefined && studentAnsObj.selectedIndex !== -1 && Array.isArray(q.options)) {
-                                 studentAnsText = q.options[studentAnsObj.selectedIndex];
-                             }
-                             
-                             if (!studentAnsText || String(studentAnsText).trim() === '') {
-                                 studentAnsText = 'No Answer';
-                             } else {
-                                 studentAnsText = String(studentAnsText);
-                             }
+                    <View style={{ marginBottom: 20 }}>
+                      <Text style={localStyles.sectionHeading}>Student Answers</Text>
+                      
+                      {(!Array.isArray(assessment?.questions) || assessment.questions.length === 0) ? (
+                          <View style={localStyles.emptyQuestionsCard}>
+                              <Ionicons name="document-lock-outline" size={48} color="#CBD5E1" style={{ marginBottom: 10 }} />
+                              <Text style={localStyles.emptyQuestionsTitle}>Questions Unavailable</Text>
+                              <Text style={localStyles.emptyQuestionsText}>This assessment does not have any native questions to display.</Text>
+                          </View>
+                      ) : (
+                          assessment.questions.map((q, idx) => {
+                            // 1. Exact ID Extraction (Restored from OLD file)
+                            const qId = extractId(q._id) || extractId(q.id) || String(idx);
 
-                             let correctAnswerText = q.correctAnswer;
-                             if (!correctAnswerText && Array.isArray(q.options) && q.correctIndex !== undefined) {
-                                 correctAnswerText = q.options[q.correctIndex];
-                             }
-                             if (!correctAnswerText && Array.isArray(q.acceptedAnswers) && q.acceptedAnswers.length > 0) {
-                                 correctAnswerText = q.acceptedAnswers.join(' / ');
-                             }
-                             if (!correctAnswerText && Array.isArray(q.matchingPairs) && q.matchingPairs.length > 0) {
-                                 correctAnswerText = q.matchingPairs.map(p => `${p.left} -> ${p.right}`).join(', ');
-                             }
+                            let studentAnsObj = (studentAttempt?.answers || []).find(a => {
+                                const aQid = extractId(a.questionId) || extractId(a.question);
+                                return aQid === qId;
+                            });
+                            
+                            // 2. Strict Fallback Index Matching
+                            if (!studentAnsObj && Array.isArray(studentAttempt?.answers) && studentAttempt.answers.length > idx) {
+                                studentAnsObj = studentAttempt.answers[idx];
+                            }
+                            
+                            const format = String(q.format || studentAnsObj?.format || 'multiple_choice').toLowerCase();
+                            
+                            // Highly Readable Display Format
+                            let displayFormat = format.toUpperCase().replace(/_/g, ' ');
+                            if (format === 'true_false') displayFormat = 'TRUE OR FALSE';
+                            if (format === 'written') displayFormat = 'WRITTEN RESPONSE';
 
-                             let isCorrect = Boolean(studentAnsObj?.isCorrect);
-                             
-                             if (studentAnsObj && typeof studentAnsObj.isCorrect === 'undefined' && studentAnsText !== 'No Answer') {
-                                 const cleanStudentAns = String(studentAnsText).toLowerCase().trim();
-                                 if (q.format === 'identification' || q.format === 'written') {
-                                     const accepted = q.acceptedAnswers?.length > 0 ? q.acceptedAnswers : [q.correctAnswer];
-                                     isCorrect = accepted.some(ans => String(ans).toLowerCase().trim() === cleanStudentAns);
-                                 } else {
-                                     isCorrect = cleanStudentAns === String(correctAnswerText).toLowerCase().trim();
-                                 }
-                             }
-                             
-                             return (
-                                 <View key={qId} style={[localStyles.answerCard, { 
-                                     backgroundColor: theme.card || '#FFF', 
-                                     borderColor: isCorrect ? '#34D399' : '#F87171' 
-                                 }]}>
-                                     <Text style={[localStyles.qText, { color: theme.text || '#000' }]}>{idx + 1}. {q.questionText || q.text || q.question}</Text>
-                                     <View style={localStyles.answerBox}>
-                                         <Text style={localStyles.answerLabel}>Student's Answer:</Text>
-                                         <Text style={[localStyles.answerValue, { color: isCorrect ? '#10B981' : '#EF4444' }]}>
-                                             {studentAnsText}
-                                         </Text>
-                                     </View>
-                                     {!isCorrect && correctAnswerText && (
-                                         <View style={[localStyles.answerBox, { marginTop: 5, backgroundColor: '#F1F5F9' }]}>
-                                             <Text style={localStyles.answerLabel}>Correct Answer:</Text>
-                                             <Text style={[localStyles.answerValue, { color: '#475569' }]}>
-                                                 {correctAnswerText}
-                                             </Text>
-                                         </View>
-                                     )}
-                                 </View>
-                             );
-                         })
-                     )}
-                   </View>
+                            // 3. Exact Text / Index Resolution (Restored from OLD file)
+                            let studentAnsText = studentAnsObj?.userAnswer || studentAnsObj?.answerText || studentAnsObj?.answer;
+                            
+                            if (!studentAnsText && studentAnsObj?.selectedIndex !== undefined && studentAnsObj.selectedIndex !== -1 && Array.isArray(q.options)) {
+                                studentAnsText = q.options[studentAnsObj.selectedIndex];
+                            }
+
+                            // Catch matching pair fallback if userAnswer is missing
+                            if (!studentAnsText && format === 'matching' && Array.isArray(studentAnsObj?.matches)) {
+                                const matches = studentAnsObj.matches;
+                                if (matches.length > 0 && matches.some(m => m.left || m.right)) {
+                                    studentAnsText = matches.map(p => `${p.left || '-'}  ->  ${p.right || '-'}`).join('\n');
+                                }
+                            }
+                            
+                            // 4. Strict Empty Check
+                            if (studentAnsText === null || studentAnsText === undefined || String(studentAnsText).trim() === '') {
+                                studentAnsText = 'No Answer';
+                            } else {
+                                studentAnsText = String(studentAnsText);
+                            }
+
+                            // 5. Correct Answer Resolution
+                            let correctAnswerText = q.correctAnswer;
+                            if (!correctAnswerText && Array.isArray(q.options) && q.correctIndex !== undefined) {
+                                correctAnswerText = q.options[q.correctIndex];
+                            }
+                            if (!correctAnswerText && Array.isArray(q.acceptedAnswers) && q.acceptedAnswers.length > 0) {
+                                correctAnswerText = q.acceptedAnswers.join(' / ');
+                            }
+                            if (!correctAnswerText && Array.isArray(q.matchingPairs) && q.matchingPairs.length > 0) {
+                                correctAnswerText = q.matchingPairs.map(p => `${p.left}  ->  ${p.right}`).join('\n');
+                            }
+
+                            // Dynamic Correctness Evaluator (Needed for Instructor view custom highlights)
+                            let isCorrect = Boolean(studentAnsObj?.isCorrect);
+                            if (!isCorrect && studentAnsText !== 'No Answer' && correctAnswerText) {
+                                const cleanStudentAns = String(studentAnsText).toLowerCase().trim();
+                                const cleanCorrectAns = String(correctAnswerText).toLowerCase().trim();
+                                if (q.format === 'identification' || q.format === 'written') {
+                                    const accepted = q.acceptedAnswers?.length > 0 ? q.acceptedAnswers : [q.correctAnswer];
+                                    isCorrect = accepted.some(ans => String(ans).toLowerCase().trim() === cleanStudentAns);
+                                } else {
+                                    isCorrect = cleanStudentAns === cleanCorrectAns;
+                                }
+                            }
+                            
+                            const questionPrompt = q.questionText || q.text || q.question || `Question ${idx + 1}`;
+                            const maxPoints = Number(q.points || studentAnsObj?.points || 1);
+                            const earnedPts = studentAnsObj?.awardedPoints !== undefined && studentAnsObj?.awardedPoints !== null
+                                ? Number(studentAnsObj.awardedPoints)
+                                : (isCorrect ? maxPoints : 0);
+
+                            const ansId = studentAnsObj?.answerId || studentAnsObj?._id;
+                            
+                            // IDENTIFICATION and WRITTEN are the only formats allowed for manual adjustment
+                            const isManual = format === 'written' || format === 'identification' || !!studentAnsObj?.requiresManualReview;
+                            const isChecked = studentAnsObj ? studentAnsObj.reviewStatus === 'checked' : false;
+
+                            let cardBorderColor = '#F1F5F9';
+                            let studentAnsColor = '#475569';
+                            let studentAnsBg = '#F8FAFC';
+                            let statusText = 'Not Answered';
+                            let statusColor = '#94A3B8';
+                            
+                            if (studentAnsText !== 'No Answer') {
+                                if (isManual && !isChecked) {
+                                    cardBorderColor = '#F59E0B'; 
+                                    studentAnsColor = '#B45309';
+                                    studentAnsBg = '#FEF3C7';
+                                    statusText = 'Pending Review';
+                                    statusColor = '#D97706';
+                                } else if (isCorrect || (isManual && isChecked)) {
+                                    cardBorderColor = '#34D399'; 
+                                    studentAnsColor = '#10B981';
+                                    studentAnsBg = '#E1F8F0';
+                                    statusText = 'Finished';
+                                    statusColor = '#10B981';
+                                } else {
+                                    cardBorderColor = '#F87171'; 
+                                    studentAnsColor = '#EF4444';
+                                    studentAnsBg = '#FEE2E2';
+                                    statusText = 'Incorrect';
+                                    statusColor = '#EF4444';
+                                }
+                            }
+
+                            return (
+                                <View key={qId} style={[localStyles.answerCard, { 
+                                    backgroundColor: theme.card || '#FFF', 
+                                    borderColor: cardBorderColor 
+                                }]}>
+                                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
+                                        <Text style={[localStyles.qText, { color: theme.text || '#000', flex: 1, marginRight: 10, marginBottom: 0 }]}>
+                                            {idx + 1}. {questionPrompt}
+                                        </Text>
+
+                                        <View style={{ alignItems: 'flex-end' }}>
+                                            <Text style={{ fontSize: 11, fontWeight: '800', color: statusColor, marginBottom: 4 }}>
+                                                {statusText}
+                                            </Text>
+                                            
+                                            {/* Score Adjustment Field inside the answer card ONLY for Written/Identification */}
+                                            {ansId && isManual ? (
+                                                <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#F1F5F9', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2, borderWidth: 1, borderColor: '#E2E8F0' }}>
+                                                    <TextInput
+                                                        style={{ fontSize: 13, fontWeight: '900', color: '#153c2a', minWidth: 24, textAlign: 'center', padding: 0 }}
+                                                        value={draftScores[ansId] !== undefined ? String(draftScores[ansId]) : ''}
+                                                        onChangeText={(val) => setDraftScores(prev => ({ ...prev, [ansId]: val }))}
+                                                        keyboardType="numeric"
+                                                        maxLength={4}
+                                                    />
+                                                    <Text style={{ fontSize: 12, fontWeight: '800', color: '#64748B' }}> / {maxPoints} pts</Text>
+                                                </View>
+                                            ) : (
+                                                <Text style={{ fontSize: 12, fontWeight: '800', color: '#64748B' }}>
+                                                    {earnedPts} / {maxPoints} pts
+                                                </Text>
+                                            )}
+                                        </View>
+                                    </View>
+
+                                    <Text style={{ fontSize: 11, fontWeight: '800', color: '#94A3B8', marginBottom: 10 }}>
+                                        {displayFormat}
+                                    </Text>
+
+                                    <View style={[localStyles.answerBox, { backgroundColor: studentAnsBg }]}>
+                                        <Text style={localStyles.answerLabel}>Student's Answer:</Text>
+                                        <Text style={[localStyles.answerValue, { color: studentAnsColor }]}>
+                                            {studentAnsText}
+                                        </Text>
+                                    </View>
+
+                                    {!isCorrect && correctAnswerText && correctAnswerText !== 'Professor review' && (
+                                        <View style={[localStyles.answerBox, { marginTop: 5, backgroundColor: '#F1F5F9' }]}>
+                                            <Text style={localStyles.answerLabel}>Correct Answer:</Text>
+                                            <Text style={[localStyles.answerValue, { color: '#475569' }]}>
+                                                {correctAnswerText}
+                                            </Text>
+                                        </View>
+                                    )}
+                                </View>
+                            );
+                          })
+                    )}
+                  </View>
                 )}
 
                 {isExternalAssess && (
@@ -652,21 +723,21 @@ export default function AssessmentQuestionsView({ route, navigation }) {
                                 />
                               </View>
                             </View>
-
-                            <View style={{ marginTop: 15, paddingTop: 15, borderTopWidth: 1, borderTopColor: '#E2E8F0' }}>
-                                <Text style={localStyles.inputLabel}>Instructor Feedback (Optional)</Text>
-                                <TextInput 
-                                  style={[localStyles.scoreInput, { backgroundColor: theme.card || '#FFF', color: theme.text, height: 100, textAlignVertical: 'top', textAlign: 'left', fontSize: 15, fontWeight: '500' }]}
-                                  value={reviewFeedback}
-                                  onChangeText={setReviewFeedback}
-                                  multiline
-                                  placeholder="Add comments here..."
-                                  placeholderTextColor="#94A3B8"
-                                />
-                            </View>
                         </View>
                     </>
                 )}
+
+                <View style={localStyles.settingCard}>
+                    <Text style={localStyles.inputLabel}>Instructor Feedback (Optional)</Text>
+                    <TextInput 
+                        style={[localStyles.scoreInput, { backgroundColor: theme.card || '#FFF', color: theme.text, height: 100, textAlignVertical: 'top', textAlign: 'left', fontSize: 15, fontWeight: '500' }]}
+                        value={reviewFeedback}
+                        onChangeText={setReviewFeedback}
+                        multiline
+                        placeholder="Add comments here..."
+                        placeholderTextColor="#94A3B8"
+                    />
+                </View>
 
                 {/* Visible for ALL assessment types, allowing instructor to manually release grades */}
                 <View style={localStyles.releaseToggleContainer}>
@@ -685,15 +756,15 @@ export default function AssessmentQuestionsView({ route, navigation }) {
                 </View>
 
                 <TouchableOpacity 
-                   style={[localStyles.saveBtn, isSavingGrade && { opacity: 0.7 }]} 
-                   onPress={submitGrade}
-                   disabled={isSavingGrade}
+                    style={[localStyles.saveBtn, isSavingGrade && { opacity: 0.7 }]} 
+                    onPress={submitGrade}
+                    disabled={isSavingGrade}
                 >
-                  {isSavingGrade ? (
+                    {isSavingGrade ? (
                     <ActivityIndicator color="#FFF" />
-                  ) : (
+                    ) : (
                     <Text style={localStyles.saveBtnText}>Save Changes</Text>
-                  )}
+                    )}
                 </TouchableOpacity>
 
               </ScrollView>
