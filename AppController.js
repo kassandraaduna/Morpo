@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useContext } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import Splash from './Pages/Splash';
+
+// (Keep all your screen imports here verbatim)
 import Login from './Pages/Login';
 import Register from './Pages/Register';
 import ResetPasswordScreen from './Pages/ResetPasswordScreen';
@@ -36,82 +36,63 @@ import DraftAssessments from './Pages/DraftAssessments';
 import EditAssessment from './Pages/EditAssessment';
 import StudentResultViewer from './Pages/StudentResultViewer';
 
+import { AuthContext } from './Pages/src/context/authContext';
+
 const Stack = createStackNavigator();
 
 export default function AppController() {
-  const [initialRoute, setInitialRoute] = useState('Splash');
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    const bootstrap = async () => {
-      try {
-        const onboardingCompleted = await AsyncStorage.getItem('onboardingCompleted');
-        const userRaw = await AsyncStorage.getItem('user');
-
-        if (!onboardingCompleted) {
-          setInitialRoute('Splash');
-        } else if (userRaw) {
-          const user = JSON.parse(userRaw);
-
-          if ((user.role || '').toLowerCase() === 'instructor') {
-            setInitialRoute('InstructorBottomTab');
-          } else {
-            setInitialRoute('StudentBottomTab');
-          }
-        } else {
-          setInitialRoute('Login');
-        }
-      } catch {
-        setInitialRoute('Login');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    bootstrap();
-  }, []);
+  const { user, isLoading } = useContext(AuthContext);
 
   if (isLoading) return null;
 
+  const isInstructor = (user?.role || '').toLowerCase() === 'instructor';
+
   return (
     <NavigationContainer>
-      <Stack.Navigator
-        initialRouteName={initialRoute}
-        screenOptions={{ headerShown: false }}
-      >
-        <Stack.Screen name="Splash" component={Splash} options={{ headerShown: false }}/>
-        <Stack.Screen name="Login" component={Login} options={{ headerShown: false }}/>
-        <Stack.Screen name="Register" component={Register} options={{ headerShown: false }}/>
-        <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} options={{ headerShown: false }}/>
-        <Stack.Screen name="StudentBottomTab" component={StudentBottomTab} />
-        <Stack.Screen name="EditProfile" component={EditProfile} options={{ headerShown: false }}/>
-        <Stack.Screen name="Terms" component={Terms} options={{ headerShown: false }}/>
-        <Stack.Screen name="Privacy" component={Privacy} options={{ headerShown: false }}/>
-        <Stack.Screen name="ChangePassword" component={ChangePassword} options={{ headerShown: false }}/>
-        <Stack.Screen name="FAQs" component={FAQs} options={{ headerShown: false }}/>
-        <Stack.Screen name="About" component={About} options={{ headerShown: false }}/>
-        <Stack.Screen name="InstructorBottomTab" component={InstructorBottomTab} />
-        <Stack.Screen name="Learn" component={Learn} options={{ headerShown: false }} />
-        <Stack.Screen name="LessonStudent" component={LessonStudent} options={{ headerShown: false }}/>
-        <Stack.Screen name="TakeAssessment" component={TakeAssessment} options={{ headerShown: false }}/>
-        <Stack.Screen name="ModelViewerMobile" component={ModelViewerMobile} options={{ headerShown: false }}/>
-        <Stack.Screen name="CreatePractice" component={CreatePractice} options={{ headerShown: false }}/>
-        <Stack.Screen name="StudentMonitoring" component={StudentMonitoring} options={{ headerShown: false }} />
-        <Stack.Screen name="StudentProgressDetail" component={StudentProgressDetail} options={{ headerShown: false }} />
-        <Stack.Screen name="UploadLesson" component={UploadLesson} options={{ headerShown: false }} />
-        <Stack.Screen name="Bookmarks" component={Bookmarks} options={{ headerShown: false }} />
-        <Stack.Screen name="ArchiveLessons" component={ArchiveLessons} options={{ headerShown: false }} />
-        <Stack.Screen name="AssessmentQuestionsView" component={AssessmentQuestionsView} options={{ headerShown: false }} />
-        <Stack.Screen name="ScanHistory" component={ScanHistory} options={{ headerShown: false }} />
-        <Stack.Screen name="DatasetLibrary" component={DatasetLibrary} options={{ headerShown: false }} />
-        <Stack.Screen name="Notifications" component={Notifications} options={{ headerShown: false }} />
-        <Stack.Screen name="AssessmentWebViewer" component={AssessmentWebViewer} options={{ headerShown: false }} />
-        <Stack.Screen name="CreateAssessmentLink" component={CreateAssessmentLink} options={{ headerShown: false }} />
-        <Stack.Screen name="CreateAssessmentManual" component={CreateAssessmentManual} options={{ headerShown: false }} />
-        <Stack.Screen name="CreateAssessmentAI" component={CreateAssessmentAI} options={{ headerShown: false }} />
-        <Stack.Screen name="DraftAssessments" component={DraftAssessments} options={{ headerShown: false }} />
-        <Stack.Screen name="EditAssessment" component={EditAssessment} options={{ headerShown: false}} />
-        <Stack.Screen name="StudentResultViewer" component={StudentResultViewer} options={{ headerShown: false }} />
+      <Stack.Navigator screenOptions={{ headerShown: false }}>
+        {!user ? (
+          <>
+            <Stack.Screen name="Login" component={Login} />
+            <Stack.Screen name="Register" component={Register} />
+            <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
+          </>
+        ) : (
+          <>
+            {isInstructor ? (
+              <Stack.Screen name="InstructorBottomTab" component={InstructorBottomTab} />
+            ) : (
+              <Stack.Screen name="StudentBottomTab" component={StudentBottomTab} />
+            )}
+
+            <Stack.Screen name="EditProfile" component={EditProfile} />
+            <Stack.Screen name="Terms" component={Terms} />
+            <Stack.Screen name="Privacy" component={Privacy} />
+            <Stack.Screen name="ChangePassword" component={ChangePassword} />
+            <Stack.Screen name="FAQs" component={FAQs} />
+            <Stack.Screen name="About" component={About} />
+            <Stack.Screen name="Learn" component={Learn} />
+            <Stack.Screen name="LessonStudent" component={LessonStudent} />
+            <Stack.Screen name="TakeAssessment" component={TakeAssessment} />
+            <Stack.Screen name="ModelViewerMobile" component={ModelViewerMobile} />
+            <Stack.Screen name="CreatePractice" component={CreatePractice} />
+            <Stack.Screen name="StudentMonitoring" component={StudentMonitoring} />
+            <Stack.Screen name="StudentProgressDetail" component={StudentProgressDetail} />
+            <Stack.Screen name="UploadLesson" component={UploadLesson} />
+            <Stack.Screen name="Bookmarks" component={Bookmarks} />
+            <Stack.Screen name="ArchiveLessons" component={ArchiveLessons} />
+            <Stack.Screen name="AssessmentQuestionsView" component={AssessmentQuestionsView} />
+            <Stack.Screen name="ScanHistory" component={ScanHistory} />
+            <Stack.Screen name="DatasetLibrary" component={DatasetLibrary} />
+            <Stack.Screen name="Notifications" component={Notifications} />
+            <Stack.Screen name="AssessmentWebViewer" component={AssessmentWebViewer} />
+            <Stack.Screen name="CreateAssessmentLink" component={CreateAssessmentLink} />
+            <Stack.Screen name="CreateAssessmentManual" component={CreateAssessmentManual} />
+            <Stack.Screen name="CreateAssessmentAI" component={CreateAssessmentAI} />
+            <Stack.Screen name="DraftAssessments" component={DraftAssessments} />
+            <Stack.Screen name="EditAssessment" component={EditAssessment} />
+            <Stack.Screen name="StudentResultViewer" component={StudentResultViewer} />
+          </>
+        )}
       </Stack.Navigator>
     </NavigationContainer>
   );

@@ -19,12 +19,15 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { login, verifyLoginOtp, resendLoginOtp } from '../Pages/src/services/authService';
 import { toastError, toastSuccess } from '../Pages/src/components/ToastMsg';
 import { ThemeContext } from '../Pages/src/context/ThemeContext';
+import { AuthContext } from './src/context/AuthContext';
 
 const RESEND_SECONDS = 60;
 
 export default function Login({ navigation }) {
   const { theme } = useContext(ThemeContext);
   const { width } = useWindowDimensions();
+
+  const { loginUser } = useContext(AuthContext);
 
   // ─── Responsive Scaling Calculations ─────────────────────────────
   const baseWidth = 375;
@@ -71,9 +74,9 @@ export default function Login({ navigation }) {
   }, [step]);
 
   // ─── Route After Successful Login ────────────────────────────────
-  const routeAfterLogin = async (user) => {
-    await AsyncStorage.setItem('user', JSON.stringify(user));
-    if (user?.role?.toLowerCase() === 'instructor') {
+  const routeAfterLogin = async (userObj) => {
+    await loginUser(userObj);
+    if (userObj?.role?.toLowerCase() === 'instructor') {
       navigation.replace('InstructorBottomTab');
     } else {
       navigation.replace('StudentBottomTab');

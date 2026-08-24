@@ -385,14 +385,14 @@ export default function StudentHomepage({ navigation }) {
             });
 
             generatedNotifs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
+      
             const mappedNotifs = generatedNotifs
                 .filter(n => !clearedNotifs.includes(n._id))
                 .map(n => ({
                     ...n,
                     isRead: readNotifs.includes(n._id)
                 }));
-
+                
             setNotifications(mappedNotifs);
 
         } catch (error) {

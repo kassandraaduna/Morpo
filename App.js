@@ -4,6 +4,7 @@ import AppController from './AppController';
 import Toast from 'react-native-toast-message';
 import { ThemeProvider, ThemeContext } from './Pages/src/context/ThemeContext';
 import * as Notifications from 'expo-notifications';
+import { AuthProvider } from './Pages/src/context/AuthContext';
 
 const AppContent = () => {
     const { theme } = useContext(ThemeContext);
@@ -18,9 +19,11 @@ const AppContent = () => {
 
     const App = () => {
     return (
-        <ThemeProvider>
-        <AppContent />
-        </ThemeProvider>
+        <AuthProvider>
+            <ThemeProvider>
+                <AppContent />
+            </ThemeProvider>
+        </AuthProvider>
     );
     };
 

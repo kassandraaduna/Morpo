@@ -44,6 +44,24 @@ api.interceptors.request.use(
   error => Promise.reject(error)
 );
 
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const status = error.response?.status;
+
+    if (status === 401 || status === 403) {
+      console.warn('Session invalidated by server. Logging out.');
+      try {
+        await AsyncStorage.removeItem('user');
+
+      } catch (e) {
+        console.log("Error clearing storage:", e);
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
 export const toAbsUrl = (url) => {
   if (!url) return '';
   if (url.startsWith('http')) return url;
