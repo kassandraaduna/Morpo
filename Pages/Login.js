@@ -12,6 +12,7 @@ import {
   ActivityIndicator,
   Modal,
   useWindowDimensions,
+  StatusBar,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -266,6 +267,7 @@ export default function Login({ navigation }) {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
+        <StatusBar barStyle="dark-content" backgroundColor="transparent" />
         {step === 'login' ? (
           /* ─── STEP 1: LOGIN ACCOUNT SCREEN ─────────────────────── */
           <View style={[localStyles.formContainer, { maxWidth: 450, alignSelf: 'center', width: '100%' }]}>

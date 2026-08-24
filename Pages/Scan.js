@@ -1,7 +1,7 @@
 import React, { useState, useContext, useEffect } from 'react';
 import { 
   View, Text, TouchableOpacity, Image, ActivityIndicator, 
-  ScrollView, StyleSheet, Platform, StatusBar, Alert 
+  ScrollView, StyleSheet, Platform, StatusBar, Modal 
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,6 +20,17 @@ export default function Scan({ navigation }) {
   
   const [activeScanItemIndex, setActiveScanItemIndex] = useState(0);
   const [carouselIndex, setCarouselIndex] = useState(0);
+
+  // Custom Modal Alert State
+  const [confirmModal, setConfirmModal] = useState({
+    visible: false,
+    title: '',
+    message: '',
+    confirmText: 'Confirm',
+    onConfirm: null,
+    isDanger: false,
+    hideCancel: false
+  });
 
   useEffect(() => {
     const init = async () => {
@@ -40,6 +51,13 @@ export default function Scan({ navigation }) {
     } catch (err) { 
       console.log("History fetch failed", err); 
     }
+  };
+
+  const closeConfirm = () => setConfirmModal(prev => ({ ...prev, visible: false }));
+
+  const handleConfirmYes = () => {
+    if (confirmModal.onConfirm) confirmModal.onConfirm();
+    closeConfirm();
   };
 
   const pickImages = async (useCamera = false) => {
@@ -65,7 +83,16 @@ export default function Scan({ navigation }) {
     if (useCamera) {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       if (status !== 'granted') {
-        return Alert.alert('Permission Required', 'Camera permission is required to scan specimens.');
+        setConfirmModal({
+          visible: true,
+          title: 'Permission Required',
+          message: 'Camera permission is required to scan specimens.',
+          confirmText: 'OK',
+          onConfirm: null,
+          isDanger: false,
+          hideCancel: true
+        });
+        return;
       }
       res = await ImagePicker.launchCameraAsync({ ...options, allowsMultipleSelection: false });
     } else {
@@ -74,7 +101,6 @@ export default function Scan({ navigation }) {
 
     if (!res.canceled) {
       const selectedAssets = res.assets.slice(0, remainingSlots);
-      // Append the new images to the existing ones
       setImages(prev => [...prev, ...selectedAssets]);
     }
   };
@@ -134,27 +160,24 @@ export default function Scan({ navigation }) {
   };
 
   const handleDeleteHistoryItem = (id) => {
-    Alert.alert(
-      "Remove Scan", 
-      "Remove this scan sequence from your history?", 
-      [
-        { text: "Cancel", style: "cancel" },
-        { 
-          text: "Remove", 
-          style: "destructive", 
-          onPress: async () => {
-            try {
-              await api.delete(`/scan/history/item/${id}?studentId=${user._id}`);
-              setHistory(prev => prev.filter(h => h._id !== id));
-              if (result && result.some(r => r._id === id)) clearScanner();
-              toastSuccess("Scan removed from history");
-            } catch (e) {
-              toastError("Failed to remove scan");
-            }
-          }
+    setConfirmModal({
+      visible: true,
+      title: 'Remove Scan',
+      message: 'Remove this scan sequence from your history?',
+      confirmText: 'Remove',
+      isDanger: true,
+      hideCancel: false,
+      onConfirm: async () => {
+        try {
+          await api.delete(`/scan/history/item/${id}?studentId=${user._id}`);
+          setHistory(prev => prev.filter(h => h._id !== id));
+          if (result && result.some(r => r._id === id)) clearScanner();
+          toastSuccess("Scan removed from history");
+        } catch (e) {
+          toastError("Failed to remove scan");
         }
-      ]
-    );
+      }
+    });
   };
 
   const clearScanner = () => {
@@ -218,7 +241,6 @@ export default function Scan({ navigation }) {
                     <Image source={{ uri: img.uri }} style={styles.batchPreviewThumb} />
                     <View style={styles.batchBadgeIndex}><Text style={styles.batchBadgeText}>{idx + 1}</Text></View>
                     
-                    {/* NEW: Remove Image Button */}
                     {!loading && !result && (
                       <TouchableOpacity 
                         style={styles.removeImgBtn} 
@@ -230,7 +252,6 @@ export default function Scan({ navigation }) {
                   </View>
                 ))}
                 
-                {/* NEW: Add More Images Button */}
                 {!loading && !result && images.length < 6 && (
                   <TouchableOpacity style={styles.addMoreThumbBtn} onPress={() => pickImages(false)}>
                     <Ionicons name="add" size={32} color="#153c2a" />
@@ -438,6 +459,43 @@ export default function Scan({ navigation }) {
           </View>
         )}
       </ScrollView>
+
+      {/* --- CUSTOM CONFIRMATION MODAL --- */}
+      <Modal visible={confirmModal.visible} transparent animationType="fade" onRequestClose={closeConfirm}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.confirmCard, { backgroundColor: theme.card || '#fff' }]}>
+            <View style={styles.confirmHeader}>
+              <Ionicons 
+                name={confirmModal.isDanger ? "warning" : "information-circle"} 
+                size={28} 
+                color={confirmModal.isDanger ? "#EF4444" : "#153c2a"} 
+              />
+              <Text style={[styles.confirmTitle, { color: theme.text || '#000' }]}>
+                {confirmModal.title}
+              </Text>
+            </View>
+            
+            <Text style={[styles.confirmMessage, { color: theme.subText || '#64748B' }]}>
+              {confirmModal.message}
+            </Text>
+            
+            <View style={styles.confirmActionRow}>
+              {!confirmModal.hideCancel && (
+                <TouchableOpacity style={styles.confirmCancelBtn} onPress={closeConfirm}>
+                  <Text style={styles.confirmCancelText}>Cancel</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity 
+                style={[styles.confirmActionBtn, { backgroundColor: confirmModal.isDanger ? '#EF4444' : '#153c2a' }]} 
+                onPress={handleConfirmYes}
+              >
+                <Text style={styles.confirmActionText}>{confirmModal.confirmText}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
     </View>
   );
 }
@@ -565,5 +623,63 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginLeft: 10,
     backgroundColor: 'rgba(21, 60, 42, 0.05)',
+  },
+  // Modal Styles
+  modalOverlay: { 
+    flex: 1, 
+    backgroundColor: 'rgba(0,0,0,0.6)', 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    padding: 20 
+  },
+  confirmCard: { 
+    width: '100%', 
+    borderRadius: 16, 
+    padding: 24, 
+    elevation: 5, 
+    shadowColor: '#000', 
+    shadowOpacity: 0.2, 
+    shadowRadius: 10 
+  },
+  confirmHeader: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    marginBottom: 12, 
+    gap: 10 
+  },
+  confirmTitle: { 
+    fontSize: 20, 
+    fontWeight: '900' 
+  },
+  confirmMessage: { 
+    fontSize: 15, 
+    lineHeight: 22, 
+    marginBottom: 24 
+  },
+  confirmActionRow: { 
+    flexDirection: 'row', 
+    justifyContent: 'flex-end', 
+    gap: 12 
+  },
+  confirmCancelBtn: { 
+    paddingVertical: 10, 
+    paddingHorizontal: 16, 
+    borderRadius: 10, 
+    backgroundColor: '#F1F5F9' 
+  },
+  confirmCancelText: { 
+    fontSize: 15, 
+    fontWeight: '800', 
+    color: '#64748B' 
+  },
+  confirmActionBtn: { 
+    paddingVertical: 10, 
+    paddingHorizontal: 20, 
+    borderRadius: 10 
+  },
+  confirmActionText: { 
+    fontSize: 15, 
+    fontWeight: '800', 
+    color: '#FFF' 
   },
 });

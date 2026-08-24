@@ -1,15 +1,7 @@
 import React, { useState, useEffect, useContext, useCallback } from 'react';
 import { 
-  View, 
-  Text, 
-  ScrollView, 
-  TouchableOpacity, 
-  StyleSheet, 
-  Platform, 
-  Dimensions, 
-  ActivityIndicator,
-  Modal,
-  FlatList, Image,
+  View, Text, ScrollView, TouchableOpacity, StyleSheet, 
+  Platform, Dimensions, ActivityIndicator, Modal, FlatList, Image, StatusBar,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,6 +9,9 @@ import { useFocusEffect } from '@react-navigation/native';
 import { ThemeContext } from './src/context/ThemeContext';
 import api, { toAbsUrl } from './src/services/api';
 import { toastError, toastSuccess } from './src/components/ToastMsg';
+import * as Device from 'expo-device';
+import * as Notifications from 'expo-notifications';
+import Constants from 'expo-constants';
 
 const { width } = Dimensions.get('window');
 
@@ -57,19 +52,72 @@ export default function InstructorHomepage({ navigation }) {
   const [loading, setLoading] = useState(true);
 
   const [showCalendar, setShowCalendar] = useState(false);
-  const [showNotifications, setShowNotifications] = useState(false);
 
   const [stats, setStats] = useState({ sectionsAssigned: 0, totalStudents: 0, avgScore: 0 });
   const [performance, setPerformance] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [calendarEvents, setCalendarEvents] = useState([]);
 
-  // Calendar State
   const today = new Date();
   const initDateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
   const [calendarMonth, setCalendarMonth] = useState(today.getMonth());
   const [calendarYear, setCalendarYear] = useState(today.getFullYear());
   const [selectedDateStr, setSelectedDateStr] = useState(initDateStr);
+
+  const registerForPushNotificationsAsync = async (userId) => {
+    let token;
+
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync('default', {
+        name: 'default',
+        importance: Notifications.AndroidImportance.MAX,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: '#153c2a',
+      });
+    }
+
+    if (Device.isDevice) {
+      const { status: existingStatus } = await Notifications.getPermissionsAsync();
+      let finalStatus = existingStatus;
+      
+      if (existingStatus !== 'granted') {
+        const { status } = await Notifications.requestPermissionsAsync();
+        finalStatus = status;
+      }
+      
+      if (finalStatus !== 'granted') {
+        console.log('Failed to get push token for push notification!');
+        return;
+      }
+
+      try {
+        const projectId = Constants?.expoConfig?.extra?.eas?.projectId || Constants?.easConfig?.projectId;
+        
+        if (projectId) {
+          token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
+        } else {
+          token = (await Notifications.getExpoPushTokenAsync()).data;
+        }
+        
+        console.log("My Expo Push Token is: ", token);
+        
+      } catch (tokenErr) {
+        console.error("Token generation failed:", tokenErr);
+        return;
+      }
+
+      if (token && userId) {
+        try {
+          await api.put(`/users/${userId}/push-token`, { token });
+          console.log("Push token successfully saved to MongoDB!");
+        } catch (err) {
+          console.error("Failed to sync push token:", err);
+        }
+      }
+    } else {
+      console.log('Must use a physical device for Push Notifications');
+    }
+  };
 
   const loadInstructorData = async () => {
     try {
@@ -78,14 +126,25 @@ export default function InstructorHomepage({ navigation }) {
       const token = await AsyncStorage.getItem('token'); 
       
       if (!rawUser) return;
-      const currentUser = JSON.parse(rawUser);
+      let currentUser = JSON.parse(rawUser);
       setUser(currentUser);
       
       const config = {
         headers: { Authorization: token ? `Bearer ${token}` : '' }
       };
 
-      // 1. Parallel Data Fetching
+      try {
+          const userRes = await api.get(`/admin/users/${currentUser._id}`, config).catch(() => api.get(`/meds/${currentUser._id}`, config));
+          const updatedUser = userRes.data?.data || userRes.data;
+          if (updatedUser) {
+              currentUser = { ...currentUser, ...updatedUser };
+              setUser(currentUser);
+              await AsyncStorage.setItem('user', JSON.stringify(currentUser));
+          }
+      } catch (err) {
+          console.log("Failed to sync latest instructor data:", err);
+      }
+
       const [readNotifsRaw, clearedNotifsRaw, usersRes, calRes, dataRes, assessRes, monRes] = await Promise.all([
           AsyncStorage.getItem('read_notifs_instructor').catch(() => null),
           AsyncStorage.getItem('cleared_notifs_instructor').catch(() => null),
@@ -105,7 +164,6 @@ export default function InstructorHomepage({ navigation }) {
       const assessmentsData = assessRes.data?.data || assessRes.data || [];
       const monitoringData = monRes.data?.data || monRes.data || [];
 
-      // 2. Instructor Scope & Section matching
       const assignments = currentUser.instructorAssignments || [];
       const fallbackArr = Array.isArray(currentUser.assignedSections) ? currentUser.assignedSections : [];
       const fallbackStr = currentUser.section ? [currentUser.section] : [];
@@ -128,7 +186,6 @@ export default function InstructorHomepage({ navigation }) {
 
       const totalStudents = monitoringData.length > 0 ? monitoringData.length : fetchedStudents.length;
 
-      // 3. Calculate Stats directly from monitoring endpoint (Syncs with Web)
       let totalPercents = 0;
       let percentCount = 0;
 
@@ -149,35 +206,42 @@ export default function InstructorHomepage({ navigation }) {
               name: student.studentName || student.fname || 'Unknown Student',
               year: student.yearLevel || 'N/A',
               section: student.section || 'N/A',
-              score: sCount > 0 ? Math.round(sTotal / sCount) : 0
+              score: sCount > 0 ? Math.round(sTotal / sCount) : 0,
+              avatar: student.avatar || student.studentAvatar || student.student?.avatar || null
           };
       });
 
       const overallAvgScore = percentCount > 0 ? (totalPercents / percentCount) : 0;
       setStats({ sectionsAssigned, totalStudents, avgScore: overallAvgScore });
-      setPerformance(performanceData);
 
-      // 4. Generate Notifications & Calendar (UNLIMITED)
+      const top5Performance = [...performanceData]
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 5);
+
+      setPerformance(top5Performance);
+
       let plottedEvents = [];
       let generatedNotifs = [];
 
       events.forEach(ev => {
         if(ev.date) {
+          const stableId = ev._id || ev.id || `${ev.title}-${ev.date}`;
           plottedEvents.push({
-            id: ev._id || Math.random().toString(),
+            id: stableId,
             title: ev.title,
             date: new Date(ev.date),
             type: ev.type || 'event',
             color: ev.color || '#153c2a'
           });
+          
+          generatedNotifs.push({
+            _id: `cal-${stableId}`,
+            type: 'calendar',
+            message: `New calendar event added: ${ev.title || 'Update'}`,
+            createdAt: ev.createdAt || ev.updatedAt || new Date().toISOString(),
+            isRead: false
+          });
         }
-        generatedNotifs.push({
-          _id: `cal-${ev._id}`,
-          type: 'calendar',
-          message: `New calendar event added: ${ev.title || 'Update'}`,
-          createdAt: ev.createdAt || ev.updatedAt || new Date().toISOString(),
-          isRead: false
-        });
       });
 
       assessmentsData.forEach(a => {
@@ -204,7 +268,6 @@ export default function InstructorHomepage({ navigation }) {
         });
       });
 
-      // THE FIX: Robust Submission Notifications matching Web Logic[cite: 6]
       monitoringData.forEach(student => {
           const studentName = student.studentName || student.fname || 'A student';
           const sAss = student.assessments || student.items || [];
@@ -228,7 +291,6 @@ export default function InstructorHomepage({ navigation }) {
           });
       });
 
-      // New Students Assigned Notification
       monitoringData.forEach(student => {
           generatedNotifs.push({
              _id: `instructor-student-${student.studentId || student._id}`,
@@ -247,7 +309,6 @@ export default function InstructorHomepage({ navigation }) {
         isRead: false
       });
 
-      // Sort Newest first and Map reads
       generatedNotifs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
       
       const mappedNotifs = generatedNotifs
@@ -268,91 +329,14 @@ export default function InstructorHomepage({ navigation }) {
 
   useFocusEffect(
     useCallback(() => {
+      StatusBar.setBarStyle('dark-content');
+      if (Platform.OS === 'android') {
+        StatusBar.setBackgroundColor('#F4F7F6');
+      }
+
       loadInstructorData();
     }, [])
   );
-
-  const handleMarkAsRead = async (id) => {
-    try {
-        const raw = await AsyncStorage.getItem('read_notifs_instructor');
-        const readNotifs = raw ? JSON.parse(raw) : [];
-        if (!readNotifs.includes(id)) {
-            readNotifs.push(id);
-            await AsyncStorage.setItem('read_notifs_instructor', JSON.stringify(readNotifs));
-        }
-        setNotifications(prev => prev.map(n => n._id === id ? { ...n, isRead: true } : n));
-    } catch (e) {}
-  };
-
-  const handleMarkAllAsRead = async () => {
-    try {
-        const raw = await AsyncStorage.getItem('read_notifs_instructor');
-        const readNotifs = raw ? JSON.parse(raw) : [];
-        notifications.forEach(n => {
-            if (!readNotifs.includes(n._id)) readNotifs.push(n._id);
-        });
-        await AsyncStorage.setItem('read_notifs_instructor', JSON.stringify(readNotifs));
-        setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
-        toastSuccess('All notifications marked as read.');
-    } catch (e) {}
-  };
-
-  const handleClearNotifications = async () => {
-    try {
-        const raw = await AsyncStorage.getItem('cleared_notifs_instructor');
-        const cleared = raw ? JSON.parse(raw) : [];
-        notifications.forEach(n => {
-            if (!cleared.includes(n._id)) cleared.push(n._id);
-        });
-        await AsyncStorage.setItem('cleared_notifs_instructor', JSON.stringify(cleared));
-        setNotifications([]);
-        toastSuccess('All notifications cleared.');
-    } catch (e) {
-        console.error('Failed to clear notifs', e);
-    }
-  };
-
-  const renderNotifItem = ({ item }) => {
-    // THE FIX: Exact Redirection Routes
-    const handlePress = async () => {
-        await handleMarkAsRead(item._id); 
-        setShowNotifications(false);
-        
-        if (item.type === 'dataset') {
-            navigation.navigate('DatasetLibrary');
-        } else if (item.type === 'calendar') {
-            setShowCalendar(true);
-        } else if (item.type === 'assessment_submission') {
-            if (item.assessment && item.assessment._id) {
-                navigation.navigate('AssessmentQuestionsView', { 
-                    assessment: item.assessment, 
-                    quiz: item.assessment, 
-                    quizId: item.assessment._id 
-                });
-            } else {
-                navigation.navigate('StudentMonitoring');
-            }
-        } else if (item.type === 'assignment' || item.type === 'student') {
-            navigation.navigate('StudentMonitoring');
-        }
-    };
-
-    return (
-        <TouchableOpacity style={localStyles.notifItem} onPress={handlePress} activeOpacity={0.7}>
-            <View style={[localStyles.notifIconBox, !item.isRead && { backgroundColor: '#C5DEC9' }]}>
-                <Ionicons 
-                    name={item.type === 'dataset' ? 'cube' : item.type === 'calendar' ? 'calendar' : item.type === 'assessment_submission' ? 'clipboard' : 'people'} 
-                    size={20} 
-                    color="#153c2a" 
-                />
-            </View>
-            <View style={localStyles.notifContent}>
-                <Text style={[localStyles.notifText, !item.isRead && { fontWeight: '900' }]}>{item.message}</Text>
-                <Text style={localStyles.notifTime}>{formatDate(item.createdAt)}</Text>
-            </View>
-        </TouchableOpacity>
-    );
-  };
 
   const renderEventItem = useCallback(({ item }) => (
     <View style={localStyles.eventItem}>
@@ -448,6 +432,13 @@ export default function InstructorHomepage({ navigation }) {
     );
   };
 
+  // FIXED: Hook placed BEFORE early return
+  useEffect(() => {
+    if (user?._id) {
+      registerForPushNotificationsAsync(user._id);
+    }
+  }, [user?._id]);
+
   if (!user || loading) {
     return (
       <View style={[localStyles.centered, { backgroundColor: theme?.bg || '#F4F7F6' }]}>
@@ -466,7 +457,7 @@ export default function InstructorHomepage({ navigation }) {
 
   return (
     <View style={[localStyles.container, { backgroundColor: theme?.bg || '#F4F7F6' }]}>
-
+      <StatusBar barStyle="dark-content" backgroundColor="transparent" />
       <View style={localStyles.topHeaderBar}>
         <Text style={localStyles.headerTitle}>Home</Text>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -475,7 +466,10 @@ export default function InstructorHomepage({ navigation }) {
             <Ionicons name="calendar" size={28} color="#153c2a" />
           </TouchableOpacity>
 
-          <TouchableOpacity onPress={() => setShowNotifications(true)} style={localStyles.bellContainer}>
+          <TouchableOpacity 
+            onPress={() => navigation.navigate('Notifications', { notifications, role: 'instructor' })} 
+            style={localStyles.bellContainer}
+          >
             <Ionicons name="notifications" size={28} color="#153c2a" />
             {unreadNotifs > 0 && (
               <View style={localStyles.badge}>
@@ -529,7 +523,7 @@ export default function InstructorHomepage({ navigation }) {
               <View style={localStyles.statIconBox}>
                 <Ionicons name="bar-chart" size={20} color="#153c2a" />
               </View>
-              <Text style={localStyles.statLabel}>Avg Score</Text>
+              <Text style={localStyles.statLabel}>Average Assessment Performance</Text>
             </View>
             <Text style={localStyles.statNumber}>{stats.avgScore.toFixed(1)}%</Text>
           </View>
@@ -625,9 +619,14 @@ export default function InstructorHomepage({ navigation }) {
           ) : (
             performance.map((student, index) => (
               <View key={index} style={localStyles.performanceCard}>
-                <View style={localStyles.perfAvatarCircle}>
-                  <Text style={localStyles.perfAvatarInitials}>{getInitials(student.name)}</Text>
-                </View>
+                {student.avatar ? (
+                  <Image source={{ uri: getAvatarUri(student.avatar, student) }} style={localStyles.perfAvatarImage} />
+                ) : (
+                  <View style={localStyles.perfAvatarCircle}>
+                    <Text style={localStyles.perfAvatarInitials}>{getInitials(student.name)}</Text>
+                  </View>
+                )}
+                
                 <View style={localStyles.perfInfo}>
                   <Text style={localStyles.perfName}>{student.name}</Text>
                   <Text style={localStyles.perfMeta}>{student.year} | {student.section}</Text>
@@ -642,41 +641,6 @@ export default function InstructorHomepage({ navigation }) {
         </View>
 
       </ScrollView>
-
-      {/* THE FIX: Updated Modal to include the Clear Notification button */}
-      <Modal visible={showNotifications} transparent animationType="fade" onRequestClose={() => setShowNotifications(false)}>
-        <View style={localStyles.modalOverlay}>
-          <View style={localStyles.modalCard}>
-            <View style={localStyles.modalHeader}>
-              <Text style={localStyles.modalTitle}>Notifications</Text>
-              
-              <View style={{ flexDirection: 'row', gap: 10 }}>
-                  <TouchableOpacity onPress={handleClearNotifications} style={localStyles.closeBtn}>
-                    <Ionicons name="trash-outline" size={24} color="#EF4444" />
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={handleMarkAllAsRead} style={localStyles.closeBtn}>
-                    <Ionicons name="checkmark-done" size={24} color="#153c2a" />
-                  </TouchableOpacity>
-                  <TouchableOpacity onPress={() => setShowNotifications(false)} style={localStyles.closeBtn}>
-                    <Ionicons name="close" size={24} color="#153c2a" />
-                  </TouchableOpacity>
-              </View>
-
-            </View>
-            
-            {notifications.length === 0 ? (
-              <Text style={localStyles.emptyText}>You have no new notifications.</Text>
-            ) : (
-              <FlatList
-                data={notifications}
-                keyExtractor={(item, index) => item._id || index.toString()}
-                showsVerticalScrollIndicator={false}
-                renderItem={renderNotifItem}
-              />
-            )}
-          </View>
-        </View>
-      </Modal>
 
       <Modal visible={showCalendar} transparent animationType="fade" onRequestClose={() => setShowCalendar(false)}>
         <View style={localStyles.modalOverlay}>
@@ -754,7 +718,7 @@ const localStyles = StyleSheet.create({
   welcomeSubText: { fontSize: 23, color: '#ffffff', fontWeight: '400', marginBottom: 4 },
   welcomeUserName: { fontSize: 25, fontWeight: '900', color: '#FFFFFF' },
   welcomeAvatarCircle: { width: 75, height: 75, borderRadius: 37.5, backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center', overflow: 'hidden', borderWidth: 3, borderColor: '#FFF' },
-  avatarImage: { width: '100%', height: '100%', resizeMode: 'cover' },
+  avatarImage: { width: '100%', height: '100%', resizeMode: 'cover', borderRadius: 37.5 },
   avatarInitials: { fontSize: 30, fontWeight: '900', color: '#153c2a' },
   statsContainer: { marginBottom: 20 },
   statCard: { backgroundColor: '#FFFFFF', borderRadius: 10, padding: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, borderWidth: 1, borderColor: '#F1F5F9' },
@@ -772,6 +736,7 @@ const localStyles = StyleSheet.create({
   performanceCard: { backgroundColor: '#F4F7F6', borderRadius: 10, padding: 16, flexDirection: 'row', alignItems: 'center', marginBottom: 12, borderWidth: 1, borderColor: '#E2E8F0' },
   perfAvatarCircle: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#C5DEC9', justifyContent: 'center', alignItems: 'center', marginRight: 15 },
   perfAvatarInitials: { fontSize: 20, fontWeight: '800', color: '#153c2a' },
+  perfAvatarImage: { width: 50, height: 50, borderRadius: 25, marginRight: 15 },
   perfInfo: { flex: 1, marginRight: 10 },
   perfName: { fontSize: 18, fontWeight: '800' },
   perfMeta: { fontSize: 13, color: '#000', fontWeight: '600', marginTop: 2, marginBottom: 6 },
@@ -784,11 +749,6 @@ const localStyles = StyleSheet.create({
   modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
   modalTitle: { fontSize: 25, fontWeight: '900', color: '#153c2a' },
   closeBtn: { padding: 4, backgroundColor: '#F1F5F9', borderRadius: 20 },
-  notifItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
-  notifIconBox: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#E7F5EE', justifyContent: 'center', alignItems: 'center', marginRight: 16 },
-  notifContent: { flex: 1 },
-  notifText: { fontSize: 18, fontWeight: '700', color: '#1E293B', lineHeight: 20 },
-  notifTime: { fontSize: 13, color: '#94A3B8', fontWeight: '500', marginTop: 4 },
   eventItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
   eventColorIndicator: { width: 12, height: 12, borderRadius: 6, marginRight: 14 },
   eventContent: { flex: 1, paddingRight: 10 },

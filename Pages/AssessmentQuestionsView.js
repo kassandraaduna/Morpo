@@ -17,6 +17,12 @@ const getInitials = (name) => {
   return parts[0][0].toUpperCase();
 };
 
+const getAvatarUri = (url, u) => {
+  if (!url) return null;
+  if (url.startsWith('data:image') || url.startsWith('file:')) return url;
+  return `${toAbsUrl(url)}?v=${u?.updatedAt || '1'}`;
+};
+
 const extractArray = (resData) => {
     if (!resData) return [];
     if (Array.isArray(resData)) return resData;
@@ -118,7 +124,9 @@ export default function AssessmentQuestionsView({ route, navigation }) {
           name: item.studentName || item.fname,
           yearLevel: item.yearLevel,
           section: item.section,
-          avatar: item.avatar,
+          // THE FIX: Extensively check for the avatar link due to complex backend aggregation
+          avatar: item.avatar || item.studentAvatar || item.student?.avatar || null,
+          updatedAt: item.updatedAt || item.student?.updatedAt,
           hasTaken: !!quizRecord,
           percent: quizRecord ? quizRecord.lastPercent : null,
           rawScore: quizRecord ? quizRecord.lastScore : 0,
@@ -348,7 +356,7 @@ export default function AssessmentQuestionsView({ route, navigation }) {
       >
         <View style={localStyles.rowLeft}>
           {item.avatar ? (
-            <Image source={{ uri: toAbsUrl(item.avatar) }} style={localStyles.avatar} />
+            <Image source={{ uri: getAvatarUri(item.avatar, item) }} style={localStyles.avatar} />
           ) : (
             <View style={localStyles.initialsCircle}>
               <Text style={localStyles.initialsText}>{getInitials(item.name)}</Text>
@@ -626,7 +634,7 @@ export default function AssessmentQuestionsView({ route, navigation }) {
                                     cardBorderColor = '#34D399'; 
                                     studentAnsColor = '#10B981';
                                     studentAnsBg = '#E1F8F0';
-                                    statusText = 'Finished';
+                                    statusText = 'Correct';
                                     statusColor = '#10B981';
                                 } else {
                                     cardBorderColor = '#F87171'; 

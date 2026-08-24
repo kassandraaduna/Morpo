@@ -50,6 +50,15 @@ export default function Profile({ navigation }) {
     }, [loadUser])
   );
 
+  useFocusEffect(
+    useCallback(() => {
+      StatusBar.setBarStyle('light-content');
+      if (Platform.OS === 'android') {
+        StatusBar.setBackgroundColor('#153c2a');
+      }
+    }, [])
+  );
+  
   if (!user) return null;
 
   const isInstructor = String(user.role || '').toLowerCase() === 'instructor';

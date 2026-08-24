@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useContext } from 'react';
 import { useRoute, useFocusEffect } from '@react-navigation/native';
-import { View, Text, StyleSheet, FlatList, SectionList, Linking, TouchableOpacity, TextInput, RefreshControl, ActivityIndicator, Platform, Dimensions, Modal } from 'react-native';
+import { View, Text, StyleSheet, FlatList, SectionList, Linking, TouchableOpacity, TextInput, RefreshControl, ActivityIndicator, Platform, Dimensions, Modal, StatusBar,  } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -528,6 +528,7 @@ export default function Learn({ navigation, route }) {
 
     return (
         <View style={[localStyles.container, { backgroundColor: theme?.background || '#F8FAFC' }]}>
+            <StatusBar barStyle="light-content" />
             <View style={[localStyles.headerArea, { backgroundColor: '#153c2a' }]}>
                 <View style={[localStyles.headerTopRow, {alignItems: 'center', justifyContent: 'center'}]}>
                     <Text style={[localStyles.headerTitle, { color: '#FFF' || theme?.text }]}>Learning Materials</Text>

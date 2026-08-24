@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useContext, useCallback } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert, Platform, KeyboardAvoidingView, ActivityIndicator, StyleSheet, Modal, Dimensions,} from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert, Platform, KeyboardAvoidingView, ActivityIndicator, StyleSheet, Modal, Dimensions, StatusBar,} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ThemeContext } from './src/context/ThemeContext';
 import { toastError, toastSuccess } from './src/components/ToastMsg';
@@ -617,6 +617,7 @@ export default function Register({ navigation }) {
 
       {/* ─── STICKY TOP HEADER BLOCK (Constrained Width Container) ── */}
       <View style={[localStyles.headerContainer, { backgroundColor: theme.bg || '#F8F9FA' }]}>
+        <StatusBar barStyle="dark-content" backgroundColor="transparent" />
         <View style={localStyles.maxContentWidth}>
           <TouchableOpacity
             style={localStyles.backButton}

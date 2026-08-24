@@ -1,0 +1,35 @@
+{
+  "project_info": {
+    "project_number": "137806999306",
+    "project_id": "mypholens",
+    "storage_bucket": "mypholens.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:137806999306:android:af1c92d5ddbf7b8bf914f3",
+        "android_client_info": {
+          "package_name": "com.anonymous.MyphoLens"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA5AvvZoGWHZVV0wcC8-Ri7R3RetvSTY00"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1",
+  "expo": {
+    "android": {
+      "package": "com.mypholens",
+      "googleServicesFile": "./google-services.json"
+    }
+  }
+}

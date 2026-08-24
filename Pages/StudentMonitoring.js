@@ -1,8 +1,9 @@
-import React, { useEffect, useState, useContext } from 'react';
+import React, { useEffect, useState, useContext, useCallback } from 'react';
 import { 
     View, Text, FlatList, TouchableOpacity, ActivityIndicator, 
     StyleSheet, TextInput, RefreshControl, Image, Platform, StatusBar, ScrollView 
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import api, { toAbsUrl } from './src/services/api';
@@ -15,6 +16,13 @@ const getInitials = (name) => {
     return parts[0][0].toUpperCase();
 };
 
+// Cache-busting avatar URI generator
+const getAvatarUri = (url, u) => {
+    if (!url) return null;
+    if (url.startsWith('data:image') || url.startsWith('file:')) return url;
+    return `${toAbsUrl(url)}?v=${u?.updatedAt || u?.student?.updatedAt || '1'}`;
+};
+
 export default function StudentMonitoring({ navigation }) {
     const { theme } = useContext(ThemeContext);
     const [students, setStudents] = useState([]);
@@ -22,18 +30,18 @@ export default function StudentMonitoring({ navigation }) {
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
 
-    // NEW: States for Section Filtering
+    // States for Section Filtering
     const [availableSections, setAvailableSections] = useState([]);
     const [activeSectionTab, setActiveSectionTab] = useState('ALL');
 
     const fetchMonitoring = async () => {
         try {
-            // Get logged-in user to pass their ID for scoped filtering[cite: 9]
+            // Get logged-in user to pass their ID for scoped filtering
             const userRaw = await AsyncStorage.getItem('user');
             const userObj = userRaw ? JSON.parse(userRaw) : null;
             const instructorParam = userObj?._id ? `?instructorId=${userObj._id}` : '';
 
-            // The backend automatically filters by assignments if instructorId is provided[cite: 9]
+            // The backend automatically filters by assignments if instructorId is provided
             const res = await api.get(`/instructor/assessment-monitoring${instructorParam}`);
             const data = res.data.data || [];
             setStudents(data);
@@ -63,31 +71,45 @@ export default function StudentMonitoring({ navigation }) {
         return matchesSection && matchesSearch;
     });
 
-    const renderStudent = ({ item }) => (
-        <TouchableOpacity 
-            style={[localStyles.studentCard, { backgroundColor: theme.card }]}
-            onPress={() => navigation.navigate('StudentProgressDetail', { student: item })}
-        >
-            <View style={localStyles.avatarCircle}>
-                {item.avatar ? (
-                    <Image source={{ uri: toAbsUrl(item.avatar) }} style={localStyles.avatarImage} />
-                ) : (
-                    <Text style={localStyles.avatarText}>{getInitials(item.studentName)}</Text>
-                )}
-            </View>
-            <View style={{ flex: 1, marginLeft: 15, marginRight: 10 }}>
-                <Text style={[localStyles.name, { color: theme.text }]} numberOfLines={1}>
-                    {(item.studentName || 'Unknown').toUpperCase()}
-                </Text>
-                <Text style={{ color: theme.subText, fontSize: 12, marginTop: 2, fontWeight: '600' }}>
-                    {item.yearLevel || 'N/A'} • {item.section || 'N/A'}
-                </Text>
-            </View>
-            <View style={localStyles.badge}>
-                <Text style={localStyles.badgeText}>{item.assessments?.length || 0} QUIZZES</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color={theme.subText} />
-        </TouchableOpacity>
+    const renderStudent = ({ item }) => {
+        // Robust check for nested avatar locations from aggregated backend data
+        const studentAvatar = item.avatar || item.studentAvatar || item.student?.avatar || null;
+
+        return (
+            <TouchableOpacity 
+                style={[localStyles.studentCard, { backgroundColor: theme.card }]}
+                onPress={() => navigation.navigate('StudentProgressDetail', { student: item })}
+            >
+                <View style={localStyles.avatarCircle}>
+                    {studentAvatar ? (
+                        <Image source={{ uri: getAvatarUri(studentAvatar, item) }} style={localStyles.avatarImage} />
+                    ) : (
+                        <Text style={localStyles.avatarText}>{getInitials(item.studentName)}</Text>
+                    )}
+                </View>
+                <View style={{ flex: 1, marginLeft: 15, marginRight: 10 }}>
+                    <Text style={[localStyles.name, { color: theme.text }]} numberOfLines={1}>
+                        {(item.studentName || 'Unknown').toUpperCase()}
+                    </Text>
+                    <Text style={{ color: theme.subText, fontSize: 12, marginTop: 2, fontWeight: '600' }}>
+                        {item.yearLevel || 'N/A'} • {item.section || 'N/A'}
+                    </Text>
+                </View>
+                <View style={localStyles.badge}>
+                    <Text style={localStyles.badgeText}>{item.assessments?.length || 0} QUIZZES</Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={theme.subText} />
+            </TouchableOpacity>
+        );
+    };
+
+    useFocusEffect(
+    useCallback(() => {
+        StatusBar.setBarStyle('light-content');
+        if (Platform.OS === 'android') {
+            StatusBar.setBackgroundColor('#153c2a');
+        }
+        }, [])
     );
 
     return (

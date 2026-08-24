@@ -11,9 +11,19 @@ const getInitials = (name) => {
     return parts[0][0].toUpperCase();
 };
 
+// Cache-busting avatar URI generator
+const getAvatarUri = (url, u) => {
+    if (!url) return null;
+    if (url.startsWith('data:image') || url.startsWith('file:')) return url;
+    return `${toAbsUrl(url)}?v=${u?.updatedAt || u?.student?.updatedAt || '1'}`;
+};
+
 export default function StudentProgressDetail({ route, navigation }) {
     const { student } = route.params;
     const { theme } = useContext(ThemeContext);
+
+    // Robust check for nested avatar locations from aggregated backend data
+    const studentAvatar = student.avatar || student.studentAvatar || student.student?.avatar || null;
 
     const renderQuizItem = ({ item }) => {
         const isPassing = item.lastPercent >= 50;
@@ -49,8 +59,8 @@ export default function StudentProgressDetail({ route, navigation }) {
 
                 <View style={localStyles.profileSection}>
                     <View style={localStyles.largeAvatar}>
-                        {student.avatar ? (
-                            <Image source={{ uri: toAbsUrl(student.avatar) }} style={localStyles.largeAvatarImage} />
+                        {studentAvatar ? (
+                            <Image source={{ uri: getAvatarUri(studentAvatar, student) }} style={localStyles.largeAvatarImage} />
                         ) : (
                             <Text style={localStyles.largeAvatarText}>{getInitials(student.studentName)}</Text>
                         )}

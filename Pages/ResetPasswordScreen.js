@@ -1,5 +1,5 @@
 import React, { useState, useContext, useEffect, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, ScrollView, KeyboardAvoidingView, Platform, StyleSheet, Dimensions} from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, ScrollView, KeyboardAvoidingView, Platform, StyleSheet, Dimensions, StatusBar,} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { ThemeContext } from '../Pages/src/context/ThemeContext';
 import { toastError, toastSuccess } from '../Pages/src/components/ToastMsg';
@@ -276,6 +276,7 @@ export default function ResetPasswordScreen({ navigation }) {
       style={[localStyles.container, { backgroundColor: theme.bg || '#F8F9FA' }]}
     >
       <View style={[localStyles.headerWrapper, { backgroundColor: theme.bg || '#F8F9FA' }]}>
+        <StatusBar barStyle="dark-content" backgroundColor="transparent" />
         <View style={localStyles.headerContainer}>
           <TouchableOpacity
             style={localStyles.backButton}
