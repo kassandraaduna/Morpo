@@ -43,6 +43,10 @@ export const AuthProvider = ({ children }) => {
 
     const logoutUser = async () => {
         try {
+            if (user && user._id) {
+                await api.put(`/users/${user._id}/push-token`, { token: '' }).catch(() => {});
+            }
+            
             await AsyncStorage.multiRemove(['user', 'token', 'user_role']);
             setUser(null);
         } catch (e) {

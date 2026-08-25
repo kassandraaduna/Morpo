@@ -76,11 +76,6 @@ export default function Login({ navigation }) {
   // ─── Route After Successful Login ────────────────────────────────
   const routeAfterLogin = async (userObj) => {
     await loginUser(userObj);
-    if (userObj?.role?.toLowerCase() === 'instructor') {
-      navigation.replace('InstructorBottomTab');
-    } else {
-      navigation.replace('StudentBottomTab');
-    }
   };
 
   // ─── LOGIN HANDLER ───────────────────────────────────────────────

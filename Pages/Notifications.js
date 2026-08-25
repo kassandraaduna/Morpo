@@ -271,8 +271,8 @@ const styles = StyleSheet.create({
     marginRight: 16,
   },
   notifContent: { flex: 1 },
-  notifText: { fontSize: 14, fontWeight: '600', color: '#1E293B', lineHeight: 20 },
-  notifTime: { fontSize: 12, color: '#94A3B8', fontWeight: '600', marginTop: 6 },
+  notifText: { fontSize: 15, fontWeight: '500', color: '#1E293B', lineHeight: 20 },
+  notifTime: { fontSize: 13, color: '#94A3B8', fontWeight: '600', marginTop: 6 },
   
   // Custom Modal Styles
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 20 },
