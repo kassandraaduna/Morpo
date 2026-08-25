@@ -226,7 +226,7 @@ export default function AssessmentQuestionsView({ route, navigation }) {
                 setGradingScore(String(finalScore));
                 setGradingTotal(String(finalTotal));
                 setReviewFeedback(finalAttempt.professorFeedback || finalAttempt.feedback || '');
-                setIsScoreReleased(Boolean(finalAttempt.isScoreReleased || finalAttempt.scoreReleased));
+                setIsScoreReleased(!finalAttempt.scorePending);
 
                 const initialDrafts = {};
                 if (Array.isArray(finalAttempt.answers)) {

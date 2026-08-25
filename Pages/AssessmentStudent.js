@@ -90,9 +90,8 @@ export default function AssessmentStudent({ navigation }) {
         const isClosed = Boolean(item.isClosed);
         const canRetake = Boolean(item.canRetake);
         const timerText = item.timer?.enabled ? `${item.timer.minutes} min timer` : 'No timer';
-        
-        // --- SCORE VISIBILITY LOCK LOGIC ADDED HERE ---
-        const isHidden = item.scoreVisibility === 'after_instructor_grade' && !item.latestAttempt?.isScoreReleased;
+
+        const isHidden = item.scoreVisibility === 'after_instructor_grade' && item.latestAttempt?.scorePending === true;
         const isPassing = isHidden ? false : lastScore >= 70;
 
         return (

@@ -371,7 +371,7 @@ export default function StudentHomepage({ navigation }) {
                     type: 'new_assessment',
                     assessmentId: ass._id,
                     message: `New assessment assigned: ${ass.title}`,
-                    createdAt: ass.createdAt || ass.updatedAt || new Date().toISOString(),
+                    createdAt: ass.updatedAt || ass.createdAt || new Date().toISOString(),
                     isRead: false
                 });
             });
@@ -382,7 +382,7 @@ export default function StudentHomepage({ navigation }) {
                     type: 'new_lesson',
                     lessonId: lesson._id,
                     message: `New material available: ${lesson.title}`,
-                    createdAt: lesson.createdAt || lesson.updatedAt || new Date().toISOString(),
+                    createdAt: lesson.updatedAt || lesson.createdAt || new Date().toISOString(),
                     isRead: false
                 });
             });

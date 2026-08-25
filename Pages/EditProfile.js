@@ -415,9 +415,10 @@ export default function EditProfile({ navigation }) {
                 <View style={localStyles.formContainer}>
                     <Field field="fname" value={form.fname} editable={editMode} placeholder="First Name" icon="person-outline" theme={theme} errors={errors} onChange={onChange} />
                     <Field field="lname" value={form.lname} editable={editMode} placeholder="Last Name" icon="person-outline" theme={theme} errors={errors} onChange={onChange} />
-                    <Field field="username" value={form.username} editable={editMode} placeholder="Username" icon="at-outline" theme={theme} errors={errors} onChange={onChange} />
+                    
                     
                     {/* Read-Only Admin Controlled Fields */}
+                    <Field field="username" value={form.username} editable={false} placeholder="Username" icon="at-outline" theme={theme} errors={errors} onChange={onChange} />
                     <Field field="email" value={form.email} editable={false} placeholder="Email Address" icon="mail-outline" theme={theme} errors={errors} onChange={onChange} />
                     <Field field="number" value={form.number} editable={false} placeholder="Mobile Number" icon="call-outline" theme={theme} errors={errors} onChange={onChange} />
                     
