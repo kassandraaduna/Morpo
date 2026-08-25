@@ -8,7 +8,7 @@
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/mypholens-logo.png",
+      "image": "./assets/mypholens_logo.png",
       "resizeMode": "cover",
       "backgroundColor": "#ffffff"
     },
