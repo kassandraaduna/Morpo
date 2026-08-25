@@ -36,9 +36,17 @@ export const AuthProvider = ({ children }) => {
         return () => api.interceptors.response.eject(interceptor);
     }, []);
 
-    const loginUser = async (userData) => {
-        await AsyncStorage.setItem('user', JSON.stringify(userData));
-        setUser(userData);
+    const loginUser = async (userData, expoToken = null) => {
+        try {
+            await AsyncStorage.setItem('user', JSON.stringify(userData));
+            setUser(userData);
+
+            if (expoToken && userData._id) {
+                await api.put(`/users/${userData._id}/push-token`, { token: expoToken }).catch(() => {});
+            }
+        } catch (e) {
+            console.error('Failed to save session:', e);
+        }
     };
 
     const logoutUser = async () => {
