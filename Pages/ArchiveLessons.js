@@ -42,7 +42,6 @@ export default function ArchiveLessons({ navigation }) {
   const closeActionModal = () =>
     setModalConfig((prev) => ({ ...prev, visible: false }));
 
-  // 1. Load User Session & Scope
   const loadUserAndData = useCallback(async () => {
     try {
       setLoading(true);
@@ -67,7 +66,6 @@ export default function ArchiveLessons({ navigation }) {
     }, [loadUserAndData])
   );
 
-  // 2. Fetch Archived Lessons and Assessments (Scoped to Instructor)
   const fetchArchivedItems = async (currentUser) => {
     try {
       const instructorParam =
@@ -76,8 +74,8 @@ export default function ArchiveLessons({ navigation }) {
           : '';
 
       const [lessonsRes, assessmentsRes] = await Promise.all([
-        api.get(`/lessons?includeArchived=true${instructorParam}`),
-        api.get(`/assessments?includeArchived=true${instructorParam}`),
+        api.get(`/lessons?includeArchived=true${instructorParam}&_t=${Date.now()}`),
+        api.get(`/assessments?includeArchived=true${instructorParam}&_t=${Date.now()}`),
       ]);
 
       const allLessons = Array.isArray(lessonsRes.data?.data)
@@ -91,7 +89,6 @@ export default function ArchiveLessons({ navigation }) {
         ? assessmentsRes.data
         : [];
 
-      // Filter only items where isArchived is true
       setArchivedLessons(allLessons.filter((item) => item.isArchived === true));
       setArchivedAssessments(
         allAssessments.filter((item) => item.isArchived === true)
@@ -103,7 +100,6 @@ export default function ArchiveLessons({ navigation }) {
     }
   };
 
-  // 3. Selection Handlers
   const toggleSelect = (id) => {
     setSelectedIds((prev) =>
       prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
@@ -120,7 +116,6 @@ export default function ArchiveLessons({ navigation }) {
     }
   };
 
-  // 4. Restore Action (Single or Batch)
   const executeRestore = async () => {
     closeActionModal();
     const idsToRestore = modalConfig.isBatch
@@ -158,7 +153,6 @@ export default function ArchiveLessons({ navigation }) {
     }
   };
 
-  // 5. Permanent Delete Action (Single or Batch)
   const executeDelete = async () => {
     closeActionModal();
     const idsToDelete = modalConfig.isBatch
@@ -185,7 +179,6 @@ export default function ArchiveLessons({ navigation }) {
     }
   };
 
-  // 6. Filter Search Query
   const currentData = (
     activeTab === 'lessons' ? archivedLessons : archivedAssessments
   ).filter((item) =>

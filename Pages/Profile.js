@@ -6,6 +6,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import ConfirmSheet from './src/components/ConfirmSheet';
 import { ThemeContext } from './src/context/ThemeContext';
 import api, { toAbsUrl } from './src/services/api';
+import { AuthContext } from './src/context/authContext';
 
 const getInitials = (fname, lname) => {
   const f = fname ? fname.charAt(0).toUpperCase() : '';
@@ -24,6 +25,8 @@ export default function Profile({ navigation }) {
   const [confirmLogout, setConfirmLogout] = useState(false);
   const { theme, darkMode, toggleTheme } = useContext(ThemeContext);
 
+  const { logoutUser } = useContext(AuthContext);
+
   const loadUser = useCallback(async () => {
     const rawUser = await AsyncStorage.getItem('user');
     if (rawUser) {
@@ -31,7 +34,7 @@ export default function Profile({ navigation }) {
       setUser(parsedUser);
 
       try {
-        const res = await api.get(`/meds/${parsedUser._id}`);
+        const res = await api.get(`/meds/${parsedUser._id}?_t=${Date.now()}`);
         const updatedUser = res.data?.data || res.data;
         
         if (updatedUser) {
@@ -127,12 +130,6 @@ export default function Profile({ navigation }) {
         )}
 
         <Text style={localStyles.sectionTitle}>PRIVACY & SECURITY</Text>
-        {/* <Row 
-          label="Dark Mode" 
-          icon="moon" 
-          chevron={false} 
-          right={<Switch value={darkMode} onValueChange={toggleTheme} trackColor={{ false: "#ccc", true: "#153c2a" }} />} 
-        /> */}
         <Row label="Change Password" icon="lock-closed" onPress={() => navigation.navigate('ChangePassword')} />
 
         <Text style={localStyles.sectionTitle}>HELP & SUPPORT</Text>
@@ -155,9 +152,14 @@ export default function Profile({ navigation }) {
         danger
         onCancel={() => setConfirmLogout(false)}
         onConfirm={async () => {
-          await AsyncStorage.clear();
           setConfirmLogout(false);
-          navigation.replace('Login');
+          
+          if (logoutUser) {
+              await logoutUser();
+          } else {
+              await AsyncStorage.multiRemove(['user', 'token', 'user_role']);
+              navigation.replace('Login');
+          }
         }}
       />
     </View>

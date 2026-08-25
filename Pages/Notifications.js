@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useContext } from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, Platform, Alert, StatusBar } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, Platform, Modal, StatusBar } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ThemeContext } from '../Pages/src/context/ThemeContext';
@@ -21,11 +21,21 @@ export default function Notifications({ route, navigation }) {
   const READ_KEY = role === 'instructor' ? 'read_notifs_instructor' : 'read_notifs';
   const CLEAR_KEY = role === 'instructor' ? 'cleared_notifs_instructor' : 'cleared_notifs';
 
+  // ─── Custom Modal State ──────────────────────────────────────────
+  const [confirmModal, setConfirmModal] = useState({
+      visible: false, title: '', message: '', iconName: 'help', iconColor: '#153c2a', iconBg: '#E7F5EE', 
+      confirmText: 'Confirm', hideCancel: false, onConfirm: () => {}
+  });
+
   useEffect(() => {
     // Ensure properly sorted from Newest to Oldest
     const sorted = [...initialNotifs].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     setNotifications(sorted);
   }, [initialNotifs]);
+
+  const triggerCustomAlert = (title, message, onConfirm, iconName = 'help', iconColor = '#153c2a', iconBg = '#E7F5EE', confirmText = 'Confirm', hideCancel = false) => {
+      setConfirmModal({ visible: true, title, message, onConfirm, iconName, iconColor, iconBg, confirmText, hideCancel });
+  };
 
   const handleMarkAsRead = async (id) => {
     try {
@@ -66,9 +76,10 @@ export default function Notifications({ route, navigation }) {
   };
 
   const handleClearAll = async () => {
-    Alert.alert("Clear Notifications", "Are you sure you want to delete all notifications forever?", [
-      { text: "Cancel", style: "cancel" },
-      { text: "Clear All", style: "destructive", onPress: async () => {
+    triggerCustomAlert(
+      "Clear Notifications",
+      "Are you sure you want to delete all notifications forever?",
+      async () => {
           try {
             const raw = await AsyncStorage.getItem(CLEAR_KEY);
             let clearList = raw ? JSON.parse(raw) : [];
@@ -79,8 +90,12 @@ export default function Notifications({ route, navigation }) {
             await AsyncStorage.setItem(CLEAR_KEY, JSON.stringify(clearList));
             setNotifications([]);
           } catch (e) { console.error('Failed to clear all', e); }
-      }}
-    ]);
+      },
+      "trash-outline", 
+      "#EF4444", 
+      "#FEE2E2", 
+      "Clear All"
+    );
   };
 
   const renderNotifItem = ({ item }) => {
@@ -134,6 +149,40 @@ export default function Notifications({ route, navigation }) {
     );
   };
 
+  const renderConfirmModal = () => {
+      return (
+          <Modal visible={confirmModal.visible} transparent animationType="fade">
+              <View style={styles.modalOverlay}>
+                  <View style={[styles.modalCard, { backgroundColor: theme?.card || '#FFF' }]}>
+                      <View style={[styles.modalIconCircle, { backgroundColor: confirmModal.iconBg }]}>
+                          <Ionicons name={confirmModal.iconName} size={28} color={confirmModal.iconColor} />
+                      </View>
+                      <Text style={[styles.modalTitle, { color: theme?.text || '#1E293B', textAlign: 'center' }]}>{confirmModal.title}</Text>
+                      <Text style={styles.modalMessage}>{confirmModal.message}</Text>
+                      
+                      <View style={styles.modalBtnRow}>
+                          {!confirmModal.hideCancel && (
+                              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setConfirmModal(prev => ({ ...prev, visible: false }))}>
+                                  <Text style={styles.modalCancelText}>Cancel</Text>
+                              </TouchableOpacity>
+                          )}
+                          
+                          <TouchableOpacity 
+                              style={[
+                                  styles.modalConfirmBtn, 
+                                  (confirmModal.iconName === 'warning' || confirmModal.iconName === 'trash-outline') && { backgroundColor: '#EF4444' }
+                              ]} 
+                              onPress={() => { const action = confirmModal.onConfirm; setConfirmModal(prev => ({ ...prev, visible: false })); action(); }}
+                          >
+                              <Text style={styles.modalConfirmText}>{confirmModal.confirmText}</Text>
+                          </TouchableOpacity>
+                      </View>
+                  </View>
+              </View>
+          </Modal>
+      );
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: theme?.bg || '#F4F7F6' }]}>
       <StatusBar barStyle="light-content" />
@@ -168,6 +217,8 @@ export default function Notifications({ route, navigation }) {
           contentContainerStyle={styles.listContainer}
         />
       )}
+      
+      {renderConfirmModal()}
     </View>
   );
 }
@@ -221,5 +272,17 @@ const styles = StyleSheet.create({
   },
   notifContent: { flex: 1 },
   notifText: { fontSize: 14, fontWeight: '600', color: '#1E293B', lineHeight: 20 },
-  notifTime: { fontSize: 12, color: '#94A3B8', fontWeight: '600', marginTop: 6 }
+  notifTime: { fontSize: 12, color: '#94A3B8', fontWeight: '600', marginTop: 6 },
+  
+  // Custom Modal Styles
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  modalCard: { width: '100%', maxWidth: 340, padding: 25, borderRadius: 10, alignItems: 'center', elevation: 10 },
+  modalIconCircle: { width: 55, height: 55, borderRadius: 27.5, justifyContent: 'center', alignItems: 'center', marginBottom: 15 },
+  modalTitle: { fontSize: 18, fontWeight: '900', marginBottom: 8, textAlign: 'center' },
+  modalMessage: { fontSize: 13, color: '#64748B', textAlign: 'center', marginBottom: 25, fontWeight: '600', lineHeight: 18 },
+  modalBtnRow: { flexDirection: 'row', gap: 12, width: '100%' },
+  modalCancelBtn: { flex: 1, paddingVertical: 14, borderRadius: 10, backgroundColor: '#F1F5F9', alignItems: 'center' },
+  modalCancelText: { fontWeight: '800', color: '#64748B', fontSize: 13 },
+  modalConfirmBtn: { flex: 1, paddingVertical: 14, borderRadius: 10, backgroundColor: '#153c2a', alignItems: 'center' },
+  modalConfirmText: { fontWeight: '800', color: '#FFF', fontSize: 13 }
 });

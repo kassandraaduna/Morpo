@@ -9,6 +9,7 @@ import api, { toAbsUrl } from './src/services/api';
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const DAYS_OF_WEEK = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+const GENDER_OPTIONS = ['Male', 'Female', 'Other', 'Prefer not to say'];
 
 const getInitials = (fname, lname) => {
     const f = fname ? fname.charAt(0).toUpperCase() : '';
@@ -85,8 +86,9 @@ export default function EditProfile({ navigation }) {
     const [editMode, setEditMode] = useState(false);
     const [loading, setLoading] = useState(false);
 
-    // Advanced Calendar States
+    // Advanced Calendar & Dropdown States
     const [showDatePicker, setShowDatePicker] = useState(false);
+    const [showGenderPicker, setShowGenderPicker] = useState(false);
     const [calendarMode, setCalendarMode] = useState('days'); 
     const [calendarYear, setCalendarYear] = useState(2004);
     const [calendarMonth, setCalendarMonth] = useState(0); 
@@ -129,10 +131,17 @@ export default function EditProfile({ navigation }) {
     const validate = () => {
         const e = {};
         if (!form.fname?.trim()) e.fname = 'First name is required';
+        else if (!/^[a-zA-ZñÑ\s.-]+$/.test(form.fname.trim())) e.fname = 'First name contains invalid characters';
+
         if (!form.lname?.trim()) e.lname = 'Last name is required';
+        else if (!/^[a-zA-ZñÑ\s.-]+$/.test(form.lname.trim())) e.lname = 'Last name contains invalid characters';
+
         if (!form.username?.trim()) e.username = 'Username is required';
-        if (!form.email?.trim()) e.email = 'Email is required';
-        if (!form.number?.trim()) e.number = 'Mobile number is required';
+        else if (form.username.length < 4) e.username = 'Username must be at least 4 characters';
+
+        if (!form.gender?.trim()) e.gender = 'Gender selection is required';
+        if (!form.dob?.trim()) e.dob = 'Date of birth cannot be empty';
+
         return e;
     };
 
@@ -217,7 +226,15 @@ export default function EditProfile({ navigation }) {
 
                 toastSuccess('Profile updated successfully');
             } catch (err) {
-                toastError(err.response?.data?.message || err.response?.data?.error || 'Failed to update profile');
+                const errorMsg = err.response?.data?.message || err.response?.data?.error || 'Failed to update profile';
+                
+                // Username availability check via backend collision handling
+                if (errorMsg.toLowerCase().includes('username') || errorMsg.toLowerCase().includes('duplicate') || errorMsg.toLowerCase().includes('taken')) {
+                    setErrors((prev) => ({ ...prev, username: 'Username is already in use.' }));
+                    toastError('Username is already taken. Please choose another.');
+                } else {
+                    toastError(errorMsg);
+                }
             } finally {
                 setLoading(false);
             }
@@ -346,7 +363,7 @@ export default function EditProfile({ navigation }) {
 
     return (
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1, backgroundColor: theme.bg }}>
-            <StatusBar barStyle="light-content" />
+            <StatusBar barStyle="light-content" backgroundColor="#153c2a" />
 
             <View style={[localStyles.header, { backgroundColor: '#153c2a' }]}>
                 <View style={localStyles.headerRow}>
@@ -399,9 +416,22 @@ export default function EditProfile({ navigation }) {
                     <Field field="fname" value={form.fname} editable={editMode} placeholder="First Name" icon="person-outline" theme={theme} errors={errors} onChange={onChange} />
                     <Field field="lname" value={form.lname} editable={editMode} placeholder="Last Name" icon="person-outline" theme={theme} errors={errors} onChange={onChange} />
                     <Field field="username" value={form.username} editable={editMode} placeholder="Username" icon="at-outline" theme={theme} errors={errors} onChange={onChange} />
-                    <Field field="email" value={form.email} editable={editMode} placeholder="Email Address" icon="mail-outline" theme={theme} errors={errors} onChange={onChange} />
-                    <Field field="number" value={form.number} editable={editMode} placeholder="Mobile Number" icon="call-outline" theme={theme} errors={errors} onChange={onChange} />
-                    <Field field="gender" value={form.gender} editable={editMode} placeholder="Gender" icon="male-female-outline" theme={theme} errors={errors} onChange={onChange} />
+                    
+                    {/* Read-Only Admin Controlled Fields */}
+                    <Field field="email" value={form.email} editable={false} placeholder="Email Address" icon="mail-outline" theme={theme} errors={errors} onChange={onChange} />
+                    <Field field="number" value={form.number} editable={false} placeholder="Mobile Number" icon="call-outline" theme={theme} errors={errors} onChange={onChange} />
+                    
+                    <Field 
+                        field="gender" 
+                        value={form.gender} 
+                        editable={editMode} 
+                        placeholder="Gender" 
+                        icon="male-female-outline" 
+                        theme={theme} 
+                        errors={errors} 
+                        onChange={onChange}
+                        onPress={() => setShowGenderPicker(true)} 
+                    />
                     <Field 
                         field="dob" 
                         value={form.dob?.slice?.(0, 10)} 
@@ -447,6 +477,31 @@ export default function EditProfile({ navigation }) {
                 </View>
             </Modal>
 
+            {/* Gender Selection Modal */}
+            <Modal visible={showGenderPicker} transparent animationType="fade" onRequestClose={() => setShowGenderPicker(false)}>
+                <View style={localStyles.modalOverlay}>
+                    <View style={localStyles.dropdownContainer}>
+                        <Text style={localStyles.dropdownTitle}>Select Gender</Text>
+                        {GENDER_OPTIONS.map((g) => (
+                            <TouchableOpacity 
+                                key={g} 
+                                style={localStyles.dropdownItem} 
+                                onPress={() => {
+                                    onChange('gender', g);
+                                    setShowGenderPicker(false);
+                                }}
+                            >
+                                <Text style={[localStyles.dropdownItemText, form.gender === g && { color: '#153c2a', fontWeight: '900' }]}>{g}</Text>
+                            </TouchableOpacity>
+                        ))}
+                        <TouchableOpacity style={localStyles.dropdownCancelBtn} onPress={() => setShowGenderPicker(false)}>
+                            <Text style={localStyles.dropdownCancelText}>Cancel</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Date Picker Modal */}
             <Modal
                 visible={showDatePicker}
                 transparent
@@ -569,6 +624,14 @@ const localStyles = StyleSheet.create({
     confirmSaveBtn: { backgroundColor: '#153c2a' },
     confirmDangerBtn: { backgroundColor: '#EF4444' },
     confirmBtnText: { color: '#FFF', fontWeight: '700', fontSize: 15 },
+
+    // Dropdown Styles
+    dropdownContainer: { backgroundColor: '#FFF', width: '80%', borderRadius: 12, padding: 20, elevation: 5 },
+    dropdownTitle: { fontSize: 18, fontWeight: '800', color: '#153c2a', marginBottom: 15, textAlign: 'center' },
+    dropdownItem: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', alignItems: 'center' },
+    dropdownItemText: { fontSize: 16, color: '#475569', fontWeight: '600' },
+    dropdownCancelBtn: { marginTop: 15, paddingVertical: 12, backgroundColor: '#F1F5F9', borderRadius: 8, alignItems: 'center' },
+    dropdownCancelText: { fontSize: 15, fontWeight: '700', color: '#64748B' },
 
     calendarCard: { backgroundColor: '#FFFFFF', borderRadius: 20, padding: 20, width: '100%', maxWidth: 400, elevation: 12, shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 12, shadowOffset: { width: 0, height: 5 } },
     calendarHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },

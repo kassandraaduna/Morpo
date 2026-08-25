@@ -311,18 +311,29 @@ export default function AssessmentQuestionsView({ route, navigation }) {
                 isScoreReleased: isScoreReleased
             };
         } else {
-            // Push ONLY manual answer grades back to the backend
-            const formattedGrades = rawAnswers.map(ans => {
+            // THE FIX: Push ALL answer grades back to the backend to prevent the "Grades payload is required" error.
+            // If it's a manual question with a draft score, use the draft. Otherwise, keep the original score.
+            const formattedGrades = rawAnswers.map((ans, idx) => {
                 const ansId = ans.answerId || ans._id;
                 const drafted = draftScores[ansId];
+                
+                let pts = ans.awardedPoints !== undefined && ans.awardedPoints !== null
+                    ? Number(ans.awardedPoints)
+                    : (ans.isCorrect ? Number(ans.points || assessment?.questions?.[idx]?.points || 1) : 0);
+                    
                 if (ansId && drafted !== undefined) {
-                    return {
-                        answerId: ansId,
-                        awardedPoints: Number(drafted)
-                    };
+                    pts = Number(drafted);
                 }
-                return null;
-            }).filter(g => g !== null);
+                
+                return {
+                    answerId: ansId,
+                    awardedPoints: pts,
+                    // Pass backup identifiers to satisfy strict backend validations
+                    questionId: ans.questionId || ans.question,
+                    isCorrect: ans.isCorrect || false,
+                    score: pts
+                };
+            });
 
             payload = {
                 grades: formattedGrades,
@@ -538,7 +549,7 @@ export default function AssessmentQuestionsView({ route, navigation }) {
                           </View>
                       ) : (
                           assessment.questions.map((q, idx) => {
-                            // 1. Exact ID Extraction (Restored from OLD file)
+                            // 1. Exact ID Extraction 
                             const qId = extractId(q._id) || extractId(q.id) || String(idx);
 
                             let studentAnsObj = (studentAttempt?.answers || []).find(a => {
@@ -558,7 +569,7 @@ export default function AssessmentQuestionsView({ route, navigation }) {
                             if (format === 'true_false') displayFormat = 'TRUE OR FALSE';
                             if (format === 'written') displayFormat = 'WRITTEN RESPONSE';
 
-                            // 3. Exact Text / Index Resolution (Restored from OLD file)
+                            // 3. Exact Text / Index Resolution
                             let studentAnsText = studentAnsObj?.userAnswer || studentAnsObj?.answerText || studentAnsObj?.answer;
                             
                             if (!studentAnsText && studentAnsObj?.selectedIndex !== undefined && studentAnsObj.selectedIndex !== -1 && Array.isArray(q.options)) {

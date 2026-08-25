@@ -54,7 +54,7 @@ export default function ScanHistory({ navigation }) {
   const fetchHistory = async (id) => {
     setLoading(true);
     try {
-      const res = await api.get(`/scan/history/${id}`);
+      const res = await api.get(`/scan/history/${id}?_t=${Date.now()}`);
       const data = res.data.data || [];
       setHistory(data);
       setFilteredHistory(data);

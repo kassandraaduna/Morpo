@@ -78,8 +78,8 @@ export default function DraftAssessments({ navigation }) {
     try {
       const instructorParam =
         currentUser?.role?.toLowerCase() === 'instructor'
-          ? `?instructorId=${currentUser._id}&status=draft`
-          : '?status=draft';
+          ? `?instructorId=${currentUser._id}&status=draft&_t=${Date.now()}`
+          : `?status=draft&_t=${Date.now()}`;
 
       const res = await api.get(`/assessments${instructorParam}`);
       const allAssessments = Array.isArray(res.data?.data)
@@ -102,7 +102,6 @@ export default function DraftAssessments({ navigation }) {
     }
   };
 
-  // Trigger Publish Confirmation Modal (With Pre-Publish Validation)
   const triggerPublishModal = (draft) => {
     const activeSections = draft.targetSections || [];
     if (activeSections.length === 0) {
