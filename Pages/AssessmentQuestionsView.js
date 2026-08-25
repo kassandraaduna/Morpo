@@ -124,7 +124,6 @@ export default function AssessmentQuestionsView({ route, navigation }) {
           name: item.studentName || item.fname,
           yearLevel: item.yearLevel,
           section: item.section,
-          // THE FIX: Extensively check for the avatar link due to complex backend aggregation
           avatar: item.avatar || item.studentAvatar || item.student?.avatar || null,
           updatedAt: item.updatedAt || item.student?.updatedAt,
           hasTaken: !!quizRecord,
@@ -229,7 +228,6 @@ export default function AssessmentQuestionsView({ route, navigation }) {
                 setReviewFeedback(finalAttempt.professorFeedback || finalAttempt.feedback || '');
                 setIsScoreReleased(Boolean(finalAttempt.isScoreReleased || finalAttempt.scoreReleased));
 
-                // ONLY track drafts for manual formats (Written/Identification)
                 const initialDrafts = {};
                 if (Array.isArray(finalAttempt.answers)) {
                     finalAttempt.answers.forEach((ans, idx) => {
@@ -294,14 +292,10 @@ export default function AssessmentQuestionsView({ route, navigation }) {
         }
 
         const rawAnswers = Array.isArray(studentAttempt?.answers) ? studentAttempt.answers : [];
-        const endpoint = isExternalAssess 
-            ? `/instructor/attempts/${attemptId}/external-score`
-            : `/instructor/attempts/${attemptId}/grade`;
-            
-        let payload = {};
 
         if (isExternalAssess) {
-            payload = {
+            const endpoint = `/instructor/attempts/${attemptId}/external-score`;
+            const payload = {
                 instructorId: currentUser?._id,
                 studentId: selectedStudent?._id,
                 score: Number(gradingScore || 0),
@@ -310,41 +304,61 @@ export default function AssessmentQuestionsView({ route, navigation }) {
                 feedback: reviewFeedback,
                 isScoreReleased: isScoreReleased
             };
+            await api.put(endpoint, payload, config);
         } else {
-            // THE FIX: Push ALL answer grades back to the backend to prevent the "Grades payload is required" error.
-            // If it's a manual question with a draft score, use the draft. Otherwise, keep the original score.
-            const formattedGrades = rawAnswers.map((ans, idx) => {
-                const ansId = ans.answerId || ans._id;
-                const drafted = draftScores[ansId];
-                
-                let pts = ans.awardedPoints !== undefined && ans.awardedPoints !== null
-                    ? Number(ans.awardedPoints)
-                    : (ans.isCorrect ? Number(ans.points || assessment?.questions?.[idx]?.points || 1) : 0);
-                    
-                if (ansId && drafted !== undefined) {
-                    pts = Number(drafted);
-                }
-                
-                return {
-                    answerId: ansId,
-                    awardedPoints: pts,
-                    // Pass backup identifiers to satisfy strict backend validations
-                    questionId: ans.questionId || ans.question,
-                    isCorrect: ans.isCorrect || false,
-                    score: pts
-                };
+            // THE FIX: Differentiate between Manual Grading and Pure Feedback updates to bypass backend errors
+            const manualAnswers = rawAnswers.filter((ans, idx) => {
+                const format = String(assessment?.questions?.[idx]?.format || ans.format || 'multiple_choice').toLowerCase();
+                return format === 'written' || format === 'identification' || !!ans.requiresManualReview;
             });
 
-            payload = {
-                grades: formattedGrades,
-                professorFeedback: reviewFeedback,
-                feedback: reviewFeedback,
-                isScoreReleased: isScoreReleased
-            };
+            if (manualAnswers.length > 0) {
+                // Assessment has manual questions -> Use the strict /grade endpoint
+                const endpoint = `/instructor/attempts/${attemptId}/grade`;
+                const formattedGrades = manualAnswers.map((ans) => {
+                    const ansId = ans.answerId || ans._id;
+                    const drafted = draftScores[ansId];
+                    
+                    const qIndex = rawAnswers.indexOf(ans);
+                    const qPoints = assessment?.questions?.[qIndex]?.points || ans.points || 1;
+
+                    let pts = ans.awardedPoints !== undefined && ans.awardedPoints !== null
+                        ? Number(ans.awardedPoints)
+                        : (ans.isCorrect ? Number(qPoints) : 0);
+                        
+                    if (ansId && drafted !== undefined) {
+                        pts = Number(drafted);
+                    }
+                    
+                    return {
+                        answerId: ansId,
+                        awardedPoints: pts
+                    };
+                });
+
+                const payload = {
+                    grades: formattedGrades,
+                    professorFeedback: reviewFeedback,
+                    feedback: reviewFeedback,
+                    isScoreReleased: isScoreReleased
+                };
+                await api.put(endpoint, payload, config);
+            } else {
+                // Pure auto-graded assessment -> Bypass the /grade endpoint entirely
+                const payload = {
+                    professorFeedback: reviewFeedback,
+                    feedback: reviewFeedback,
+                    isScoreReleased: isScoreReleased
+                };
+                
+                try {
+                    await api.put(`/instructor/attempts/${attemptId}`, payload, config);
+                } catch (fallbackErr) {
+                    await api.put(`/attempts/${attemptId}`, payload, config);
+                }
+            }
         }
 
-        await api.put(endpoint, payload, config);
-        
         toastSuccess("Score and feedback updated successfully.");
         setGradingModalVisible(false);
         fetchMonitoringData(); 

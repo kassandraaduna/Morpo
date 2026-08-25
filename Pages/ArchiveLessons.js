@@ -89,9 +89,12 @@ export default function ArchiveLessons({ navigation }) {
         ? assessmentsRes.data
         : [];
 
-      setArchivedLessons(allLessons.filter((item) => item.isArchived === true));
+      setArchivedLessons(
+        allLessons.filter((item) => item.isArchived === true && item.archivedSource !== 'delete')
+      );
+      
       setArchivedAssessments(
-        allAssessments.filter((item) => item.isArchived === true)
+        allAssessments.filter((item) => item.isArchived === true && item.archivedSource !== 'delete')
       );
     } catch (err) {
       toastError('Error fetching archive lists.');
