@@ -305,7 +305,7 @@ export default function InstructorHomepage({ navigation }) {
         _id: 'sys-assignment',
         type: 'assignment',
         message: `You are currently handling ${sectionsAssigned} section(s).`,
-        createdAt: new Date().toISOString(),
+        createdAt: currentUser.createdAt || new Date(0).toISOString(),
         isRead: false
       });
 

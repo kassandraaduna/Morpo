@@ -262,7 +262,8 @@ export default function StudentHomepage({ navigation }) {
                   title: ev.title,
                   date: new Date(ev.date),
                   type: ev.type || 'event',
-                  color: ev.color || '#153c2a'
+                  color: ev.color || '#153c2a',
+                  createdAt: ev.createdAt || ev.updatedAt || new Date().toISOString() // <-- FIXED
                 });
               }
             });
@@ -274,10 +275,12 @@ export default function StudentHomepage({ navigation }) {
                   title: `${a.title} Due`,
                   date: new Date(a.deadlineAt || a.closesAt),
                   type: 'assessment',
-                  color: '#EF4444' 
+                  color: '#EF4444',
+                  createdAt: a.createdAt || a.updatedAt || new Date().toISOString() // <-- FIXED
                 });
               }
             });
+            
             plottedEvents.sort((a, b) => a.date - b.date);
             setCalendarEvents(plottedEvents);
 
@@ -356,7 +359,7 @@ export default function StudentHomepage({ navigation }) {
                     _id: `cal-${event.id}`,
                     type: 'calendar',
                     message: `Upcoming event: ${event.title}`,
-                    createdAt: new Date(event.date || Date.now()).toISOString(),
+                    createdAt: event.createdAt,
                     isRead: false
                 });
             });
