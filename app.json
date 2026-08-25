@@ -4,24 +4,25 @@
     "slug": "MyphoLens",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/mypholens-logo-sq.png",
+    "icon": "./assets/mypholens-logo-android.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/mypholens-logo-sq.png",
+      "image": "./assets/mypholens-logo.png",
       "resizeMode": "cover",
       "backgroundColor": "#ffffff"
     },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.m2kp.mypholens",
+      "icon": "./assets/mypholens-logo-ios.png",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/mypholens-logo-sq.png",
+        "foregroundImage": "./assets/mypholens-logo-android.png",
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
@@ -29,7 +30,7 @@
       "googleServicesFile": "./google-services.json"
     },
     "web": {
-      "favicon": "./assets/mypholens-logo-sq.png"
+      "favicon": "./assets/mypholens-logo-android.png"
     },
     "extra": {
       "eas": {
