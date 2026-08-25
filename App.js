@@ -4,7 +4,7 @@ import AppController from './AppController';
 import Toast from 'react-native-toast-message';
 import { ThemeProvider, ThemeContext } from './Pages/src/context/ThemeContext';
 import * as Notifications from 'expo-notifications';
-import { AuthProvider } from './Pages/src/context/AuthContext';
+import { AuthProvider } from './Pages/src/context/authContext';
 
 const AppContent = () => {
     const { theme } = useContext(ThemeContext);

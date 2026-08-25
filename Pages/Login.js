@@ -19,7 +19,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { login, verifyLoginOtp, resendLoginOtp } from '../Pages/src/services/authService';
 import { toastError, toastSuccess } from '../Pages/src/components/ToastMsg';
 import { ThemeContext } from '../Pages/src/context/ThemeContext';
-import { AuthContext } from './src/context/AuthContext';
+import { AuthContext } from './src/context/authContext';
 
 const RESEND_SECONDS = 60;
 

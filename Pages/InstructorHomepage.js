@@ -293,11 +293,11 @@ export default function InstructorHomepage({ navigation }) {
 
       monitoringData.forEach(student => {
           generatedNotifs.push({
-             _id: `instructor-student-${student.studentId || student._id}`,
-             type: 'student',
-             message: `New student assigned to your monitoring list: ${student.studentName || student.fname || 'Student'}`,
-             createdAt: student.createdAt || new Date().toISOString(),
-             isRead: false
+              _id: `instructor-student-${student.studentId || student._id}`,
+              type: 'student',
+              message: `New student assigned to your monitoring list: ${student.studentName || student.fname || 'Student'}`,
+              createdAt: student.createdAt || new Date().toISOString(),
+              isRead: false
           });
       });
 
