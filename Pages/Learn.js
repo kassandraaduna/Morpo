@@ -85,7 +85,7 @@ export default function Learn({ navigation, route }) {
                 setActiveTab('Lessons');
             }
 
-            const savedBookmarksRaw = await AsyncStorage.getItem('studentBookmarks_v1');
+            const savedBookmarksRaw = await AsyncStorage.getItem(`bookmarks_${currentUserId}`);
             const savedBookmarks = savedBookmarksRaw ? JSON.parse(savedBookmarksRaw) : { lessons: [], models: [], scans: [] };
             setBookmarks(savedBookmarks);
 
@@ -253,7 +253,7 @@ export default function Learn({ navigation, route }) {
             }
 
             setBookmarks(newBookmarks);
-            await AsyncStorage.setItem('studentBookmarks_v1', JSON.stringify(newBookmarks));
+            await AsyncStorage.setItem(`bookmarks_${user._id}`, JSON.stringify(newBookmarks));
         } catch (error) {
             console.error(`Failed to toggle ${type} bookmark:`, error);
         }

@@ -180,7 +180,7 @@ export default function StudentHomepage({ navigation }) {
                 api.get('/lessons', config).catch(() => ({ data: { data: [] } })),
                 api.get(`/ai/personalized-lessons/${currentUser._id}`, config).catch(() => ({ data: { data: [] } })),
                 api.get(`/scan/history/${currentUser._id}`, config).catch(() => ({ data: { data: [] } })),
-                AsyncStorage.getItem('studentBookmarks_v1').catch(() => null),
+                AsyncStorage.getItem(`bookmarks_${currentUser._id}`).catch(() => null),
                 api.get('/calendar/events', config).catch(() => ({ data: [] })),
                 api.get(`/assessments?studentId=${currentUser._id}&_t=${Date.now()}`, config).catch(() => ({ data: [] })),
                 api.get(`/assessments/history/${currentUser._id}?_t=${Date.now()}`, config).catch(() => ({ data: [] })),
@@ -451,7 +451,7 @@ export default function StudentHomepage({ navigation }) {
                 }
                 
                 setBookmarks(newBookmarks);
-                await AsyncStorage.setItem('studentBookmarks_v1', JSON.stringify(newBookmarks));
+                await AsyncStorage.setItem(`bookmarks_${user._id}`, JSON.stringify(newBookmarks));
             }
         } catch (error) {
             console.error(`Failed to toggle ${type} bookmark:`, error);

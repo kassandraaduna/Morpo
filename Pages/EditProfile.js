@@ -136,9 +136,6 @@ export default function EditProfile({ navigation }) {
         if (!form.lname?.trim()) e.lname = 'Last name is required';
         else if (!/^[a-zA-ZñÑ\s.-]+$/.test(form.lname.trim())) e.lname = 'Last name contains invalid characters';
 
-        if (!form.username?.trim()) e.username = 'Username is required';
-        else if (form.username.length < 4) e.username = 'Username must be at least 4 characters';
-
         if (!form.gender?.trim()) e.gender = 'Gender selection is required';
         if (!form.dob?.trim()) e.dob = 'Date of birth cannot be empty';
 
@@ -157,12 +154,11 @@ export default function EditProfile({ navigation }) {
             mediaTypes: ImagePicker.MediaTypeOptions.Images,
             allowsEditing: true,
             aspect: [1, 1],
-            quality: 0.3,   
-            base64: true,   
+            quality: 0.8,
         });
 
         if (!result.canceled) {
-            setAvatar(`data:image/jpeg;base64,${result.assets[0].base64}`);
+            setAvatar(result.assets[0].uri); 
         }
     };
 
@@ -195,24 +191,45 @@ export default function EditProfile({ navigation }) {
         if (actionType === 'save') {
             try {
                 setLoading(true);
+                const endpoint = `/meds/${user._id}`;
+
+                const formData = new FormData();
+                formData.append('fname', form.fname || '');
+                formData.append('lname', form.lname || '');
+                formData.append('dob', form.dob || '');
+                formData.append('gender', form.gender || '');
                 
-                const payload = {
-                    fname: form.fname || '',
-                    lname: form.lname || '',
-                    dob: form.dob || '',
-                    gender: form.gender || '',
-                    username: form.username || '',
-                    email: form.email || '',
-                    number: form.number || '',
-                };
+                // Safely append the uneditable fields so the backend doesn't try to wipe them
+                formData.append('username', user.username || '');
+                formData.append('email', user.email || '');
+                formData.append('number', user.number || '');
 
                 if (avatar !== originalAvatar) {
-                    payload.avatar = avatar || ''; 
+                    if (avatar) {
+                        // Pass the raw URI directly without stripping 'file://'
+                        const fileUri = avatar;
+                        const filename = avatar.split('/').pop() || `avatar_${Date.now()}.jpg`;
+                        const match = /\.(\w+)$/.exec(filename);
+                        const type = match ? `image/${match[1]}` : `image/jpeg`;
+
+                        formData.append('avatar', {
+                            uri: fileUri,
+                            name: filename,
+                            type,
+                        });
+                    } else {
+                        formData.append('avatar', ''); 
+                    }
                 }
 
-                await api.put(`/meds/${user._id}`, payload);
+                await api.put(endpoint, formData, {
+                    headers: {
+                        'Content-Type': 'multipart/form-data',
+                    },
+                });
 
-                const freshUserRes = await api.get(`/meds/${user._id}`);
+                // Fetch fresh data using the same endpoint
+                const freshUserRes = await api.get(endpoint);
                 const updatedUser = freshUserRes.data?.data || freshUserRes.data;
 
                 await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
@@ -227,14 +244,7 @@ export default function EditProfile({ navigation }) {
                 toastSuccess('Profile updated successfully');
             } catch (err) {
                 const errorMsg = err.response?.data?.message || err.response?.data?.error || 'Failed to update profile';
-                
-                // Username availability check via backend collision handling
-                if (errorMsg.toLowerCase().includes('username') || errorMsg.toLowerCase().includes('duplicate') || errorMsg.toLowerCase().includes('taken')) {
-                    setErrors((prev) => ({ ...prev, username: 'Username is already in use.' }));
-                    toastError('Username is already taken. Please choose another.');
-                } else {
-                    toastError(errorMsg);
-                }
+                toastError(errorMsg);
             } finally {
                 setLoading(false);
             }

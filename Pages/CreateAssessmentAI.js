@@ -115,7 +115,7 @@ export default function CreateAssessmentAI({ navigation }) {
 
   const handleGenerateWithAI = async () => {
     if (selectedLessons.length === 0 && !pdfFile && !instructions.trim()) {
-      return toastError('Please select a lesson, upload a PDF reference, or enter instructions.');
+      return toastError('Please select an existing lesson, upload a PDF file reference, or enter instructions.');
     }
 
     try {
@@ -130,7 +130,6 @@ export default function CreateAssessmentAI({ navigation }) {
 
       let pdfNamesArr = [];
 
-      // Fetch the full content of each selected lesson so we have readable text
       if (selectedLessons.length > 0) {
         for (const lessonSummary of selectedLessons) {
           try {
@@ -142,43 +141,44 @@ export default function CreateAssessmentAI({ navigation }) {
               combinedText += `--- Lesson: ${fullLesson.title || 'Untitled'} ---\n${text}\n\n`;
             }
 
-            // --- THE FIX ---
-            // Strictly use pdfUrl to get the exact hashed filename stored on the server's disk, exactly like the Web version does.
-            const rawUrl = fullLesson.pdfUrl;
+            const rawUrl = fullLesson.pdfUrl || fullLesson.pdfName;
             if (rawUrl) {
               const fName = String(rawUrl).replace(/\\/g, '/').split('/').pop();
               pdfNamesArr.push(fName);
             }
-            // ---------------
-            
           } catch (err) {
             console.log(`Failed to fetch full text for lesson ${lessonSummary._id}`, err);
           }
         }
       }
 
-      // THE FIX: Explicitly send lessonContent matching the backend requirement (req.body.lessonContent)
       if (combinedText.trim()) {
         formData.append('lessonContent', combinedText.trim());
       }
 
-      // --- UPDATED LOGIC ---
-      // Append each filename individually so the backend recognizes it as an array
       if (pdfNamesArr.length > 0) {
         pdfNamesArr.forEach((fileName) => {
           formData.append('existingPdfNames', fileName);
         });
       }
-      // ---------------------
 
       if (pdfFile) {
-        const fileUri = Platform.OS === 'ios' ? pdfFile.uri.replace('file://', '') : pdfFile.uri;
+        // THE FIX: Do NOT strip 'file://'. React Native's network layer requires it to locate the file!
+        const fileUri = pdfFile.uri; 
+        
         let fileName = pdfFile.name || `reference_${Date.now()}.pdf`;
         if (!/\.[a-zA-Z0-9]+$/.test(fileName)) {
           fileName += '.pdf';
         }
+
+        formData.append('pdfFiles', {
+          uri: fileUri,
+          name: fileName,
+          type: pdfFile.mimeType || 'application/pdf',
+        });
       }
 
+      // THE FIX: Headers are safely restored
       const response = await api.post('/ai/generate-quiz', formData, {
         timeout: 120000,
         headers: {

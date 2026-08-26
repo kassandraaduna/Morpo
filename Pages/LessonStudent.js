@@ -67,63 +67,65 @@ export default function LessonStudent({ route, navigation }) {
   }, [lessonId, personalizedLesson]);
 
   useEffect(() => {
-    AsyncStorage.getItem('user').then(u => {
-        if(u) setCurrentUser(JSON.parse(u));
-    });
-
-    const checkBookmark = async () => {
-      const targetId = lessonId || personalizedLesson?._id;
-      if (!targetId) return;
-
-      const stored = await AsyncStorage.getItem('studentBookmarks_v1');
-      if (stored) {
-         const parsed = JSON.parse(stored);
-         if (parsed.lessons?.includes(targetId)) setIsBookmarked(true);
-      }
-    };
-    checkBookmark();
-
-    if (personalizedLesson) {
-      const parts = String(personalizedLesson.content || '').split('|||PDF_URL|||');
-      const data = {
-        title: `Remedial: ${personalizedLesson.topic}`,
-        pdfUrl: parts[1] || '',
-        educationalContent: parts[0],
-      };
-      setLesson(data);
-      if (data.pdfUrl) {
-        securelyFetchPdf(data.pdfUrl);
-      } else {
-        setLoading(false);
-      }
-      return;
-    }
-
-    const fetchLesson = async () => {
-      try {
-        const res = await api.get(`/lessons/${lessonId}`);
-        const data = res.data?.data || res.data;
-        setLesson(data);
-        
-        if (data?.pdfUrl) {
-          await securelyFetchPdf(data.pdfUrl);
-        } else {
-          setLoading(false);
+    const initLessonAndBookmark = async () => {
+        let u = currentUser;
+        if (!u) {
+            const uRaw = await AsyncStorage.getItem('user');
+            u = uRaw ? JSON.parse(uRaw) : null;
+            if (u) setCurrentUser(u);
         }
-      } catch (e) {
-        toastError('Failed to load lesson data');
-        navigation.goBack();
-      }
+
+        const targetId = lessonId || personalizedLesson?._id;
+        if (targetId && u) {
+            const stored = await AsyncStorage.getItem(`bookmarks_${u._id}`);
+            if (stored) {
+                const parsed = JSON.parse(stored);
+                if (parsed.lessons?.includes(targetId)) setIsBookmarked(true);
+            }
+        }
+
+        if (personalizedLesson) {
+            const parts = String(personalizedLesson.content || '').split('|||PDF_URL|||');
+            const data = {
+                title: `Remedial: ${personalizedLesson.topic}`,
+                pdfUrl: parts[1] || '',
+                educationalContent: parts[0],
+            };
+            setLesson(data);
+            if (data.pdfUrl) {
+                securelyFetchPdf(data.pdfUrl);
+            } else {
+                setLoading(false);
+            }
+            return;
+        }
+
+        try {
+            const res = await api.get(`/lessons/${lessonId}`);
+            const data = res.data?.data || res.data;
+            setLesson(data);
+            
+            if (data?.pdfUrl) {
+                await securelyFetchPdf(data.pdfUrl);
+            } else {
+                setLoading(false);
+            }
+        } catch (e) {
+            toastError('Failed to load lesson data');
+            navigation.goBack();
+        }
     };
 
-    fetchLesson();
+    initLessonAndBookmark();
   }, [lessonId, personalizedLesson]);
 
   const toggleBookmark = async () => {
+    if (!currentUser) return;
     const targetId = lessonId || personalizedLesson?._id;
     if (!targetId) return;
 
-    const stored = await AsyncStorage.getItem('studentBookmarks_v1');
+    const bookmarkKey = `bookmarks_${currentUser._id}`;
+    const stored = await AsyncStorage.getItem(bookmarkKey);
     let parsed = stored ? JSON.parse(stored) : { lessons: [], models: [] };
     if (!parsed.lessons) parsed.lessons = [];
     
@@ -136,7 +138,7 @@ export default function LessonStudent({ route, navigation }) {
         setIsBookmarked(true);
         toastSuccess("Saved to Bookmarks");
     }
-    await AsyncStorage.setItem('studentBookmarks_v1', JSON.stringify(parsed));
+    await AsyncStorage.setItem(bookmarkKey, JSON.stringify(parsed));
   };
 
   const securelyFetchPdf = async (partialUrl) => {

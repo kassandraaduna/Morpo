@@ -36,7 +36,6 @@ export default function TakeAssessment({ route, navigation }) {
         confirmText: 'Confirm', hideCancel: false, onConfirm: () => {}
     });
 
-    // Custom Modal State for the Matching Dropdown
     const [matchingModal, setMatchingModal] = useState({
         visible: false, questionIndex: null, leftPrompt: null, options: []
     });
@@ -47,7 +46,6 @@ export default function TakeAssessment({ route, navigation }) {
                 const userRaw = await AsyncStorage.getItem('user');
                 if (userRaw) setCurrentUser(JSON.parse(userRaw));
 
-                // Add the cache-buster ?_t=${Date.now()} to force a fresh data sync
                 const res = await api.get(`/assessments/${assessmentId}?_t=${Date.now()}`);
                 const data = res.data?.data || res.data;
                 setAssessment(data);
@@ -82,14 +80,28 @@ export default function TakeAssessment({ route, navigation }) {
     };
 
     useEffect(() => {
-        const subscription = AppState.addEventListener('change', nextAppState => {
-            if (hasStarted && appState.current.match(/active/) && (nextAppState === 'background' || nextAppState === 'inactive') && !resultData && assessment?.quizType !== 'flashcard' && !submitting) {
+        const handleFocusLoss = () => {
+            if (matchingModal.visible || confirmModal.visible) return;
+            
+            if (hasStarted && !resultData && assessment?.quizType !== 'flashcard' && !submitting) {
                 handleSubmitAssessment(true);
+            }
+        };
+
+        const subscriptionChange = AppState.addEventListener('change', nextAppState => {
+            if (appState.current.match(/active/) && (nextAppState === 'background' || nextAppState === 'inactive')) {
+                handleFocusLoss();
             }
             appState.current = nextAppState;
         });
-        return () => subscription.remove();
-    }, [hasStarted, resultData, selectedAnswers, assessment, submitting]);
+
+        const subscriptionBlur = AppState.addEventListener('blur', handleFocusLoss);
+
+        return () => {
+            subscriptionChange.remove();
+            if (subscriptionBlur?.remove) subscriptionBlur.remove();
+        };
+    }, [hasStarted, resultData, selectedAnswers, assessment, submitting, matchingModal.visible, confirmModal.visible]);
 
     useEffect(() => {
         const backAction = () => {

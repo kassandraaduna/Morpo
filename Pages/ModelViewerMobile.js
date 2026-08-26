@@ -10,6 +10,7 @@ export default function ModelViewerMobile({ route, navigation }) {
     const { modelId, model, url, title } = route.params || {};
     const [modelData, setModelData] = useState(model || null);
     const [modelUrl, setModelUrl] = useState(url || null);
+    const [currentUser, setCurrentUser] = useState(null);
     
     // Safely pull labels from modelData or route.params
     const labels = route.params?.labels || modelData?.labels || [];
@@ -29,7 +30,13 @@ export default function ModelViewerMobile({ route, navigation }) {
     useEffect(() => {
         const checkBookmark = async () => {
             if (!modelId) return;
-            const stored = await AsyncStorage.getItem('studentBookmarks_v1');
+
+            const uRaw = await AsyncStorage.getItem('user');
+            const u = uRaw ? JSON.parse(uRaw) : null;
+            if (u) setCurrentUser(u);
+            if (!u) return;
+
+            const stored = await AsyncStorage.getItem(`bookmarks_${u._id}`);
             if (stored) {
                 const parsed = JSON.parse(stored);
                 if (parsed.models?.includes(modelId)) setIsBookmarked(true);
@@ -67,8 +74,10 @@ export default function ModelViewerMobile({ route, navigation }) {
     }, [modelData, url]);
 
     const toggleBookmark = async () => {
-        if (!modelId) return;
-        const stored = await AsyncStorage.getItem('studentBookmarks_v1');
+        if (!modelId || !currentUser) return;
+        
+        const bookmarkKey = `bookmarks_${currentUser._id}`;
+        const stored = await AsyncStorage.getItem(bookmarkKey);
         let parsed = stored ? JSON.parse(stored) : { lessons: [], models: [], scans: [] };
         
         if (!parsed.models) parsed.models = [];
@@ -80,7 +89,7 @@ export default function ModelViewerMobile({ route, navigation }) {
             parsed.models.push(modelId);
             setIsBookmarked(true);
         }
-        await AsyncStorage.setItem('studentBookmarks_v1', JSON.stringify(parsed));
+        await AsyncStorage.setItem(bookmarkKey, JSON.stringify(parsed));
     };
 
     const toggleLabels = () => {

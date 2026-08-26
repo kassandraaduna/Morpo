@@ -55,7 +55,7 @@ export default function Bookmarks({ navigation, route }) {
             const currentUser = JSON.parse(rawUser);
             setUser(currentUser);
 
-            const savedBookmarksRaw = await AsyncStorage.getItem('studentBookmarks_v1');
+            const savedBookmarksRaw = await AsyncStorage.getItem(`bookmarks_${currentUser._id}`);
             const savedBookmarks = savedBookmarksRaw ? JSON.parse(savedBookmarksRaw) : { lessons: [], models: [], scans: [] };
             const bookmarkedLessonIds = savedBookmarks.lessons || [];
             const bookmarkedModelIds = savedBookmarks.models || [];
@@ -184,12 +184,12 @@ export default function Bookmarks({ navigation, route }) {
                 }));
                 toastSuccess('Removed from Bookmarks');
             } else {
-                const savedBookmarksRaw = await AsyncStorage.getItem('studentBookmarks_v1');
+                const savedBookmarksRaw = await AsyncStorage.getItem(`bookmarks_${user._id}`);
                 let savedBookmarks = savedBookmarksRaw ? JSON.parse(savedBookmarksRaw) : { lessons: [], models: [], scans: [] };
                 
                 if (savedBookmarks[type]) {
                     savedBookmarks[type] = savedBookmarks[type].filter(id => id !== itemId);
-                    await AsyncStorage.setItem('studentBookmarks_v1', JSON.stringify(savedBookmarks));
+                    await AsyncStorage.setItem(`bookmarks_${user._id}`, JSON.stringify(savedBookmarks));
                 }
 
                 setData(prev => ({
@@ -204,24 +204,29 @@ export default function Bookmarks({ navigation, route }) {
     };
 
     const renderLessonItem = ({ item }) => {
+        const isRemedial = item.type === 'remedial';
         const modifierName = item.modifiedBy ? `${item.modifiedBy.fname} ${item.modifiedBy.lname}` : 'Instructor';
         const dateStr = new Date(item.updatedAt || item.createdAt).toLocaleDateString();
 
         return (
             <TouchableOpacity
                 style={[localStyles.listItemCard, { backgroundColor: theme?.card || '#FFF' }]}
-                onPress={() => navigation.navigate('LessonStudent', { lessonId: item._id || item.id })}
+                onPress={() => navigation.navigate('LessonStudent', { 
+                    lessonId: isRemedial ? null : (item._id || item.id), 
+                    personalizedLesson: isRemedial ? item : null 
+                })}
             >
-                <View style={[localStyles.iconBox, { backgroundColor: '#F0F9F4' }]}>
-                    <Ionicons name="book" size={26} color="#153c2a" />
+                <View style={[localStyles.iconBox, { backgroundColor: isRemedial ? '#FEF2F2' : '#F0F9F4' }]}>
+                    <Ionicons name={isRemedial ? "medical" : "book"} size={26} color={isRemedial ? "#EF4444" : "#153c2a"} />
                 </View>
 
                 <View style={localStyles.itemInfo}>
                     <Text style={[localStyles.itemTitle, { color: theme?.text || '#000' }]} numberOfLines={1}>
-                        {item.title}
+                        {item.title} {isRemedial && <Text style={{ color: '#EF4444', fontWeight: '900' }}>*</Text>}
                     </Text>
+                    
                     <Text style={localStyles.itemSubtitle} numberOfLines={1}>
-                        Modified by {modifierName}
+                        {isRemedial ? 'Personalized AI Content' : `Modified by ${modifierName}`}
                     </Text>
                     <Text style={localStyles.itemMeta}>
                         Last updated: {dateStr}
