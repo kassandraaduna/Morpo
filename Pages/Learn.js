@@ -92,7 +92,7 @@ export default function Learn({ navigation, route }) {
             const [usersRes1, usersRes2, lessonsRes, remedialRes, modelsRes, models3dRes, quizRes, assessRes] = await Promise.all([
                 api.get('/meds').catch(() => ({ data: [] })),
                 api.get('/admin/users').catch(() => ({ data: [] })),
-                api.get('/lessons').catch(() => ({ data: [] })),
+                api.get(`/lessons?viewerId=${currentUserId}&_t=${Date.now()}`).catch(() => ({ data: [] })),
                 api.get(`/ai/personalized-lessons/${currentUserId}`).catch(() => ({ data: [] })),
                 api.get('/models').catch(() => ({ data: [] })), 
                 api.get('/models3d').catch(() => ({ data: [] })), 
@@ -151,6 +151,12 @@ export default function Learn({ navigation, route }) {
                 
                 validLessons = rawLessons.filter(l => {
                     if (l.isArchived) return false;
+                    if (l.archivedSource === 'manual') return false;
+
+                    const archivedBy = Array.isArray(l.archivedBy) ? l.archivedBy : [];
+                    const isArchivedByInstructor = archivedBy.some(id => assignedInstructorIds.includes(String(id._id || id)));
+                    if (isArchivedByInstructor) return false;
+
                     const cId = getUserId(l.createdBy) || getUserId(l.instructor) || getUserId(l.author);
                     if (!cId) return true;
                     return assignedInstructorIds.includes(cId);
@@ -181,7 +187,6 @@ export default function Learn({ navigation, route }) {
                 return acc;
             }, {});
 
-            // 3. Convert to SectionList format: [{ title: '...', data: [...] }]
             const sectionedQuizzes = Object.keys(grouped).map(key => ({
                 title: key,
                 data: grouped[key]
@@ -275,6 +280,7 @@ export default function Learn({ navigation, route }) {
             if (itemToArchive.type === 'lesson') {
                 await api.put(`/lessons/${itemToArchive.id}`, { 
                     isArchived: true, 
+                    archiveSource: 'manual',
                     modifiedBy: user?._id 
                 });
                 toastSuccess("Lesson moved to archive");
@@ -563,7 +569,6 @@ export default function Learn({ navigation, route }) {
                     <ActivityIndicator size="large" color="#153c2a" />
                 </View>
             ) : activeTab === 'Assessments' ? (
-                /* --- NEW SECTION LIST JUST FOR ASSESSMENTS --- */
                 assessments.length === 0 ? (
                     <View style={localStyles.centerContent}>
                         <Ionicons name="folder-open-outline" size={60} color="#CBD5E1" />
@@ -585,13 +590,11 @@ export default function Learn({ navigation, route }) {
                     />
                 )
             ) : filteredData.length === 0 ? (
-                /* --- EXISTING EMPTY STATE FOR LESSONS/MODELS --- */
                 <View style={localStyles.centerContent}>
                     <Ionicons name="folder-open-outline" size={60} color="#CBD5E1" />
                     <Text style={[localStyles.emptyText, { color: theme?.subText || '#64748B' }]}>No {activeTab.toLowerCase()} found.</Text>
                 </View>
             ) : (
-                /* --- EXISTING FLATLIST FOR LESSONS/MODELS --- */
                 <FlatList
                     data={filteredData}
                     keyExtractor={item => String(item._id || item.id || Math.random())}
@@ -616,7 +619,6 @@ export default function Learn({ navigation, route }) {
                     <View style={localStyles.modalContent}>
                         <Text style={localStyles.modalTitle}>Instructor Menu</Text>
 
-                        {/* ARCHIVES */}
                         <TouchableOpacity style={localStyles.modalOptionBtn} onPress={() => {
                             setShowInstructorMenu(false);
                             navigation.navigate('ArchiveLessons');
@@ -625,7 +627,6 @@ export default function Learn({ navigation, route }) {
                             <Text style={[localStyles.modalOptionText, { marginLeft: 15 }]}>Archives</Text>
                         </TouchableOpacity>
 
-                        {/* Assessment Drafts Menu Button */}
                         <TouchableOpacity
                         style={localStyles.modalOptionBtn}
                         onPress={() => {
@@ -636,7 +637,6 @@ export default function Learn({ navigation, route }) {
                             <Text style={[localStyles.modalOptionText, { marginLeft: 15 }]}>Assessment Drafts</Text>
                         </TouchableOpacity>
 
-                        {/* --- 1. LESSON OPTION --- */}
                         <TouchableOpacity
                             style={localStyles.modalOptionBtn}
                             onPress={() => {
@@ -648,7 +648,6 @@ export default function Learn({ navigation, route }) {
                             <Text style={[localStyles.modalOptionText, { marginLeft: 15 }]}>Upload New Lesson File</Text>
                         </TouchableOpacity>
 
-                        {/* --- 2. ASSESSMENT OPTIONS --- */}
                         <TouchableOpacity
                             style={localStyles.modalOptionBtn}
                             onPress={() => {

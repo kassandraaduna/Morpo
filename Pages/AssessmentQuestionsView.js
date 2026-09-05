@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import api, { toAbsUrl } from './src/services/api';
 import { ThemeContext } from './src/context/ThemeContext';
 import { toastError, toastSuccess } from './src/components/ToastMsg';
@@ -50,6 +51,7 @@ const extractId = (val) => {
 export default function AssessmentQuestionsView({ route, navigation }) {
   const { assessment } = route.params;
   const { theme } = useContext(ThemeContext);
+  const insets = useSafeAreaInsets();
   
   const [activeSubTab, setActiveSubTab] = useState('questions'); 
   const [studentStatusList, setStudentStatusList] = useState([]);
@@ -487,7 +489,7 @@ export default function AssessmentQuestionsView({ route, navigation }) {
             />
           </View>
         ) : (
-          <ScrollView contentContainerStyle={{ paddingHorizontal: 22, paddingBottom: 30 }}>
+          <ScrollView contentContainerStyle={{ paddingHorizontal: 22, paddingBottom: Math.max(insets.bottom, 16) + 30 }}>
             {(assessment?.questions || []).map((q, idx) => (
               <View key={idx} style={[localStyles.qCard, { backgroundColor: theme.card }]}>
                 <Text style={[localStyles.qText, { color: theme.text }]}>{idx + 1}. {q.text || q.questionText}</Text>
@@ -512,7 +514,7 @@ export default function AssessmentQuestionsView({ route, navigation }) {
               data={studentStatusList} 
               keyExtractor={(item) => String(item._id)} 
               renderItem={renderStudentItem} 
-              contentContainerStyle={{ paddingHorizontal: 22, paddingBottom: 30 }} 
+              contentContainerStyle={{ paddingHorizontal: 22, paddingBottom: Math.max(insets.bottom, 16) + 30 }} 
               ListEmptyComponent={<Text style={localStyles.emptyText}>No students found for this filter.</Text>}
             />
           )}
@@ -541,8 +543,11 @@ export default function AssessmentQuestionsView({ route, navigation }) {
                   <Text style={{ marginTop: 10, color: '#64748B' }}>Loading details...</Text>
               </View>
             ) : (
-              <ScrollView style={{ flex: 1, backgroundColor: theme.bg || '#FFF' }} contentContainerStyle={{ padding: 24, paddingBottom: 60 }} showsVerticalScrollIndicator={false}>
-                
+              <ScrollView 
+                style={{ flex: 1, backgroundColor: theme.bg || '#FFF' }} 
+                contentContainerStyle={{ padding: 24, paddingBottom: Math.max(insets.bottom, 16) + 60 }} 
+                showsVerticalScrollIndicator={false}
+              >
                 {isExternalAssess ? (
                     <View style={localStyles.externalNotice}>
                       <Ionicons name="link-outline" size={24} color="#D97706" style={{ marginBottom: 5 }} />

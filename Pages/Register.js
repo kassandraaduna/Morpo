@@ -3,6 +3,7 @@ import { View, Text, TextInput, TouchableOpacity, ScrollView, Alert, Platform, K
 import { Ionicons } from '@expo/vector-icons';
 import { ThemeContext } from './src/context/ThemeContext';
 import { toastError, toastSuccess } from './src/components/ToastMsg';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { requestRegisterOtp, verifyRegisterOtp, checkUsername, checkEmail, checkNumber,} from './src/services/authService';
 
 const { width } = Dimensions.get('window');
@@ -17,6 +18,7 @@ const DAYS_OF_WEEK = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 
 export default function Register({ navigation }) {
   const { theme } = useContext(ThemeContext);
+  const insets = useSafeAreaInsets();
 
   // ─── Step: 'form' | 'otp' ────────────────────────────────────────
   const [step, setStep] = useState('form');
@@ -640,7 +642,10 @@ export default function Register({ navigation }) {
 
       {/* ─── SCROLLABLE CONTENT AREA (Constrained Width Container) ── */}
       <ScrollView
-        contentContainerStyle={localStyles.scrollContent}
+        contentContainerStyle={[
+          localStyles.scrollContent,
+          { paddingBottom: Math.max(insets.bottom, 24) + 40 }
+        ]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >

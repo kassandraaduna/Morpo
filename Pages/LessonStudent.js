@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import Pdf from 'react-native-pdf';
@@ -15,6 +16,7 @@ import { toastError, toastSuccess } from './src/components/ToastMsg';
 export default function LessonStudent({ route, navigation }) {
   const { lessonId, personalizedLesson } = route.params || {};
   const { theme } = useContext(ThemeContext);
+  const insets = useSafeAreaInsets();
   
   const [currentUser, setCurrentUser] = useState(null);
   const [generatingQuiz, setGeneratingQuiz] = useState(false);
@@ -314,7 +316,7 @@ export default function LessonStudent({ route, navigation }) {
       </View>
 
       {!!personalizedLesson?._id && (
-        <View style={[localStyles.footer, { backgroundColor: theme.card }]}>
+        <View style={[localStyles.footer, { backgroundColor: theme.card, paddingBottom: Math.max(insets.bottom, 30) }]}>
             <TouchableOpacity 
                 style={[localStyles.submitBtn, generatingQuiz && { opacity: 0.7 }]}
                 onPress={handleRemedialAction}

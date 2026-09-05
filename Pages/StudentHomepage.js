@@ -339,18 +339,18 @@ export default function StudentHomepage({ navigation }) {
             let generatedNotifs = [];
 
             allOfficialAttempts.forEach(latest => {
-                if (!latest.scorePending) {
-                    generatedNotifs.push({
-                        _id: `score-${latest._id}-${latest.score}`,
-                        type: 'assessment_score',
-                        assessmentId: latest.assessmentId,
-                        submissionId: latest._id,
-                        message: `Score received: ${latest.score}/${latest.total} (${latest.percent}%) on ${latest.title}`,
-                        createdAt: new Date(latest.timestamp).toISOString(),
-                        isRead: false
-                    });
-                }
-            });
+              if (!latest.scorePending) {
+                  generatedNotifs.push({
+                      _id: `score-${latest._id}-${latest.timestamp}`, 
+                      type: 'assessment_score',
+                      assessmentId: latest.assessmentId,
+                      submissionId: latest._id,
+                      message: `Score/Feedback released: ${latest.score}/${latest.total} (${latest.percent}%) on ${latest.title}`,
+                      createdAt: new Date(latest.timestamp).toISOString(),
+                      isRead: false
+                  });
+              }
+          });
 
             rawScans.forEach(scan => {
                 generatedNotifs.push({
@@ -374,22 +374,26 @@ export default function StudentHomepage({ navigation }) {
 
             const officialAssessments = extractArray(assessRes.data).filter(a => a.status !== 'draft' && !a.isArchived);
             officialAssessments.forEach(ass => {
+                const updateTime = new Date(ass.updatedAt || ass.createdAt || 0).getTime();
+                
                 generatedNotifs.push({
-                    _id: `new-ass-${ass._id}`,
+                    _id: `new-ass-${ass._id}-${updateTime}`,
                     type: 'new_assessment',
                     assessmentId: ass._id,
-                    message: `New assessment assigned: ${ass.title}`,
+                    message: `Assessment update/available: ${ass.title}`,
                     createdAt: ass.updatedAt || ass.createdAt || new Date().toISOString(),
                     isRead: false
                 });
             });
 
             combinedLessons.forEach(lesson => {
+                const updateTime = new Date(lesson.updatedAt || lesson.createdAt || 0).getTime();
+
                 generatedNotifs.push({
-                    _id: `lesson-${lesson._id}`,
+                    _id: `lesson-${lesson._id}-${updateTime}`,
                     type: 'new_lesson',
                     lessonId: lesson._id,
-                    message: `New material available: ${lesson.title}`,
+                    message: `Material update/available: ${lesson.title}`,
                     createdAt: lesson.updatedAt || lesson.createdAt || new Date().toISOString(),
                     isRead: false
                 });

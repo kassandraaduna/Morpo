@@ -73,8 +73,10 @@ export default function ArchiveLessons({ navigation }) {
           ? `&instructorId=${currentUser._id}`
           : '';
 
+      const viewerParam = `&viewerId=${currentUser._id}`;
+
       const [lessonsRes, assessmentsRes] = await Promise.all([
-        api.get(`/lessons?includeArchived=true${instructorParam}&_t=${Date.now()}`),
+        api.get(`/lessons?includeArchived=true${instructorParam}${viewerParam}&_t=${Date.now()}`),
         api.get(`/assessments?includeArchived=true${instructorParam}&_t=${Date.now()}`),
       ]);
 
@@ -132,6 +134,7 @@ export default function ArchiveLessons({ navigation }) {
           idsToRestore.map((id) =>
             api.put(`/lessons/${id}`, {
               isArchived: false,
+              archiveSource: 'manual',
               modifiedBy: user?._id,
             })
           )

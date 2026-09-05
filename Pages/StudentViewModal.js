@@ -6,9 +6,11 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  SafeAreaView,
+  StatusBar,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function StudentViewModal({
   visible,
@@ -17,6 +19,7 @@ export default function StudentViewModal({
   questions = [],
   timer = {},
 }) {
+  const insets = useSafeAreaInsets();
   const [selectedAnswers, setSelectedAnswers] = useState({});
 
   const selectOption = (questionIdx, optionIdx) => {
@@ -25,11 +28,16 @@ export default function StudentViewModal({
 
   const totalPoints = questions.reduce((acc, q) => acc + (Number(q.points) || 1), 0);
 
+  // Safe top clearance (respects iOS notch and Android status bar)
+  const topPadding = Platform.OS === 'ios' ? insets.top : Math.max(insets.top, StatusBar.currentHeight || 0);
+
   return (
     <Modal visible={visible} animationType="fade" onRequestClose={onClose}>
-      <SafeAreaView style={styles.container}>
-        {/* Top Bar - Preview Banner */}
-        <View style={styles.previewBanner}>
+      <View style={styles.container}>
+        <StatusBar barStyle="light-content" backgroundColor="#1E293B" translucent={false} />
+
+        {/* Top Bar - Preview Banner with Safe Area Inset */}
+        <View style={[styles.previewBanner, { paddingTop: topPadding + 6 }]}>
           <Ionicons name="eye-outline" size={18} color="#FFF" />
           <Text style={styles.previewBannerText}>
             STUDENT VIEW PREVIEW • NOT SUBMITTABLE
@@ -58,7 +66,7 @@ export default function StudentViewModal({
         </View>
 
         {/* Questions List */}
-        <ScrollView contentContainerStyle={styles.scrollContent}>
+        <ScrollView contentContainerStyle={[styles.scrollContent, { paddingBottom: 40 + insets.bottom }]}>
           {questions.length === 0 ? (
             <View style={styles.emptyBox}>
               <Text style={styles.emptyText}>No questions added yet.</Text>
@@ -113,13 +121,13 @@ export default function StudentViewModal({
           )}
         </ScrollView>
 
-        {/* Bottom Bar */}
-        <View style={styles.footer}>
-          <TouchableOpacity style={styles.exitBtn} onPress={onClose}>
+        {/* Bottom Bar - Padded to clear system navigation bar */}
+        <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 16) + 8 }]}>
+          <TouchableOpacity style={styles.exitBtn} onPress={onClose} activeOpacity={0.85}>
             <Text style={styles.exitBtnText}>Exit Student View</Text>
           </TouchableOpacity>
         </View>
-      </SafeAreaView>
+      </View>
     </Modal>
   );
 }
@@ -131,7 +139,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
+    paddingBottom: 10,
     gap: 6,
   },
   previewBannerText: { color: '#FFF', fontSize: 11, fontWeight: '800' },
@@ -158,7 +166,7 @@ const styles = StyleSheet.create({
   },
   timerText: { fontSize: 12, fontWeight: '700', color: '#B45309' },
   closeBtn: { padding: 6 },
-  scrollContent: { padding: 16, paddingBottom: 40 },
+  scrollContent: { padding: 16 },
   questionCard: {
     backgroundColor: '#FFF',
     borderRadius: 12,
@@ -209,7 +217,8 @@ const styles = StyleSheet.create({
   emptyBox: { alignItems: 'center', marginTop: 40 },
   emptyText: { color: '#64748B', fontStyle: 'italic' },
   footer: {
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingTop: 14,
     backgroundColor: '#FFF',
     borderTopWidth: 1,
     borderColor: '#E2E8F0',

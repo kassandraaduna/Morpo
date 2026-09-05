@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import api from './src/services/api';
 import { ThemeContext } from './src/context/ThemeContext';
@@ -15,6 +16,7 @@ const { width } = Dimensions.get('window');
 export default function TakeAssessment({ route, navigation }) {
     const { assessmentId } = route.params || {};
     const { theme } = useContext(ThemeContext);
+    const insets = useSafeAreaInsets();
 
     const [loading, setLoading] = useState(true);
     const [assessment, setAssessment] = useState(null);
@@ -44,9 +46,16 @@ export default function TakeAssessment({ route, navigation }) {
         const loadData = async () => {
             try {
                 const userRaw = await AsyncStorage.getItem('user');
-                if (userRaw) setCurrentUser(JSON.parse(userRaw));
+                let sId = '';
+                
+                if (userRaw) {
+                    const parsedUser = JSON.parse(userRaw);
+                    setCurrentUser(parsedUser);
+                    sId = parsedUser._id;
+                }
 
-                const res = await api.get(`/assessments/${assessmentId}?_t=${Date.now()}`);
+                const res = await api.get(`/assessments/${assessmentId}?studentId=${sId}&_t=${Date.now()}`);
+                
                 const data = res.data?.data || res.data;
                 setAssessment(data);
             } catch (err) {
@@ -60,6 +69,8 @@ export default function TakeAssessment({ route, navigation }) {
     }, [assessmentId]);
 
     const isExternalLink = assessment?.deliveryMode === 'external' || assessment?.link || assessment?.externalUrl;
+    const questions = Array.isArray(assessment?.questions) ? assessment.questions : [];
+    const flashcards = Array.isArray(assessment?.flashcards) ? assessment.flashcards : [];
 
     const startExamSession = () => {
         setHasStarted(true);
@@ -160,7 +171,6 @@ export default function TakeAssessment({ route, navigation }) {
                     return;
                 }
 
-                const questions = assessment?.questions || [];
                 const answersPayload = questions.map((q, idx) => {
                     const studentChoice = selectedAnswers[idx];
                     
@@ -378,6 +388,13 @@ export default function TakeAssessment({ route, navigation }) {
                                     <Text style={styles.landingMetaLabel}>Timer</Text>
                                     <Text style={[styles.landingMetaVal, { color: theme?.text }]}>{timerText}</Text>
                                 </View>
+                                <View style={styles.landingMetaItem}>
+                                    <Ionicons name="refresh" size={18} color="#153c2a" />
+                                    <Text style={styles.landingMetaLabel}>Attempts</Text>
+                                    <Text style={[styles.landingMetaVal, { color: theme?.text }]}>
+                                        {assessment?.attemptCount || 0} / {assessment?.maxAttempts || 1}
+                                    </Text>
+                                </View>
                             </View>
                         )}
                     </View>
@@ -394,11 +411,33 @@ export default function TakeAssessment({ route, navigation }) {
                         </Text>
                     </View>
 
-                    <TouchableOpacity style={styles.startExamBtn} onPress={startExamSession}>
-                        <Text style={styles.startExamBtnText}>
-                            {isExternalLink ? 'Open External Assessment' : isFlashcard ? 'Start Flashcard Review' : 'Start Assessment'}
-                        </Text>
-                    </TouchableOpacity>
+                    {(() => {
+                        const canTakeAssessment = assessment?.canTake !== false;
+
+                        return (
+                            <TouchableOpacity 
+                                style={[styles.startExamBtn, !canTakeAssessment && { backgroundColor: '#94A3B8' }]} 
+                                onPress={() => {
+                                    if (!canTakeAssessment) {
+                                        toastError('You have reached the maximum number of attempts for this assessment.');
+                                        return;
+                                    }
+                                    startExamSession();
+                                }}
+                                activeOpacity={canTakeAssessment ? 0.8 : 1}
+                            >
+                                <Text style={styles.startExamBtnText}>
+                                    {!canTakeAssessment 
+                                        ? 'Attempts Exhausted' 
+                                        : isExternalLink 
+                                            ? 'Open External Assessment' 
+                                            : isFlashcard 
+                                                ? 'Start Flashcard Review' 
+                                                : 'Start Assessment'}
+                                </Text>
+                            </TouchableOpacity>
+                        );
+                    })()}
                 </ScrollView>
             </View>
         );
@@ -470,7 +509,7 @@ export default function TakeAssessment({ route, navigation }) {
             <View style={{ flex: 1, backgroundColor: theme?.bg || '#F4F7F6' }}>
                 <StatusBar barStyle="light-content" />
                 <View style={styles.greenHeader}>
-                     <TouchableOpacity onPress={() => triggerCustomAlert("Warning: Leaving", "If you exit, it will automatically submit.", () => handleSubmitAssessment(true), 'warning', '#EF4444', '#fee2e2')} style={styles.backIconBtn}>
+                    <TouchableOpacity onPress={() => triggerCustomAlert("Warning: Leaving", "If you exit, it will automatically submit.", () => handleSubmitAssessment(true), 'warning', '#EF4444', '#fee2e2')} style={styles.backIconBtn}>
                         <Ionicons name="arrow-back" size={24} color="#FFF" />
                     </TouchableOpacity>
                     <View style={styles.headerTitleContainer}>
@@ -480,9 +519,20 @@ export default function TakeAssessment({ route, navigation }) {
                 <View style={{ flex: 1 }}>
                     <WebView source={{ uri: assessment.link || assessment.externalUrl }} style={{ flex: 1 }} startInLoadingState={true} renderLoading={() => <ActivityIndicator size="large" color="#153c2a" style={{flex: 1, justifyContent:'center'}} />} />
                 </View>
-                <View style={[styles.footerNav, { paddingBottom: Platform.OS === 'ios' ? 40 : 25 }]}>
-                    <TouchableOpacity onPress={() => triggerCustomAlert("Finish Assessment", "Have you fully submitted the form in the web view?", () => handleSubmitAssessment(false), 'help', '#153c2a', '#E7F5EE')} style={[styles.navBtnNext, { backgroundColor: '#10B981', flex: 1 }]} disabled={submitting}>
-                        <Text style={styles.navBtnNextText}>{submitting ? 'Submitting...' : 'I have submitted the form'}</Text>
+                <View style={[styles.footerNav, { paddingBottom: insets.bottom + 20 }]}>
+                    <TouchableOpacity 
+                        onPress={() => triggerCustomAlert(
+                            "Finish Assessment", 
+                            "Have you fully submitted the form in the web view?", 
+                            () => handleSubmitAssessment(false), 
+                            'help', '#153c2a', '#E7F5EE'
+                        )} 
+                        style={[styles.navBtnNext, { backgroundColor: '#10B981', flex: 1 }]} 
+                        disabled={submitting}
+                    >
+                        <Text style={styles.navBtnNextText}>
+                            {submitting ? 'Submitting...' : 'I have submitted the form'}
+                        </Text>
                     </TouchableOpacity>
                 </View>
                 {renderConfirmModal()}
@@ -518,14 +568,33 @@ export default function TakeAssessment({ route, navigation }) {
                         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}><Text style={{ fontSize: 18, fontWeight: '800', color: theme?.text }}>No cards available.</Text></View>
                     )}
                 </View>
-
-                <View style={styles.footerNav}>
-                    <TouchableOpacity disabled={currentIndex === 0} onPress={() => { setIsFlipped(false); setCurrentIndex(prev => prev - 1); }} style={[styles.navBtnPrev, { opacity: currentIndex === 0 ? 0.4 : 1 }]}>
+                <View style={[styles.footerNav, { paddingBottom: insets.bottom + 20 }]}>
+                    <TouchableOpacity 
+                        disabled={currentIndex === 0} 
+                        onPress={() => { setIsFlipped(false); setCurrentIndex(prev => Math.max(0, prev - 1)); }} 
+                        style={[styles.navBtnPrev, { opacity: currentIndex === 0 ? 0.4 : 1 }]}
+                    >
                         <Text style={styles.navBtnPrevText}>Previous</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity onPress={() => { if (currentIndex < assessment.flashcards.length - 1) { setIsFlipped(false); setCurrentIndex(prev => prev + 1); } else { navigation.goBack(); toastSuccess("Flashcard review complete!"); } }} style={styles.navBtnNext}>
-                        <Text style={styles.navBtnNextText}>{currentIndex < assessment.flashcards?.length - 1 ? 'Next Card' : 'Finish'}</Text>
-                    </TouchableOpacity>
+
+                    {currentIndex < flashcards.length - 1 ? (
+                        <TouchableOpacity 
+                            onPress={() => { setIsFlipped(false); setCurrentIndex(prev => Math.min(flashcards.length - 1, prev + 1)); }} 
+                            style={styles.navBtnNext}
+                        >
+                            <Text style={styles.navBtnNextText}>Next Card</Text>
+                        </TouchableOpacity>
+                    ) : (
+                        <TouchableOpacity 
+                            onPress={() => {
+                                navigation.goBack();
+                                toastSuccess("Flashcard review complete!");
+                            }} 
+                            style={[styles.navBtnNext, { backgroundColor: '#10B981' }]}
+                        >
+                            <Text style={styles.navBtnNextText}>Finish</Text>
+                        </TouchableOpacity>
+                    )}
                 </View>
                 {renderConfirmModal()}
             </View>
@@ -535,7 +604,6 @@ export default function TakeAssessment({ route, navigation }) {
     // ==========================================
     // 5. NATIVE QUESTION FORMAT VIEW
     // ==========================================
-    const questions = assessment?.questions || [];
     const currentQuestion = questions[currentIndex];
     const qFormat = currentQuestion?.format || 'multiple_choice';
 
@@ -573,7 +641,8 @@ export default function TakeAssessment({ route, navigation }) {
                 </View>
             </View>
 
-            <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 120 }} showsVerticalScrollIndicator={false}>
+            {/* Add insets.bottom to the 120 paddingBottom */}
+<ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 120 + insets.bottom }} showsVerticalScrollIndicator={false}>
                 <View style={[styles.questionCard, { backgroundColor: theme?.card || '#FFF' }]}>
                     <View style={styles.qNumBadge}>
                         <Text style={styles.qNumText}>QUESTION {currentIndex + 1} OF {questions.length}</Text>
@@ -642,18 +711,39 @@ export default function TakeAssessment({ route, navigation }) {
                 </View>
             </ScrollView>
 
-            <View style={styles.footerNav}>
-                <TouchableOpacity disabled={currentIndex === 0} onPress={() => setCurrentIndex(prev => prev - 1)} style={[styles.navBtnPrev, { opacity: currentIndex === 0 ? 0.4 : 1 }]}>
+            <View style={[styles.footerNav, { paddingBottom: insets.bottom + 20 }]}>
+                <TouchableOpacity 
+                    disabled={currentIndex === 0} 
+                    onPress={() => setCurrentIndex(prev => Math.max(0, prev - 1))} 
+                    style={[styles.navBtnPrev, { opacity: currentIndex === 0 ? 0.4 : 1 }]}
+                >
                     <Text style={styles.navBtnPrevText}>Previous</Text>
                 </TouchableOpacity>
 
-                {currentIndex < questions.length - 1 ? (
-                    <TouchableOpacity onPress={() => setCurrentIndex(prev => prev + 1)} style={styles.navBtnNext}>
+                {questions.length > 0 && currentIndex < questions.length - 1 ? (
+                    <TouchableOpacity 
+                        onPress={() => setCurrentIndex(prev => Math.min(questions.length - 1, prev + 1))} 
+                        style={styles.navBtnNext}
+                    >
                         <Text style={styles.navBtnNextText}>Next</Text>
                     </TouchableOpacity>
                 ) : (
-                    <TouchableOpacity onPress={() => handleSubmitAssessment(false)} style={[styles.navBtnNext, { backgroundColor: '#10B981' }]} disabled={submitting}>
-                        <Text style={styles.navBtnNextText}>{submitting ? 'Submitting...' : 'Submit Exam'}</Text>
+                    <TouchableOpacity 
+                        onPress={() => handleSubmitAssessment(false)} 
+                        style={[
+                            styles.navBtnNext, 
+                            { backgroundColor: '#10B981' }, 
+                            submitting && { opacity: 0.7 }
+                        ]} 
+                        disabled={submitting}
+                    >
+                        <Text style={styles.navBtnNextText}>
+                            {submitting 
+                                ? 'Submitting...' 
+                                : assessment?.isPracticeOnly 
+                                    ? 'Submit Practice' 
+                                    : 'Submit Exam'}
+                        </Text>
                     </TouchableOpacity>
                 )}
             </View>
@@ -667,7 +757,6 @@ export default function TakeAssessment({ route, navigation }) {
         return (
             <Modal visible={matchingModal.visible} transparent animationType="fade">
                 <View style={styles.modalOverlay}>
-                    {/* FIX: Added alignItems: 'stretch' and backgroundColor to ensure full-width layout and clean corners */}
                     <View style={[styles.modalCard, { width: '90%', maxWidth: 400, maxHeight: '80%', padding: 0, overflow: 'hidden', alignItems: 'stretch', backgroundColor: '#FFF' }]}>
                         
                         <View style={{ padding: 20, backgroundColor: '#153c2a', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -703,9 +792,7 @@ export default function TakeAssessment({ route, navigation }) {
                                 </TouchableOpacity>
                             ))}
                         </ScrollView>
-
-                        {/* Fixed the squished Close button constraint */}
-                        <View style={{ padding: 15, borderTopWidth: 1, borderTopColor: '#E2E8F0', backgroundColor: '#F8FAFC' }}>
+                        <View style={{ padding: 15, borderTopWidth: 1, borderTopColor: '#E2E8F0', backgroundColor: '#F8FAFC', paddingBottom: insets.bottom > 0 ? insets.bottom + 15 : 15 }}>
                             <TouchableOpacity 
                                 style={{ paddingVertical: 14, borderRadius: 10, backgroundColor: '#E2E8F0', alignItems: 'center', width: '100%' }} 
                                 onPress={() => setMatchingModal(prev => ({ ...prev, visible: false }))}

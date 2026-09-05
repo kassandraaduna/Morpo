@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { toastError, toastSuccess } from './src/components/ToastMsg';
 import { ThemeContext } from './src/context/ThemeContext';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import api, { toAbsUrl } from './src/services/api';
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -74,6 +75,7 @@ const Field = ({ field, value, editable, placeholder, icon, theme, errors, onCha
 
 export default function EditProfile({ navigation }) {
     const { theme } = useContext(ThemeContext);
+    const insets = useSafeAreaInsets();
 
     const [user, setUser] = useState(null);
     const [form, setForm] = useState({});
@@ -188,6 +190,12 @@ export default function EditProfile({ navigation }) {
         const { actionType } = modalConfig;
         closeActionModal();
 
+        if (actionType === 'remove_avatar') {
+            setAvatar(null);
+            toastSuccess('Profile photo removed. Save changes to apply.');
+            return;
+        }
+
         if (actionType === 'save') {
             try {
                 setLoading(true);
@@ -198,15 +206,12 @@ export default function EditProfile({ navigation }) {
                 formData.append('lname', form.lname || '');
                 formData.append('dob', form.dob || '');
                 formData.append('gender', form.gender || '');
-                
-                // Safely append the uneditable fields so the backend doesn't try to wipe them
                 formData.append('username', user.username || '');
                 formData.append('email', user.email || '');
                 formData.append('number', user.number || '');
 
                 if (avatar !== originalAvatar) {
                     if (avatar) {
-                        // Pass the raw URI directly without stripping 'file://'
                         const fileUri = avatar;
                         const filename = avatar.split('/').pop() || `avatar_${Date.now()}.jpg`;
                         const match = /\.(\w+)$/.exec(filename);
@@ -228,7 +233,6 @@ export default function EditProfile({ navigation }) {
                     },
                 });
 
-                // Fetch fresh data using the same endpoint
                 const freshUserRes = await api.get(endpoint);
                 const updatedUser = freshUserRes.data?.data || freshUserRes.data;
 
@@ -390,7 +394,7 @@ export default function EditProfile({ navigation }) {
                 </View>
             </View>
 
-            <ScrollView contentContainerStyle={{ paddingBottom: 50, paddingHorizontal: 20 }} keyboardShouldPersistTaps="handled">
+            <ScrollView contentContainerStyle={{ paddingBottom: 50 + insets.bottom, paddingHorizontal: 20 }} keyboardShouldPersistTaps="handled">
                 <View style={localStyles.avatarSection}>
                     <TouchableOpacity activeOpacity={0.8} onPress={pickImage} disabled={!editMode}>
                         <View style={localStyles.avatarCircle}>
@@ -410,7 +414,15 @@ export default function EditProfile({ navigation }) {
                     </TouchableOpacity>
 
                     {editMode && avatar && (
-                        <TouchableOpacity onPress={() => setAvatar(null)} style={localStyles.removePhotoBtn}>
+                        <TouchableOpacity 
+                            onPress={() => setModalConfig({
+                                visible: true,
+                                title: "Remove Profile Photo",
+                                message: "Are you sure you want to remove your profile photo?",
+                                actionType: 'remove_avatar'
+                            })} 
+                            style={localStyles.removePhotoBtn}
+                        >
                             <Ionicons name="trash-outline" size={14} color="#EF4444" style={{ marginRight: 4 }} />
                             <Text style={localStyles.removePhotoText}>Remove Photo</Text>
                         </TouchableOpacity>
@@ -475,12 +487,14 @@ export default function EditProfile({ navigation }) {
                             <TouchableOpacity 
                                 style={[
                                     localStyles.modalBtn, 
-                                    modalConfig.actionType === 'discard' ? localStyles.confirmDangerBtn : localStyles.confirmSaveBtn
+                                    (modalConfig.actionType === 'discard' || modalConfig.actionType === 'remove_avatar') 
+                                        ? localStyles.confirmDangerBtn 
+                                        : localStyles.confirmSaveBtn
                                 ]} 
                                 onPress={executeModalAction}
                             >
                                 <Text style={localStyles.confirmBtnText}>
-                                    {modalConfig.actionType === 'discard' ? 'Discard' : 'Save'}
+                                    {modalConfig.actionType === 'discard' ? 'Discard' : modalConfig.actionType === 'remove_avatar' ? 'Remove' : 'Save'}
                                 </Text>
                             </TouchableOpacity>
                         </View>

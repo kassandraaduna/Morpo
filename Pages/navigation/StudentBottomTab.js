@@ -1,6 +1,7 @@
 import React, { useContext } from 'react';
 import { Platform } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import StudentHomepage from '../StudentHomepage';
 import Learn from '../Learn';
@@ -13,6 +14,7 @@ const Tab = createBottomTabNavigator();
 
 export default function StudentBottomTab() {
   const { theme } = useContext(ThemeContext);
+  const insets = useSafeAreaInsets();
 
   return (
     <Tab.Navigator
@@ -32,6 +34,8 @@ export default function StudentBottomTab() {
           height: Platform.OS === 'ios' ? 80 : 65,
           paddingBottom: Platform.OS === 'ios' ? 20 : 10,
           paddingTop: 5,
+          height: 60 + insets.bottom,
+          paddingBottom: 10 + insets.bottom,
         },
         tabBarIcon: ({ focused, color }) => {
           let icon;

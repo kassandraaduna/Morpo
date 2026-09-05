@@ -1,5 +1,6 @@
 import React, { useContext } from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { ThemeContext } from '../src/context/ThemeContext';
 import InstructorHomepage from '../InstructorHomepage';
@@ -12,6 +13,7 @@ const Tab = createBottomTabNavigator();
 
 export default function InstructorBottomTab() {
   const { theme } = useContext(ThemeContext);
+  const insets = useSafeAreaInsets();
 
   return (
     <Tab.Navigator
@@ -25,6 +27,8 @@ export default function InstructorBottomTab() {
           elevation: 10,
           height: 60,
           paddingBottom: 10,
+          height: 60 + insets.bottom,
+          paddingBottom: 10 + insets.bottom,
         },
       })}
     >

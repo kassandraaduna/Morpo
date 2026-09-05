@@ -256,7 +256,7 @@ export default function AssessmentStudent({ navigation }) {
                     <Ionicons name="calendar-outline" size={15} /> Created: {new Date(item.createdAt).toLocaleDateString()}
                 </Text>
                 <Text style={localStyles.metaText}>
-                    <Ionicons name="infinite" size={15} /> Unlimited Retakes (Local Practice)
+                    <Ionicons name="refresh" size={15} /> {item.attemptCount || 0} / {item.maxAttempts || 21} Attempts
                 </Text>
                 
                 {item.quizType !== 'flashcard' && (
@@ -280,17 +280,35 @@ export default function AssessmentStudent({ navigation }) {
 
                 <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
                     <TouchableOpacity 
-                        style={[localStyles.actionBtn, { flex: 1, backgroundColor: '#153c2a', marginTop: 0 }]}
+                        style={[
+                            localStyles.actionBtn, 
+                            { 
+                                flex: 1, 
+                                marginTop: 0,
+                                backgroundColor: (item.attemptCount >= item.maxAttempts || item.canTake === false) ? '#F1F5F9' : '#153c2a',
+                                borderColor: (item.attemptCount >= item.maxAttempts || item.canTake === false) ? '#CBD5E1' : '#153c2a',
+                                borderWidth: (item.attemptCount >= item.maxAttempts || item.canTake === false) ? 1.5 : 0
+                            }
+                        ]}
                         onPress={() => {
-                            const isCompleted = item.latestAttempt || item.status === 'completed'; 
-                            if (isCompleted) {
-                                navigation.navigate('StudentResultViewer', { assessmentId: item._id });
+                            const reachedLimit = item.attemptCount >= item.maxAttempts || item.canTake === false;
+                            
+                            if (reachedLimit) {
+                                navigation.navigate('StudentResultViewer', { 
+                                    assessmentId: item._id,
+                                    submissionId: item.latestAttempt?._id
+                                });
                             } else {
                                 navigation.navigate('TakeAssessment', { assessmentId: item._id });
                             }
                         }}
                     >
-                        <Text style={[localStyles.actionBtnText, { color: '#fff' }]}>Open Practice</Text>
+                        <Text style={[
+                            localStyles.actionBtnText, 
+                            { color: (item.attemptCount >= item.maxAttempts || item.canTake === false) ? '#153c2a' : '#fff' }
+                        ]}>
+                            {(item.attemptCount >= item.maxAttempts || item.canTake === false) ? 'View Result' : 'Open Practice'}
+                        </Text>
                     </TouchableOpacity>
 
                     {item.createdBy === currentUser?._id && (
