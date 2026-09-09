@@ -16,7 +16,11 @@
         "simulator": false
       }
     },
+    "testflight": {
+      "distribution": "store"
+    },
     "production": {
+      "distribution": "store",
       "android": {
         "buildType": "app-bundle"
       }
