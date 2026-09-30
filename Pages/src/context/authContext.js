@@ -1,6 +1,7 @@
 import React, { createContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import api from '../services/api'; 
+import * as Notifications from 'expo-notifications';
 
 export const AuthContext = createContext();
 
@@ -46,6 +47,26 @@ export const AuthProvider = ({ children }) => {
             }
         } catch (e) {
             console.error('Failed to save session:', e);
+        }
+    };
+
+    const registerPushToken = async (userId) => {
+        try {
+            const { status: existingStatus } = await Notifications.getPermissionsAsync();
+            let finalStatus = existingStatus;
+            if (existingStatus !== 'granted') {
+            const { status } = await Notifications.requestPermissionsAsync();
+            finalStatus = status;
+            }
+            if (finalStatus !== 'granted') return;
+
+            const tokenData = await Notifications.getExpoPushTokenAsync();
+            const token = tokenData.data;
+
+            // Send token to backend
+            await api.put(`/users/${userId}/push-token`, { expoPushToken: token });
+        } catch (error) {
+            console.log('Failed to save push token:', error);
         }
     };
 

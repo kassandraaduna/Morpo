@@ -20,6 +20,7 @@ import { login, verifyLoginOtp, resendLoginOtp } from '../Pages/src/services/aut
 import { toastError, toastSuccess } from '../Pages/src/components/ToastMsg';
 import { ThemeContext } from '../Pages/src/context/ThemeContext';
 import { AuthContext } from './src/context/authContext';
+import * as Location from 'expo-location';
 
 const RESEND_SECONDS = 60;
 
@@ -58,6 +59,27 @@ export default function Login({ navigation }) {
   // ─── Disclaimer Modal State ──────────────────────────────────────
   const [showDisclaimer, setShowDisclaimer] = useState(true);
 
+  const [loginLocation, setLoginLocation] = useState(null);
+  const [locationLoading, setLocationLoading] = useState(false);
+  const [locationError, setLocationError] = useState('');
+
+  const detectLocation = async () => {
+    setLocationLoading(true);
+    setLocationError('');
+    setLoginLocation(null);
+    try {
+      setLoginLocation(await detectLoginLocation());
+    } catch (error) {
+      setLocationError(error.message);
+    } finally {
+      setLocationLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    detectLocation();
+  }, []);
+
   // ─── Resend Countdown Effect ─────────────────────────────────────
   useEffect(() => {
     if (resendTimer <= 0) return;
@@ -90,7 +112,27 @@ export default function Login({ navigation }) {
 
     try {
       setLoginLoading(true);
-      const res = await login({ usernameOrEmail: input, password: pass });
+
+      let locationData = { label: 'Mobile Device', capturedAt: Date.now(), consent: true };
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === 'granted') {
+          const loc = await Location.getCurrentPositionAsync({});
+          locationData = {
+            label: `${loc.coords.latitude}, ${loc.coords.longitude}`,
+            capturedAt: Date.now(),
+            consent: true,
+          };
+        }
+      } catch (e) {
+        console.log('Location fetch skipped/failed', e);
+      }
+
+      const res = await login({ 
+        usernameOrEmail: input, 
+        password: pass, 
+        loginLocation: locationData 
+      });
 
       const payload = res.data?.data || res.data || {};
 

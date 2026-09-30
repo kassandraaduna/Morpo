@@ -98,6 +98,24 @@ export default function Notifications({ route, navigation }) {
     );
   };
 
+  useEffect(() => {
+    const fetchLiveNotifications = async () => {
+      try {
+        const uRaw = await AsyncStorage.getItem('user');
+        if (!uRaw) return;
+        const user = JSON.parse(uRaw);
+        
+        const res = await api.get(`/users/${user._id}/notifications`);
+        if (res.data?.data) {
+          setNotifications(res.data.data);
+        }
+      } catch (e) {
+        console.log('Fallback to route params notification data');
+      }
+    };
+    fetchLiveNotifications();
+  }, []);
+
   const renderNotifItem = ({ item }) => {
     const handlePress = async () => {
         await handleMarkAsRead(item._id);
