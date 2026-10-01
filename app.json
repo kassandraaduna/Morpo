@@ -16,8 +16,10 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.m2kp.mypholens",
       "icon": "./assets/mypholens-logo-ios.png",
+      "buildNumber": "2",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSLocationWhenInUseUsageDescription": "MyphoLens needs your location to verify your login for security purposes."
       }
     },
     "android": {
