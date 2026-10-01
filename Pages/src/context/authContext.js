@@ -22,12 +22,13 @@ export const AuthProvider = ({ children }) => {
         };
         bootstrap();
 
-        // Listen for server verification prompts (401/403)
+        // Listen for server verification prompts
         const interceptor = api.interceptors.response.use(
             (response) => response,
             async (error) => {
                 const status = error.response?.status;
-                if (status === 401 || status === 403) {
+                // CRITICAL FIX: Only trigger logout on 401 Unauthorized
+                if (status === 401) {
                     await logoutUser();
                 }
                 return Promise.reject(error);
@@ -64,7 +65,7 @@ export const AuthProvider = ({ children }) => {
             const token = tokenData.data;
 
             // Send token to backend
-            await api.put(`/users/${userId}/push-token`, { expoPushToken: token });
+            await api.put(`/users/${userId}/push-token`, { expoPushToken: token }).catch(() => {});
         } catch (error) {
             console.log('Failed to save push token:', error);
         }

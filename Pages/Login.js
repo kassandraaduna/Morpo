@@ -16,11 +16,11 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { login, verifyLoginOtp, resendLoginOtp } from '../Pages/src/services/authService';
+import * as Location from 'expo-location';
+import api from '../Pages/src/services/api';
 import { toastError, toastSuccess } from '../Pages/src/components/ToastMsg';
 import { ThemeContext } from '../Pages/src/context/ThemeContext';
 import { AuthContext } from './src/context/authContext';
-import * as Location from 'expo-location';
 
 const RESEND_SECONDS = 60;
 
@@ -43,6 +43,10 @@ export default function Login({ navigation }) {
   const [showPassword, setShowPassword] = useState(false);
   const [loginLoading, setLoginLoading] = useState(false);
 
+  // ─── Location State (Matching Web) ───────────────────────────────
+  const [loginLocation, setLoginLocation] = useState(null);
+  const [locationLoading, setLocationLoading] = useState(false);
+
   // ─── Input Focus States ──────────────────────────────────────────
   const [focusedField, setFocusedField] = useState(null);
 
@@ -58,27 +62,6 @@ export default function Login({ navigation }) {
 
   // ─── Disclaimer Modal State ──────────────────────────────────────
   const [showDisclaimer, setShowDisclaimer] = useState(true);
-
-  const [loginLocation, setLoginLocation] = useState(null);
-  const [locationLoading, setLocationLoading] = useState(false);
-  const [locationError, setLocationError] = useState('');
-
-  const detectLocation = async () => {
-    setLocationLoading(true);
-    setLocationError('');
-    setLoginLocation(null);
-    try {
-      setLoginLocation(await detectLoginLocation());
-    } catch (error) {
-      setLocationError(error.message);
-    } finally {
-      setLocationLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    detectLocation();
-  }, []);
 
   // ─── Resend Countdown Effect ─────────────────────────────────────
   useEffect(() => {
@@ -96,8 +79,63 @@ export default function Login({ navigation }) {
   }, [step]);
 
   // ─── Route After Successful Login ────────────────────────────────
-  const routeAfterLogin = async (userObj) => {
+  const routeAfterLogin = async (payload) => {
+    const userObj = { ...(payload.user || payload) };
+    
+    // Explicitly map the token INTO the user object so api.js can find it
+    if (payload.token) {
+      userObj.token = payload.token; 
+      await AsyncStorage.setItem('token', payload.token);
+      
+      // Inject immediately into active memory to prevent 401 race conditions
+      api.defaults.headers.common['Authorization'] = `Bearer ${payload.token}`;
+    }
+    
     await loginUser(userObj);
+  };
+
+  // ─── DETECT LOCATION HANDLER ─────────────────────────────────────
+  const detectLocation = async () => {
+    try {
+      setLocationLoading(true);
+      setLoginLocation(null);
+      
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      
+      if (status !== 'granted') {
+        toastError('Location permission is required. Allow access in your device settings.');
+        setLocationLoading(false);
+        return;
+      }
+
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      
+      const geocode = await Location.reverseGeocodeAsync({
+        latitude: loc.coords.latitude,
+        longitude: loc.coords.longitude,
+      });
+
+      let label = 'Unknown Location';
+      if (geocode.length > 0) {
+        const { city, subregion, region, country } = geocode[0];
+        const locParts = [...new Set([city || subregion, region, country].filter(Boolean))];
+        if (locParts.length > 0) {
+          label = locParts.join(', ');
+        }
+      }
+
+      setLoginLocation({
+        label,
+        capturedAt: Date.now(), // Fixed formatting to bypass backend validation
+        consent: true,
+      });
+      toastSuccess('Location detected successfully.');
+
+    } catch (error) {
+      toastError('Unable to detect your location. Turn on Location Services and try again.');
+    } finally {
+      setLocationLoading(false);
+    }
   };
 
   // ─── LOGIN HANDLER ───────────────────────────────────────────────
@@ -110,28 +148,24 @@ export default function Login({ navigation }) {
       return;
     }
 
+    if (!loginLocation || !loginLocation.capturedAt) {
+      toastError('Please select Detect location and allow access before signing in.');
+      return;
+    }
+
+    if (Date.now() - loginLocation.capturedAt > 30 * 60 * 1000) {
+      toastError('Location data expired. Please detect your location again.');
+      return;
+    }
+
     try {
       setLoginLoading(true);
-
-      let locationData = { label: 'Mobile Device', capturedAt: Date.now(), consent: true };
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status === 'granted') {
-          const loc = await Location.getCurrentPositionAsync({});
-          locationData = {
-            label: `${loc.coords.latitude}, ${loc.coords.longitude}`,
-            capturedAt: Date.now(),
-            consent: true,
-          };
-        }
-      } catch (e) {
-        console.log('Location fetch skipped/failed', e);
-      }
-
-      const res = await login({ 
+      
+      // Bypassing authService completely to prevent stripping of the loginLocation
+      const res = await api.post('/auth/login', { 
         usernameOrEmail: input, 
-        password: pass, 
-        loginLocation: locationData 
+        password: pass,
+        loginLocation 
       });
 
       const payload = res.data?.data || res.data || {};
@@ -155,14 +189,13 @@ export default function Login({ navigation }) {
       }
 
       if (payload.user || payload.token) {
-        const userObj = payload.user || payload;
-        await routeAfterLogin(userObj);
+        // Pass the entire payload so the token is preserved and saved
+        await routeAfterLogin(payload);
       } else {
         toastError('Unexpected response from server. Please try again.');
       }
     } catch (error) {
-      const errPayload =
-        error?.response?.data?.data || error?.response?.data || {};
+      const errPayload = error?.response?.data?.data || error?.response?.data || {};
       const errorMessage = (errPayload.message || '').toLowerCase();
 
       const needsOtpInErr =
@@ -205,19 +238,24 @@ export default function Login({ navigation }) {
 
     try {
       setOtpLoading(true);
-      const res = await verifyLoginOtp({ otpId, code, email: otpEmail });
+      
+      const res = await api.post('/auth/verify-login-otp', { 
+        otpId, 
+        code, 
+        email: otpEmail,
+        loginLocation
+      });
       const payload = res.data?.data || res.data || {};
 
       if (payload.user || payload.token) {
         toastSuccess('Login successful!');
-        const userObj = payload.user || payload;
-        await routeAfterLogin(userObj);
+        // Pass the entire payload so the token is preserved and saved
+        await routeAfterLogin(payload);
       } else {
         toastError('Verification failed. Please try again.');
       }
     } catch (error) {
-      const errPayload =
-        error?.response?.data?.data || error?.response?.data || {};
+      const errPayload = error?.response?.data?.data || error?.response?.data || {};
       toastError(errPayload.message || 'Invalid OTP code.');
     } finally {
       setOtpLoading(false);
@@ -233,7 +271,7 @@ export default function Login({ navigation }) {
     }
 
     try {
-      const res = await resendLoginOtp(otpEmail);
+      const res = await api.post('/auth/resend-login-otp', { email: otpEmail });
       const payload = res.data?.data || res.data || {};
 
       if (payload.otpId) setOtpId(payload.otpId);
@@ -242,8 +280,7 @@ export default function Login({ navigation }) {
       toastSuccess('A new OTP has been sent.');
       setTimeout(() => otpRefs.current[0]?.focus(), 200);
     } catch (error) {
-      const errPayload =
-        error?.response?.data?.data || error?.response?.data || {};
+      const errPayload = error?.response?.data?.data || error?.response?.data || {};
       toastError(errPayload.message || 'Failed to resend code.');
     }
   };
@@ -384,17 +421,46 @@ export default function Login({ navigation }) {
               <Text style={[localStyles.forgotText, { fontSize: normalize(13) }]}>Forgot password?</Text>
             </TouchableOpacity>
 
+            {/* ─── Web Match Location Field ─── */}
+            <View style={localStyles.locationContainer}>
+              <Text style={[localStyles.label, { fontSize: normalize(13) }]}>
+                Logging in from <Text style={{ color: '#EF4444' }}>*</Text>
+              </Text>
+              
+              <View style={localStyles.locationValueBox}>
+                <Text style={[localStyles.locationValueText, !loginLocation && { color: '#61756d' }]}>
+                  {loginLocation?.label || 'Location permission required'}
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                style={[localStyles.detectLocationBtn, locationLoading && { opacity: 0.7 }]}
+                onPress={detectLocation}
+                disabled={locationLoading || loginLoading}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="location-outline" size={16} color="#105e46" style={{ marginRight: 6 }} />
+                <Text style={localStyles.detectLocationText}>
+                  {locationLoading ? 'Detecting location...' : 'Detect location'}
+                </Text>
+              </TouchableOpacity>
+              
+              <Text style={localStyles.locationHint}>
+                Your location name is recorded with your login.
+              </Text>
+            </View>
+
             {/* Sign In Button */}
             <TouchableOpacity
-              style={localStyles.primaryBtn}
+              style={[localStyles.primaryBtn, (!loginLocation || loginLoading) && { opacity: 0.8 }]}
               onPress={handleLogin}
-              disabled={loginLoading}
+              disabled={loginLoading || locationLoading || !loginLocation}
               activeOpacity={0.85}
             >
               {loginLoading ? (
                 <ActivityIndicator color="#FFFFFF" />
               ) : (
-                <Text style={[localStyles.primaryBtnText, { fontSize: normalize(16) }]}>Sign in</Text>
+                <Text style={[localStyles.primaryBtnText, { fontSize: normalize(16) }]}>SIGN-IN</Text>
               )}
             </TouchableOpacity>
 
@@ -418,8 +484,7 @@ export default function Login({ navigation }) {
 
             <Text style={[localStyles.heading, { fontSize: normalize(28) }]}>Verify OTP</Text>
             <Text style={[localStyles.subHeading, { fontSize: normalize(14) }]}>
-              Enter the 6-digit one-time pin sent to your email to reset your
-              password.
+              Enter the 6-digit one-time pin sent to your email to verify your login.
             </Text>
 
             <View style={localStyles.otpContainer}>
@@ -553,6 +618,42 @@ const localStyles = StyleSheet.create({
   forgotText: {
     fontWeight: '800',
     color: '#153c2a',
+  },
+  locationContainer: {
+    marginBottom: 20,
+  },
+  locationValueBox: {
+    backgroundColor: '#f6faf8',
+    borderWidth: 1,
+    borderColor: '#ccded6',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 8,
+  },
+  locationValueText: {
+    fontSize: 13,
+    color: '#193c31',
+  },
+  detectLocationBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#ccded6',
+    borderRadius: 6,
+    paddingVertical: 10,
+    marginBottom: 6,
+  },
+  detectLocationText: {
+    fontSize: 12,
+    color: '#105e46',
+    fontWeight: '600',
+  },
+  locationHint: {
+    fontSize: 11,
+    color: '#61756d',
+    marginTop: 2,
   },
   primaryBtn: {
     backgroundColor: '#153c2a',

@@ -2,7 +2,6 @@ import React, { useContext } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 
-// (Keep all your screen imports here verbatim)
 import Login from './Pages/Login';
 import Register from './Pages/Register';
 import ResetPasswordScreen from './Pages/ResetPasswordScreen';
@@ -55,6 +54,9 @@ export default function AppController() {
             <Stack.Screen name="Login" component={Login} />
             <Stack.Screen name="Register" component={Register} />
             <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
+            {/* Move Terms and Privacy here so guests can read them during registration */}
+            <Stack.Screen name="Terms" component={Terms} />
+            <Stack.Screen name="Privacy" component={Privacy} />
           </>
         ) : (
           <>
@@ -65,6 +67,7 @@ export default function AppController() {
             )}
 
             <Stack.Screen name="EditProfile" component={EditProfile} />
+            {/* Keep them accessible here for logged-in users too */}
             <Stack.Screen name="Terms" component={Terms} />
             <Stack.Screen name="Privacy" component={Privacy} />
             <Stack.Screen name="ChangePassword" component={ChangePassword} />

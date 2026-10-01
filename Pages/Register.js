@@ -20,11 +20,9 @@ export default function Register({ navigation }) {
   const { theme } = useContext(ThemeContext);
   const insets = useSafeAreaInsets();
 
-  // ─── Step: 'form' | 'otp' ────────────────────────────────────────
   const [step, setStep] = useState('form');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // ─── Form Data State ─────────────────────────────────────────────
   const [newMed, setNewMed] = useState({
     fname: '',
     lname: '',
@@ -38,29 +36,25 @@ export default function Register({ navigation }) {
     password: '',
   });
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
 
-  // ─── Real-Time Error, Active Field & Checking States ─────────────
   const [errors, setErrors] = useState({});
   const [activeField, setActiveField] = useState(null);
   const [checking, setChecking] = useState({ username: false, email: false, number: false });
 
-  // Refs for tracking active async search requests and fast typing timeouts
   const abortControllers = useRef({});
   const typingTimeout = useRef({});
 
-  // ─── UI & Interaction States ─────────────────────────────────────
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [showGenderModal, setShowGenderModal] = useState(false);
 
-  // ─── Advanced Calendar States (Year, Month, Day Picker) ───────────
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [calendarMode, setCalendarMode] = useState('days'); // 'days' | 'months' | 'years'
+  const [calendarMode, setCalendarMode] = useState('days'); 
   const [calendarYear, setCalendarYear] = useState(2004);
-  const [calendarMonth, setCalendarMonth] = useState(0); // 0 = Jan
+  const [calendarMonth, setCalendarMonth] = useState(0); 
   const [selectedDay, setSelectedDay] = useState(1);
 
-  // ─── Input Field Refs for Keyboard Navigation ────────────────────
   const fnameRef = useRef(null);
   const lnameRef = useRef(null);
   const emailRef = useRef(null);
@@ -69,14 +63,12 @@ export default function Register({ navigation }) {
   const passwordRef = useRef(null);
   const confirmPasswordRef = useRef(null);
 
-  // ─── OTP States ──────────────────────────────────────────────────
   const [otpId, setOtpId] = useState('');
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [resendTimer, setResendTimer] = useState(0);
   const [canResend, setCanResend] = useState(true);
   const otpRefs = useRef([]);
 
-  // ─── Resend Timer Effect ─────────────────────────────────────────
   useEffect(() => {
     if (!canResend && resendTimer > 0) {
       const timer = setTimeout(() => setResendTimer((t) => t - 1), 1000);
@@ -85,7 +77,6 @@ export default function Register({ navigation }) {
     if (resendTimer === 0) setCanResend(true);
   }, [resendTimer, canResend]);
 
-  // ─── Auto-focus First OTP Box ────────────────────────────────────
   useEffect(() => {
     if (step === 'otp') {
       const timeout = setTimeout(() => otpRefs.current[0]?.focus(), 300);
@@ -93,7 +84,6 @@ export default function Register({ navigation }) {
     }
   }, [step]);
 
-  // ─── SYNCHRONOUS FIELD VALIDATION ────────────────────────────────
   const validateSync = useCallback((field, value, allValues = newMed, cPass = confirmPassword) => {
     const trimmed = typeof value === 'string' ? value.trim() : value;
     if (!trimmed) return "This field is required.";
@@ -104,36 +94,29 @@ export default function Register({ navigation }) {
         return /^[A-Za-z\s-']+$/.test(trimmed)
           ? null
           : "Letters, spaces, hyphens, or apostrophes only.";
-
       case 'dob':
       case 'gender':
         return null;
-
       case 'email':
         return /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(trimmed)
           ? null
           : "Please enter a valid email address.";
-
       case 'number':
         return /^\d{11}$/.test(trimmed)
           ? null
           : "Mobile number must be exactly 11 digits.";
-
       case 'username':
         return trimmed.length < 4
           ? "Username must be at least 4 characters long."
           : null;
-
       case 'password':
         if (value.length < 8) return "Password must be at least 8 characters.";
         if (!/[A-Z]/.test(value)) return "Needs at least one uppercase letter.";
         if (!/\d/.test(value)) return "Needs at least one number.";
         if (!/[!@#$%^&*]/.test(value)) return "Needs at least one special character (!@#$%^&*).";
         return null;
-
       case 'confirmPassword':
         return cPass !== allValues.password ? "Passwords do not match." : null;
-
       default:
         return null;
     }
@@ -164,20 +147,10 @@ export default function Register({ navigation }) {
         res = await checkNumber(trimmed, { signal: controller.signal });
       }
 
-      const isTaken =
-        res?.data?.exists === true ||
-        res?.data?.taken === true ||
-        res?.data?.inUse === true ||
-        res?.data?.available === false;
+      const isTaken = res?.data?.exists === true || res?.data?.taken === true || res?.data?.inUse === true || res?.data?.available === false;
 
       if (isTaken) {
-        const label =
-          field === 'email'
-            ? 'student email is already registered'
-            : field === 'number'
-            ? 'mobile number is already in use'
-            : 'username is already taken';
-
+        const label = field === 'email' ? 'student email is already registered' : field === 'number' ? 'mobile number is already in use' : 'username is already taken';
         setErrors((prev) => ({ ...prev, [field]: `This ${label}.` }));
       } else {
         setErrors((prev) => {
@@ -190,20 +163,8 @@ export default function Register({ navigation }) {
       if (err.name === 'CanceledError' || err.code === 'ERR_CANCELED') return;
       const msg = err?.response?.data?.message || '';
       const lower = msg.toLowerCase();
-      if (
-        lower.includes('use') ||
-        lower.includes('exist') ||
-        lower.includes('taken') ||
-        lower.includes('already') ||
-        err?.response?.status === 400 ||
-        err?.response?.status === 409
-      ) {
-        const fallback =
-          field === 'email'
-            ? 'This student email is already registered.'
-            : field === 'number'
-            ? 'This mobile number is already in use.'
-            : 'This username is already taken.';
+      if (lower.includes('use') || lower.includes('exist') || lower.includes('taken') || lower.includes('already') || err?.response?.status === 400 || err?.response?.status === 409) {
+        const fallback = field === 'email' ? 'This student email is already registered.' : field === 'number' ? 'This mobile number is already in use.' : 'This username is already taken.';
         setErrors((prev) => ({ ...prev, [field]: msg || fallback }));
       }
     } finally {
@@ -211,7 +172,6 @@ export default function Register({ navigation }) {
     }
   }, []);
 
-  // ─── Input Handlers with 200ms Fast Debounce ─────────────────────
   const handleTextChange = (field, val) => {
     const value = field === 'password' || field === 'confirmPassword' ? val : val.trimStart();
 
@@ -260,19 +220,8 @@ export default function Register({ navigation }) {
     setCalendarMode('days');
   };
 
-  // ─── Form Submission Validation ──────────────────────────────────
   const validateForm = () => {
-    const fields = [
-      'fname',
-      'lname',
-      'dob',
-      'gender',
-      'email',
-      'number',
-      'username',
-      'password',
-      'confirmPassword',
-    ];
+    const fields = ['fname', 'lname', 'dob', 'gender', 'email', 'number', 'username', 'password', 'confirmPassword'];
     const newErrors = {};
     let isValid = true;
 
@@ -285,23 +234,23 @@ export default function Register({ navigation }) {
       }
     });
 
-    if (
-      errors.email?.includes('already') ||
-      errors.number?.includes('already') ||
-      errors.username?.includes('already')
-    ) {
+    if (errors.email?.includes('already') || errors.number?.includes('already') || errors.username?.includes('already')) {
       isValid = false;
+    }
+
+    if (!agreedToTerms) {
+      isValid = false;
+      toastError('You must agree to the Terms and Conditions and Privacy Policy.');
     }
 
     setErrors((prev) => ({ ...prev, ...newErrors }));
 
-    if (!isValid) {
+    if (!isValid && agreedToTerms) {
       toastError('Please fix all form errors before proceeding.');
     }
     return isValid;
   };
 
-  // ─── SIGN UP / REQUEST OTP HANDLER ───────────────────────────────
   const handleSignUp = async () => {
     if (!validateForm()) return;
 
@@ -333,7 +282,6 @@ export default function Register({ navigation }) {
     }
   };
 
-  // ─── VERIFY OTP HANDLER ──────────────────────────────────────────
   const verifyOtp = async () => {
     const code = otp.join('');
     if (code.length < 6) {
@@ -357,7 +305,6 @@ export default function Register({ navigation }) {
     }
   };
 
-  // ─── RESEND OTP HANDLER ──────────────────────────────────────────
   const handleResend = async () => {
     if (!canResend) return;
     setIsSubmitting(true);
@@ -376,12 +323,10 @@ export default function Register({ navigation }) {
     }
   };
 
-  // ─── OTP Digit Handlers ──────────────────────────────────────────
   const handleOtpChange = (value, index) => {
     const copy = [...otp];
     copy[index] = value;
     setOtp(copy);
-
     if (value && index < 5) {
       otpRefs.current[index + 1]?.focus();
     }
@@ -393,7 +338,6 @@ export default function Register({ navigation }) {
     }
   };
 
-  // ─── PROPER CALENDAR GRID RENDERER ───────────────────────────────
   const getDaysInMonth = (year, month) => new Date(year, month + 1, 0).getDate();
   const getFirstDayOfMonth = (year, month) => new Date(year, month, 1).getDay();
 
@@ -503,7 +447,6 @@ export default function Register({ navigation }) {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={[localStyles.container, { backgroundColor: theme.bg || '#F8F9FA' }]}
     >
-      {/* ─── CALENDAR MODAL ────────────────────────────────────────── */}
       <Modal
         visible={showDatePicker}
         transparent
@@ -583,7 +526,6 @@ export default function Register({ navigation }) {
         </View>
       </Modal>
 
-      {/* ─── GENDER SELECTION MODAL ───────────────────────────────── */}
       <Modal
         visible={showGenderModal}
         transparent
@@ -617,7 +559,6 @@ export default function Register({ navigation }) {
         </TouchableOpacity>
       </Modal>
 
-      {/* ─── STICKY TOP HEADER BLOCK (Constrained Width Container) ── */}
       <View style={[localStyles.headerContainer, { backgroundColor: theme.bg || '#F8F9FA' }]}>
         <StatusBar barStyle="dark-content" backgroundColor="transparent" />
         <View style={localStyles.maxContentWidth}>
@@ -640,7 +581,6 @@ export default function Register({ navigation }) {
         </View>
       </View>
 
-      {/* ─── SCROLLABLE CONTENT AREA (Constrained Width Container) ── */}
       <ScrollView
         contentContainerStyle={[
           localStyles.scrollContent,
@@ -908,11 +848,42 @@ export default function Register({ navigation }) {
                 <Text style={localStyles.errorText}>{errors.confirmPassword}</Text>
               ) : null}
 
+              {/* Terms and Conditions Checkbox (Perfectly isolated and web-styled) */}
+              <View style={localStyles.termsContainer}>
+                <TouchableOpacity
+                  style={localStyles.checkboxWrapper}
+                  activeOpacity={0.8}
+                  onPress={() => setAgreedToTerms(!agreedToTerms)}
+                >
+                  <Ionicons
+                    name={agreedToTerms ? 'checkbox' : 'square-outline'}
+                    size={24}
+                    color={agreedToTerms ? '#153c2a' : '#CBD5E1'}
+                  />
+                </TouchableOpacity>
+                <Text style={localStyles.termsText}>
+                  I have read and agree to the{' '}
+                  <Text 
+                    style={localStyles.termsLink} 
+                    onPress={() => navigation.navigate('Terms')}
+                  >
+                    Terms and Conditions
+                  </Text> 
+                  {' '}and{' '}
+                  <Text 
+                    style={localStyles.termsLink} 
+                    onPress={() => navigation.navigate('Privacy')}
+                  >
+                    Privacy Policy
+                  </Text>.
+                </Text>
+              </View>
+
               {/* Sign Up Button */}
               <TouchableOpacity
-                style={localStyles.primaryBtn}
+                style={[localStyles.primaryBtn, !agreedToTerms && { opacity: 0.6 }]}
                 onPress={handleSignUp}
-                disabled={isSubmitting}
+                disabled={isSubmitting || !agreedToTerms}
                 activeOpacity={0.85}
               >
                 {isSubmitting ? (
@@ -1076,6 +1047,29 @@ const localStyles = StyleSheet.create({
   eyeIcon: {
     padding: 6,
   },
+  termsContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginTop: 10,
+    marginBottom: 16,
+    paddingRight: 10,
+  },
+  checkboxWrapper: {
+    marginRight: 8,
+    paddingTop: 0,
+    paddingHorizontal: 4,
+    marginLeft: -4,
+  },
+  termsText: {
+    fontSize: 14, // Matches 0.88rem from web
+    color: '#64748B', // Matches --mp-text-secondary from web
+    lineHeight: 23, // Matches 1.65 line-height from web
+    flex: 1,
+  },
+  termsLink: {
+    fontWeight: '800',
+    color: '#153c2a',
+  },
   primaryBtn: {
     backgroundColor: '#153c2a',
     height: 54,
@@ -1163,6 +1157,15 @@ const localStyles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800',
     color: '#153c2a',
+  },
+  tryAnotherBtn: {
+    alignSelf: 'center',
+    marginTop: 18,
+  },
+  tryAnotherText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#64748B',
   },
   modalOverlay: {
     flex: 1,
